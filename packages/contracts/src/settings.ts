@@ -11,6 +11,8 @@ export const schemaLimits = {
   evidenceToolNameMaxLength: 100,
   evidenceVersionMaxLength: 200,
   opaqueIdentifierMaxLength: 128,
+  protocolComponentVersionMaxLength: 200,
+  protocolMessageMaxLength: 4_000,
   reviewBodyMaxLength: 8_000,
   reviewFilePathMaxLength: 1_024,
   reviewTitleMaxLength: 200,

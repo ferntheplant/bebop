@@ -12,6 +12,15 @@ This document turns the Bebop system design into an implementation sequence. The
 
 The first useful milestone is not a fully provisioned bounty. It is a local Bebop server and a local Swordfish daemon that share the real contracts, persist their state, reconnect safely, and can drive a small deterministic workflow. External integrations are added only after that control plane works under failure.
 
+## Session Progress
+
+Progress through 2026-07-26:
+
+- **Milestone 0 is in progress:** Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The Postgres/SQLite round trip, pinned OpenCode fake-model turn, plugin lease guard, and tmux input-lock spikes remain.
+- **Milestone 1 is complete:** the monorepo, three apps, shared contracts and testkit packages, strict tooling, conventional-commit hooks, CI, builds, smoke entrypoints, and workspace documentation are in place.
+- **Milestone 2 is in progress:** scalar schemas, workflow vocabulary, effective specs, candidates, review findings, constraint profiles, evidence manifests, CAS metadata, and the core bidirectional Bebop-Swordfish control protocol are implemented.
+- **Milestone 2 remaining:** attachment and evidence-upload protocol extensions, local `sf` control contracts, typed process configuration, Bebop HTTP/SSE contracts and OpenAPI, projection/workflow reducers, and golden replay/idempotency tests.
+
 ## 2. Repository Decisions
 
 The repository uses:
@@ -217,7 +226,7 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 **Status:** In progress
 
-**Current checkpoint:** Evidence manifests and content-addressed blob metadata.
+**Current checkpoint:** Core Bebop-Swordfish control protocol envelopes.
 
 **Work**
 

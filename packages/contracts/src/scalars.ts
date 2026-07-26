@@ -38,6 +38,9 @@ export type ReviewFindingId = typeof ReviewFindingId.Type;
 export const EvidenceBundleId = SafeIdentifier.pipe(Schema.brand("EvidenceBundleId"));
 export type EvidenceBundleId = typeof EvidenceBundleId.Type;
 
+export const ConnectionId = SafeIdentifier.pipe(Schema.brand("ConnectionId"));
+export type ConnectionId = typeof ConnectionId.Type;
+
 export const GitSha = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)),
   Schema.brand("GitSha"),

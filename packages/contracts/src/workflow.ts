@@ -49,6 +49,6 @@ export const agentDispositions = ["candidate_ready", "blocked", "continue"] as c
 export const AgentDisposition = Schema.Literals(agentDispositions);
 export type AgentDisposition = typeof AgentDisposition.Type;
 
-export const verificationStages = ["local_validation", "pr_ci", "code_review", "qa", "evidence_upload"] as const;
+export const verificationStages = ["local_validation", "pr_ci", "code_review", "qa"] as const;
 export const VerificationStage = Schema.Literals(verificationStages);
 export type VerificationStage = typeof VerificationStage.Type;

@@ -217,7 +217,7 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 **Status:** In progress
 
-**Current checkpoint:** Core workflow payload schemas.
+**Current checkpoint:** Evidence manifests and content-addressed blob metadata.
 
 **Work**
 

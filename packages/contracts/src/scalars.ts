@@ -35,11 +35,17 @@ export type AcceptanceCriterionId = typeof AcceptanceCriterionId.Type;
 export const ReviewFindingId = SafeIdentifier.pipe(Schema.brand("ReviewFindingId"));
 export type ReviewFindingId = typeof ReviewFindingId.Type;
 
+export const EvidenceBundleId = SafeIdentifier.pipe(Schema.brand("EvidenceBundleId"));
+export type EvidenceBundleId = typeof EvidenceBundleId.Type;
+
 export const GitSha = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)),
   Schema.brand("GitSha"),
 );
 export type GitSha = typeof GitSha.Type;
+
+export const Sha256 = Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{64}$/)), Schema.brand("Sha256"));
+export type Sha256 = typeof Sha256.Type;
 
 const CanonicalUtcTimestampString = Schema.String.pipe(
   Schema.check(
@@ -64,6 +70,12 @@ export const EventSequence = Schema.Number.pipe(
   Schema.brand("EventSequence"),
 );
 export type EventSequence = typeof EventSequence.Type;
+
+export const ByteCount = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+  Schema.brand("ByteCount"),
+);
+export type ByteCount = typeof ByteCount.Type;
 
 const PositiveSafeInteger = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),

@@ -48,5 +48,6 @@ describe("workflow vocabulary", () => {
     expect(() => Schema.decodeUnknownSync(LeaseOwner)("bebop")).toThrow();
     expect(() => Schema.decodeUnknownSync(AgentDisposition)("ready")).toThrow();
     expect(() => Schema.decodeUnknownSync(VerificationStage)("implementation")).toThrow();
+    expect(() => Schema.decodeUnknownSync(VerificationStage)("evidence_upload")).toThrow();
   });
 });

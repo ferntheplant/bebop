@@ -17,7 +17,7 @@ The first useful milestone is not a fully provisioned bounty. It is a local Bebo
 Progress through 2026-07-26:
 
 - **Milestone 0 is in progress:** Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The Postgres/SQLite round trip, pinned OpenCode fake-model turn, plugin lease guard, and tmux input-lock spikes remain.
-- **Milestone 1 is complete:** the monorepo, three apps, shared contracts and testkit packages, strict tooling, conventional-commit hooks, CI, builds, smoke entrypoints, and workspace documentation are in place.
+- **Milestone 1 is complete and validated:** the monorepo, three apps, shared contracts and testkit packages, strict per-workspace TypeScript environments, conventional-commit hooks, CI, builds, process-level entrypoint tests, artifact smokes, and workspace documentation are in place. Frozen install and `vp run ready` pass.
 - **Milestone 2 is in progress:** scalar schemas, workflow vocabulary, effective specs, candidates, review findings, constraint profiles, evidence manifests, CAS metadata, and the core bidirectional Bebop-Swordfish control protocol are implemented.
 - **Milestone 2 remaining:** attachment and evidence-upload protocol extensions, local `sf` control contracts, typed process configuration, Bebop HTTP/SSE contracts and OpenAPI, projection/workflow reducers, and golden replay/idempotency tests.
 
@@ -202,7 +202,7 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 ### Milestone 1: Initialize the Monorepo
 
-**Status:** Complete (2026-07-26)
+**Status:** Complete and validated (2026-07-26)
 
 **Work**
 

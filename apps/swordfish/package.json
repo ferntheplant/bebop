@@ -13,7 +13,7 @@
   "scripts": {
     "build": "vp pack",
     "dev": "bun --watch src/daemon.ts",
-    "smoke": "bun dist/cli.mjs && bun dist/daemon.mjs"
+    "smoke": "./dist/cli.mjs && ./dist/daemon.mjs"
   },
   "devDependencies": {
     "typescript": "catalog:",

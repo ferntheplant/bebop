@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023"],
-    "types": ["bun"],
+    "types": [],
     "strict": true,
     "skipLibCheck": true,
     "module": "ESNext",
@@ -22,5 +22,5 @@
     "noEmit": true,
     "esModuleInterop": true
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "commitlint.config.ts", "vite.config.ts"]
+  "include": ["apps/**/*.ts", "packages/**/*.ts", "test/**/*.ts", "commitlint.config.ts", "vite.config.ts"]
 }

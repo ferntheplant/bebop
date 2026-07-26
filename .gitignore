@@ -18,7 +18,9 @@ build
 *.sqlite-shm
 *.sqlite-wal
 .bebop-data/
+.postgres-data/
 .test-data/
+**/fixtures/**/worktrees/
 
 # dotenv environment variable files
 .env

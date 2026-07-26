@@ -217,7 +217,7 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 **Status:** In progress
 
-**Current checkpoint:** Scalar schemas and workflow vocabulary.
+**Current checkpoint:** Core workflow payload schemas.
 
 **Work**
 

@@ -22,6 +22,9 @@ export const schemaLimits = {
   reviewTitleMaxLength: 200,
   specDescriptionMaxLength: 4_000,
   specTitleMaxLength: 200,
+  sfControlMessageMaxLength: 4_000,
+  sfRecentEventsMaxItems: 50,
+  sfUnifiedDiffMaxLength: 100_000,
 } as const;
 
 export const defaultConstraintValues = {

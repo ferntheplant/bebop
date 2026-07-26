@@ -19,6 +19,10 @@
       "bin": {
         "bebop": "./dist/cli.mjs",
       },
+      "dependencies": {
+        "@bebop/contracts": "workspace:*",
+        "effect": "catalog:",
+      },
       "devDependencies": {
         "typescript": "catalog:",
         "vite-plus": "catalog:",
@@ -38,6 +42,10 @@
       "bin": {
         "sf": "./dist/cli.mjs",
         "swordfish": "./dist/daemon.mjs",
+      },
+      "dependencies": {
+        "@bebop/contracts": "workspace:*",
+        "effect": "catalog:",
       },
       "devDependencies": {
         "typescript": "catalog:",

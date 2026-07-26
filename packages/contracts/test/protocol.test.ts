@@ -70,6 +70,31 @@ describe("Swordfish to Bebop protocol", () => {
     expect(Schema.encodeSync(SwordfishToBebopMessage)(decoded)).toEqual(encoded);
   });
 
+  test("round-trips commit-bound gate and invalidation events", () => {
+    const events = [
+      {
+        type: "gate_completed",
+        gate: "code_review",
+        candidateSha: "b".repeat(40),
+        specRevision: 1,
+        outcome: "passed",
+      },
+      {
+        type: "candidate_invalidated",
+        candidateSha: "b".repeat(40),
+        specRevision: 1,
+        reason: "branch_head_changed",
+        observedHeadSha: "c".repeat(40),
+      },
+    ] as const;
+
+    for (const [index, event] of events.entries()) {
+      const encoded = { ...identity, type: "event", sequence: 15 + index, occurredAt: timestamp, event } as const;
+      const decoded = Schema.decodeUnknownSync(SwordfishToBebopMessage)(encoded);
+      expect(Schema.encodeSync(SwordfishToBebopMessage)(decoded)).toEqual(encoded);
+    }
+  });
+
   test("round-trips command results for deduplication", () => {
     const encoded = {
       ...identity,
@@ -134,6 +159,7 @@ const commands: ReadonlyArray<typeof BebopCommand.Encoded> = [
   { type: "extend_constraint", constraint: "primary_turns" },
   { type: "retry_stage", stage: "local_validation" },
   { type: "approve_config", candidateSha: "b".repeat(40) },
+  { type: "external_ci_completed", candidateSha: "b".repeat(40), specRevision: 1, outcome: "passed" },
 ];
 
 describe("Bebop to Swordfish protocol", () => {

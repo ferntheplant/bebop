@@ -4,6 +4,10 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   AgentDisposition,
   BountyStatus,
+  CandidateGate,
+  CandidateInvalidationReason,
+  GateOutcome,
+  GateStatus,
   LeaseOwner,
   SeatRole,
   SwordfishStage,
@@ -39,6 +43,19 @@ describe("workflow vocabulary", () => {
 
   test.each(verificationStages)("decodes verification stage %s", (stage) => {
     expect(Schema.decodeUnknownSync(VerificationStage)(stage)).toBe(stage);
+  });
+
+  test.each(["local_validation", "pr_ci", "code_review", "qa", "evidence_upload"] as const)(
+    "decodes candidate gate %s",
+    (gate) => {
+      expect(Schema.decodeUnknownSync(CandidateGate)(gate)).toBe(gate);
+    },
+  );
+
+  test("decodes gate state and candidate invalidation vocabulary", () => {
+    expect(Schema.decodeUnknownSync(GateStatus)("pending")).toBe("pending");
+    expect(Schema.decodeUnknownSync(GateOutcome)("passed")).toBe("passed");
+    expect(Schema.decodeUnknownSync(CandidateInvalidationReason)("branch_head_changed")).toBe("branch_head_changed");
   });
 
   test("rejects unknown and differently cased values", () => {

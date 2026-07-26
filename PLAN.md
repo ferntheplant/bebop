@@ -18,8 +18,7 @@ Progress through 2026-07-26:
 
 - **Milestone 0 is in progress:** Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The Postgres/SQLite round trip, pinned OpenCode fake-model turn, plugin lease guard, and tmux input-lock spikes remain.
 - **Milestone 1 is complete and validated:** the monorepo, three apps, shared contracts and testkit packages, strict per-workspace TypeScript environments, conventional-commit hooks, CI, builds, process-level entrypoint tests, artifact smokes, and workspace documentation are in place. Frozen install and `vp run ready` pass.
-- **Milestone 2 is in progress:** scalar schemas, workflow vocabulary, effective specs, candidates, review findings, constraint profiles, evidence manifests, CAS metadata, attachment snapshots, evidence-upload negotiation, stable protocol decode errors, and the bidirectional Bebop-Swordfish control protocol are implemented.
-- **Milestone 2 remaining:** local `sf` control contracts, typed process configuration, Bebop HTTP/SSE contracts and OpenAPI, projection/workflow reducers, and golden replay/idempotency tests.
+- **Milestone 2 is complete and validated:** shared wire and domain schemas, bidirectional Bebop-Swordfish and local `sf` protocols, typed process configuration, authenticated Bebop HTTP/SSE contracts with generated OpenAPI, pure workflow/projection reducers, and golden replay/idempotency coverage are implemented. Frozen install and `vp run ready` pass.
 
 ## 2. Repository Decisions
 
@@ -224,9 +223,9 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 ### Milestone 2: Define Contracts and State Machines
 
-**Status:** In progress
+**Status:** Complete and validated (2026-07-26)
 
-**Current checkpoint:** Attachment and evidence-upload protocol extensions with typed boundary errors.
+**Current checkpoint:** Exit criteria satisfied; Milestone 3 is next.
 
 **Work**
 
@@ -246,6 +245,18 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 - Invalid IDs, stages, sequence numbers, and cross-version messages fail with stable typed errors.
 - Reducer tests cover legal transitions, illegal transitions, candidate invalidation, and idempotent reapplication.
 - No app-local duplicate of a shared wire type exists.
+
+**Implementation decisions established during review**
+
+- Protocol cursors may be zero, but produced events start at one. Reducers reject gaps, treat exact replay as a no-op, and retain fingerprints for every applied sequence so conflicting replay fails closed.
+- `candidate_submitted` carries only a `candidate_ready` disposition. Gate outcomes are bound to both candidate SHA and spec revision; CI and review remain independent parallel gates; Swordfish readiness is a claim that Bebop must verify independently.
+- Candidate invalidation clears every gate and readiness claim. Human control remains visible until explicit handback, while the suspended workflow stage survives invalidation, attention, repeated attention, and nested human-control transitions.
+- Bebop connection freshness is scoped to a `connectionId`. Delayed events, heartbeats, disconnects, or stale timers from replaced or closed connections cannot mutate the active projection, and freshness changes never rewrite workflow authority.
+- Local `sf handback` and `sf approve-config` requests are argument-free; the daemon derives and atomically rechecks the active seat or pending candidate. Responses must match both the request correlation ID and command.
+- Evidence upload uses `bundleId` as the durable idempotency key: offer manifest, upload only missing content-addressed blobs through bounded HTTPS targets, then finalize. Manifest paths and download paths are canonical and must match exactly.
+- Every HTTP endpoint, including health, declares bearer authentication. SSE replay has one cursor source (`Last-Event-ID`), and each canonical SSE ID must equal its typed event cursor.
+- Process configuration rejects unsafe URL schemes, non-positive limits, non-canonical paths, overlapping Swordfish state/workspace paths, and invalid heartbeat or reconnect timing relationships. Secrets remain `Redacted` until their transport boundary.
+- The pinned Effect 4 beta exposes HttpApi, OpenAPI, CLI, and related platform APIs under `effect/unstable/*`; adding current Effect 3 `@effect/platform` or `@effect/cli` packages would create an incompatible peer-dependency stack.
 
 ### Milestone 3: Implement a Local Bebop Server
 

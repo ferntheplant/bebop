@@ -1,3 +1,5 @@
+export { BebopHttpApi } from "@bebop/contracts";
+
 export const bebopApiName = "bebop-api";
 
 export function runBebopApi(): void {

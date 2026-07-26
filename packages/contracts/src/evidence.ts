@@ -4,7 +4,7 @@ import { BountyId, ByteCount, EvidenceBundleId, GitSha, Sha256, SpecRevision, Ti
 import { schemaLimits } from "./settings.ts";
 import { VerificationStage } from "./workflow.ts";
 
-const ArtifactPath = Schema.String.pipe(
+export const EvidenceArtifactPath = Schema.String.pipe(
   Schema.check(
     Schema.isMinLength(1),
     Schema.isMaxLength(schemaLimits.evidenceArtifactPathMaxLength),
@@ -18,6 +18,7 @@ const ArtifactPath = Schema.String.pipe(
   ),
   Schema.brand("EvidenceArtifactPath"),
 );
+export type EvidenceArtifactPath = typeof EvidenceArtifactPath.Type;
 
 const MediaType = Schema.String.pipe(
   Schema.check(
@@ -61,7 +62,7 @@ export const VersionRecord = Schema.Struct({
 export type VersionRecord = typeof VersionRecord.Type;
 
 export const EvidenceArtifact = Schema.Struct({
-  path: ArtifactPath,
+  path: EvidenceArtifactPath,
   kind: EvidenceArtifactKind,
   sha256: Sha256,
   sizeBytes: ByteCount,

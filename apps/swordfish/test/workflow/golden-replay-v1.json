@@ -1,0 +1,66 @@
+[
+  {
+    "type": "effective_spec_set",
+    "spec": {
+      "revision": 1,
+      "title": "Implement replay",
+      "goal": "Replay durable events safely.",
+      "context": [],
+      "constraints": [],
+      "nonGoals": [],
+      "acceptanceCriteria": [{ "id": "ac-1", "description": "Duplicate events are no-ops." }],
+      "suggestedQaScenarios": [{ "description": "Reconnect", "expectedOutcome": "No duplicate state change." }],
+      "createdFromSeatId": "seat-ein",
+      "createdAt": "2026-07-26T12:34:56.000Z"
+    }
+  },
+  {
+    "type": "candidate_submitted",
+    "candidate": {
+      "commitSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "specRevision": 1,
+      "summary": "Implement reducer replay handling.",
+      "claimedLocalChecks": [],
+      "activeDevelopmentServers": [],
+      "knownLimitations": [],
+      "disposition": "candidate_ready"
+    }
+  },
+  {
+    "type": "gate_completed",
+    "gate": "local_validation",
+    "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "specRevision": 1,
+    "outcome": "passed"
+  },
+  { "type": "stage_changed", "stage": "pushed_candidate" },
+  {
+    "type": "gate_completed",
+    "gate": "pr_ci",
+    "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "specRevision": 1,
+    "outcome": "passed"
+  },
+  {
+    "type": "gate_completed",
+    "gate": "code_review",
+    "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "specRevision": 1,
+    "outcome": "passed"
+  },
+  { "type": "stage_changed", "stage": "qa_running" },
+  {
+    "type": "gate_completed",
+    "gate": "qa",
+    "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "specRevision": 1,
+    "outcome": "passed"
+  },
+  {
+    "type": "gate_completed",
+    "gate": "evidence_upload",
+    "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "specRevision": 1,
+    "outcome": "passed"
+  }
+]

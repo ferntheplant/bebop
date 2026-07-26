@@ -49,4 +49,41 @@ describe("typed protocol decoding", () => {
       code: "invalid_message",
     });
   });
+
+  test("returns stable invalid-message errors for invalid IDs, stages, and sequences", () => {
+    const invalidMessages: ReadonlyArray<unknown> = [
+      { ...registration, bountyId: "Bounty/unsafe" },
+      {
+        type: "event",
+        protocolVersion: 1,
+        bountyId: registration.bountyId,
+        vmId: registration.vmId,
+        sequence: 0,
+        occurredAt: "2026-07-26T12:34:56.000Z",
+        event: { type: "stage_changed", stage: "IMPLEMENTING" },
+      },
+      {
+        type: "event",
+        protocolVersion: 1,
+        bountyId: registration.bountyId,
+        vmId: registration.vmId,
+        sequence: -1,
+        occurredAt: "2026-07-26T12:34:56.000Z",
+        event: { type: "stage_changed", stage: "implementing" },
+      },
+    ];
+
+    for (const input of invalidMessages) {
+      try {
+        decodeSwordfishToBebopMessage(input);
+        throw new Error("Expected protocol decoding to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidProtocolMessageError);
+        if (error instanceof InvalidProtocolMessageError) {
+          expect(error.direction).toBe("swordfish_to_bebop");
+          expect(protocolDecodeErrorToMessage(error).code).toBe("invalid_message");
+        }
+      }
+    }
+  });
 });

@@ -19,12 +19,21 @@ import {
   ProducedEventSequence,
   ProtocolVersion,
   SeatId,
+  SpecRevision,
   Timestamp,
   VmId,
 } from "./scalars.ts";
 import { schemaLimits } from "./settings.ts";
 import { EffectiveSpec } from "./spec.ts";
-import { LeaseOwner, SeatRole, SwordfishStage, VerificationStage } from "./workflow.ts";
+import {
+  CandidateGate,
+  CandidateInvalidationReason,
+  GateOutcome,
+  LeaseOwner,
+  SeatRole,
+  SwordfishStage,
+  VerificationStage,
+} from "./workflow.ts";
 
 const ProtocolMessage = Schema.String.pipe(
   Schema.check(Schema.isMinLength(1), Schema.isMaxLength(schemaLimits.protocolMessageMaxLength), Schema.isTrimmed()),
@@ -87,9 +96,14 @@ export const EffectiveSpecSetEvent = Schema.Struct({
   spec: EffectiveSpec,
 });
 
+export const CandidateReady = Schema.Struct({
+  ...Candidate.fields,
+  disposition: Schema.Literal("candidate_ready"),
+});
+
 export const CandidateSubmittedEvent = Schema.Struct({
   type: Schema.Literal("candidate_submitted"),
-  candidate: Candidate,
+  candidate: CandidateReady,
 });
 
 export const AttentionRequiredEvent = Schema.Struct({
@@ -102,6 +116,22 @@ export const AttachmentsUpdatedEvent = Schema.Struct({
   previews: PrivatePreviewAttachments,
 });
 
+export const GateCompletedEvent = Schema.Struct({
+  type: Schema.Literal("gate_completed"),
+  gate: CandidateGate,
+  candidateSha: GitSha,
+  specRevision: SpecRevision,
+  outcome: GateOutcome,
+});
+
+export const CandidateInvalidatedEvent = Schema.Struct({
+  type: Schema.Literal("candidate_invalidated"),
+  candidateSha: GitSha,
+  specRevision: SpecRevision,
+  reason: CandidateInvalidationReason,
+  observedHeadSha: Schema.optionalKey(GitSha),
+});
+
 export const SwordfishEvent = Schema.Union([
   StageChangedEvent,
   LeaseChangedEvent,
@@ -109,6 +139,8 @@ export const SwordfishEvent = Schema.Union([
   CandidateSubmittedEvent,
   AttentionRequiredEvent,
   AttachmentsUpdatedEvent,
+  GateCompletedEvent,
+  CandidateInvalidatedEvent,
 ]);
 export type SwordfishEvent = typeof SwordfishEvent.Type;
 
@@ -163,6 +195,13 @@ export const ApproveConfigCommand = Schema.Struct({
   candidateSha: GitSha,
 });
 
+export const ExternalCiCompletedCommand = Schema.Struct({
+  type: Schema.Literal("external_ci_completed"),
+  candidateSha: GitSha,
+  specRevision: SpecRevision,
+  outcome: GateOutcome,
+});
+
 export const BebopCommand = Schema.Union([
   StopCommand,
   TakeoverCommand,
@@ -170,6 +209,7 @@ export const BebopCommand = Schema.Union([
   ExtendConstraintCommand,
   RetryStageCommand,
   ApproveConfigCommand,
+  ExternalCiCompletedCommand,
 ]);
 export type BebopCommand = typeof BebopCommand.Type;
 

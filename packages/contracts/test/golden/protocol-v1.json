@@ -1,0 +1,307 @@
+{
+  "swordfishToBebop": [
+    {
+      "type": "register",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "swordfishVersion": "0.1.0",
+      "lastProducedEventSequence": 0
+    },
+    {
+      "type": "heartbeat",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sentAt": "2026-07-26T12:34:56.000Z",
+      "lastProducedEventSequence": 2
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 1,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "effective_spec_set",
+        "spec": {
+          "revision": 1,
+          "title": "Implement replay",
+          "goal": "Replay durable events safely.",
+          "context": [],
+          "constraints": [],
+          "nonGoals": [],
+          "acceptanceCriteria": [{ "id": "ac-1", "description": "Duplicate events are no-ops." }],
+          "suggestedQaScenarios": [{ "description": "Reconnect", "expectedOutcome": "No duplicate state change." }],
+          "createdFromSeatId": "seat-ein",
+          "createdAt": "2026-07-26T12:34:56.000Z"
+        }
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 2,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "attachments_updated",
+        "previews": [{ "label": "web", "url": "https://web.example.private/", "port": 3000 }]
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 3,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": { "type": "stage_changed", "stage": "implementing" }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 4,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": { "type": "lease_changed", "seat": "ein", "seatId": "seat-ein", "owner": "swordfish" }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 5,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "candidate_submitted",
+        "candidate": {
+          "commitSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "specRevision": 1,
+          "summary": "Implement durable replay.",
+          "claimedLocalChecks": [],
+          "activeDevelopmentServers": [],
+          "knownLimitations": [],
+          "disposition": "candidate_ready"
+        }
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 6,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": { "type": "attention_required", "reason": "Review the privileged path diff." }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 7,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "gate_completed",
+        "gate": "local_validation",
+        "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "specRevision": 1,
+        "outcome": "passed"
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 8,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "candidate_invalidated",
+        "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "specRevision": 1,
+        "reason": "new_commit",
+        "observedHeadSha": "cccccccccccccccccccccccccccccccccccccccc"
+      }
+    },
+    {
+      "type": "command_result",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-01",
+      "status": "completed",
+      "reportedAt": "2026-07-26T12:34:56.000Z"
+    },
+    {
+      "type": "evidence_upload_offer",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "manifest": {
+        "bundleId": "evidence-01jz8j3d9f4x",
+        "bountyId": "bty-01jz8j3d9f4x",
+        "specRevision": 1,
+        "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "stage": "local_validation",
+        "provenance": "automated",
+        "createdAt": "2026-07-26T12:34:56.000Z",
+        "tools": [{ "name": "bun", "version": "1.3.14" }],
+        "environment": [{ "name": "linux", "version": "6.8.0" }],
+        "artifacts": [
+          {
+            "path": "validation/stdout.log",
+            "kind": "validator_log",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sizeBytes": 1024,
+            "mediaType": "text/plain"
+          }
+        ]
+      }
+    },
+    {
+      "type": "evidence_upload_finalize",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "bundleId": "evidence-01jz8j3d9f4x"
+    },
+    {
+      "type": "protocol_error",
+      "protocolVersion": 1,
+      "code": "invalid_message",
+      "message": "The message failed schema validation."
+    }
+  ],
+  "bebopToSwordfish": [
+    {
+      "type": "registered",
+      "protocolVersion": 1,
+      "connectionId": "conn-01",
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "serverTime": "2026-07-26T12:34:56.000Z",
+      "acknowledgedThrough": 0
+    },
+    {
+      "type": "event_acknowledged",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "acknowledgedThrough": 2
+    },
+    {
+      "type": "command",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-01",
+      "issuedAt": "2026-07-26T12:34:56.000Z",
+      "command": { "type": "takeover", "seat": "ein", "force": false }
+    },
+    {
+      "type": "command",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-02",
+      "issuedAt": "2026-07-26T12:34:56.000Z",
+      "command": { "type": "stop", "reason": "User requested stop." }
+    },
+    {
+      "type": "command",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-03",
+      "issuedAt": "2026-07-26T12:34:56.000Z",
+      "command": { "type": "handback", "seat": "ein" }
+    },
+    {
+      "type": "command",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-04",
+      "issuedAt": "2026-07-26T12:34:56.000Z",
+      "command": { "type": "extend_constraint", "constraint": "primary_turns" }
+    },
+    {
+      "type": "command",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-05",
+      "issuedAt": "2026-07-26T12:34:56.000Z",
+      "command": { "type": "retry_stage", "stage": "local_validation" }
+    },
+    {
+      "type": "command",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-06",
+      "issuedAt": "2026-07-26T12:34:56.000Z",
+      "command": {
+        "type": "approve_config",
+        "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "type": "command",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-07",
+      "issuedAt": "2026-07-26T12:34:56.000Z",
+      "command": {
+        "type": "external_ci_completed",
+        "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "specRevision": 1,
+        "outcome": "passed"
+      }
+    },
+    {
+      "type": "evidence_upload_required",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "bundleId": "evidence-01jz8j3d9f4x",
+      "blobs": [
+        {
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sizeBytes": 1024,
+          "uploadUrl": "https://bebop.example.private/evidence/blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expiresAt": "2026-07-26T12:39:56.000Z"
+        }
+      ]
+    },
+    {
+      "type": "evidence_upload_committed",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "bundleId": "evidence-01jz8j3d9f4x",
+      "committedAt": "2026-07-26T12:40:00.000Z"
+    },
+    {
+      "type": "evidence_upload_rejected",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "bundleId": "evidence-01jz8j3d9f4x",
+      "code": "bundle_conflict",
+      "message": "The bundle ID already identifies another manifest."
+    },
+    {
+      "type": "protocol_error",
+      "protocolVersion": 1,
+      "code": "sequence_gap",
+      "message": "Expected sequence 9 but received 10."
+    }
+  ]
+}

@@ -29,6 +29,15 @@ export type SeatId = typeof SeatId.Type;
 export const CommandId = SafeIdentifier.pipe(Schema.brand("CommandId"));
 export type CommandId = typeof CommandId.Type;
 
+export const CorrelationId = SafeIdentifier.pipe(Schema.brand("CorrelationId"));
+export type CorrelationId = typeof CorrelationId.Type;
+
+export const ApiRequestId = SafeIdentifier.pipe(Schema.brand("ApiRequestId"));
+export type ApiRequestId = typeof ApiRequestId.Type;
+
+export const IdempotencyKey = SafeIdentifier.pipe(Schema.brand("IdempotencyKey"));
+export type IdempotencyKey = typeof IdempotencyKey.Type;
+
 export const AcceptanceCriterionId = SafeIdentifier.pipe(Schema.brand("AcceptanceCriterionId"));
 export type AcceptanceCriterionId = typeof AcceptanceCriterionId.Type;
 
@@ -74,6 +83,33 @@ export const EventSequence = Schema.Number.pipe(
 );
 export type EventSequence = typeof EventSequence.Type;
 
+export const WorkflowRevision = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+  Schema.brand("WorkflowRevision"),
+);
+export type WorkflowRevision = typeof WorkflowRevision.Type;
+
+export const BountyEventCursor = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+  Schema.brand("BountyEventCursor"),
+);
+export type BountyEventCursor = typeof BountyEventCursor.Type;
+
+export const BountyEventCursorString = Schema.String.pipe(
+  Schema.check(
+    Schema.isPattern(/^(?:0|[1-9][0-9]*)$/),
+    Schema.makeFilter<string>((value) =>
+      Number.isSafeInteger(Number(value)) ? undefined : "Expected a safe bounty event cursor",
+    ),
+  ),
+  Schema.brand("BountyEventCursorString"),
+);
+export type BountyEventCursorString = typeof BountyEventCursorString.Type;
+
+export const NonNegativeInteger = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+);
+
 export const ProducedEventSequence = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
   Schema.brand("ProducedEventSequence"),
@@ -85,6 +121,12 @@ export const ByteCount = Schema.Number.pipe(
   Schema.brand("ByteCount"),
 );
 export type ByteCount = typeof ByteCount.Type;
+
+export const PositiveByteCount = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+  Schema.brand("PositiveByteCount"),
+);
+export type PositiveByteCount = typeof PositiveByteCount.Type;
 
 const PositiveSafeInteger = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
@@ -128,6 +170,33 @@ export type LineNumber = typeof LineNumber.Type;
 
 export const ConstraintLimit = PositiveSafeInteger.pipe(Schema.brand("ConstraintLimit"));
 export type ConstraintLimit = typeof ConstraintLimit.Type;
+
+export const RepositorySlug = Schema.String.pipe(
+  Schema.check(Schema.isMinLength(3), Schema.isMaxLength(200), Schema.isPattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)),
+  Schema.brand("RepositorySlug"),
+);
+export type RepositorySlug = typeof RepositorySlug.Type;
+
+export const GitRef = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(255),
+    Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/),
+    Schema.makeFilter<string>((value) => {
+      const segments = value.split("/");
+      return value.includes("..") ||
+        value.includes("//") ||
+        value.endsWith(".") ||
+        value.endsWith("/") ||
+        value.endsWith(".lock") ||
+        segments.some((segment) => segment.startsWith("."))
+        ? "Expected a canonical Git ref"
+        : undefined;
+    }),
+  ),
+  Schema.brand("GitRef"),
+);
+export type GitRef = typeof GitRef.Type;
 
 export const currentProtocolVersion = 1 as const;
 export const ProtocolVersion = Schema.Literal(currentProtocolVersion);

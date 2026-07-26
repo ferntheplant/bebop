@@ -1070,7 +1070,7 @@ A deep OpenCode-plugin cockpit — exposing shell access, seat multiplexing, and
 ### 17.1 API-first discipline _(resolved)_
 
 - All request, response, and event shapes are defined as **Effect Schema** types in a shared package.
-- The OpenAPI document is **generated from those schemas** via `@effect/platform` HttpApi; it is the contract future clients (GUI, Linear) build against.
+- The OpenAPI document is **generated from those schemas** via Effect HttpApi (currently `effect/unstable/httpapi` in the pinned Effect 4 beta); it is the contract future clients (GUI, Linear) build against.
 - The CLI is a thin wrapper over the generated client with **zero CLI-only logic**; anything the CLI can do, any API client can do.
 - Every CLI command supports `--json`.
 
@@ -1506,8 +1506,8 @@ The **Effect ecosystem** on **Bun** _(runtime choice provisional)_, across all c
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Language / runtime   | TypeScript on Bun (single-binary compile for Swordfish and the CLI)                                                                                          |
 | Shared contracts     | Effect Schema in a shared monorepo package — API messages, Swordfish events/commands, effective specs, candidates, findings, constraints, evidence manifests |
-| HTTP API             | `@effect/platform` HttpApi — OpenAPI generated directly from the schemas                                                                                     |
-| CLI                  | `@effect/cli`, wrapping the generated API client                                                                                                             |
+| HTTP API             | Effect 4 `effect/unstable/httpapi` — OpenAPI generated directly from the schemas                                                                             |
+| CLI                  | Effect 4 `effect/unstable/cli`, wrapping the generated API client                                                                                            |
 | Postgres             | `@effect/sql-pg` + its Migrator                                                                                                                              |
 | Swordfish SQLite     | `@effect/sql-sqlite`                                                                                                                                         |
 | Background jobs      | Durable job rows in Postgres worked by Effect fibers in `bebop-worker`; `@effect/cluster` only if that outgrows a single worker _(provisional)_              |

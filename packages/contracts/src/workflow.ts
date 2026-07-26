@@ -52,3 +52,19 @@ export type AgentDisposition = typeof AgentDisposition.Type;
 export const verificationStages = ["local_validation", "pr_ci", "code_review", "qa"] as const;
 export const VerificationStage = Schema.Literals(verificationStages);
 export type VerificationStage = typeof VerificationStage.Type;
+
+export const candidateGates = ["local_validation", "pr_ci", "code_review", "qa", "evidence_upload"] as const;
+export const CandidateGate = Schema.Literals(candidateGates);
+export type CandidateGate = typeof CandidateGate.Type;
+
+export const gateStatuses = ["not_started", "pending", "passed", "failed"] as const;
+export const GateStatus = Schema.Literals(gateStatuses);
+export type GateStatus = typeof GateStatus.Type;
+
+export const gateOutcomes = ["passed", "failed"] as const;
+export const GateOutcome = Schema.Literals(gateOutcomes);
+export type GateOutcome = typeof GateOutcome.Type;
+
+export const candidateInvalidationReasons = ["new_commit", "branch_head_changed", "spec_revised"] as const;
+export const CandidateInvalidationReason = Schema.Literals(candidateInvalidationReasons);
+export type CandidateInvalidationReason = typeof CandidateInvalidationReason.Type;

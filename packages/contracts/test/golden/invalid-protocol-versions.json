@@ -1,0 +1,19 @@
+[
+  {
+    "type": "register",
+    "protocolVersion": 0,
+    "bountyId": "bty-01jz8j3d9f4x",
+    "vmId": "vm_01JZ8J3D9F4X",
+    "swordfishVersion": "0.1.0",
+    "lastProducedEventSequence": 0
+  },
+  {
+    "type": "registered",
+    "protocolVersion": 2,
+    "connectionId": "conn-01",
+    "bountyId": "bty-01jz8j3d9f4x",
+    "vmId": "vm_01JZ8J3D9F4X",
+    "serverTime": "2026-07-26T12:34:56.000Z",
+    "acknowledgedThrough": 0
+  }
+]

@@ -1,1 +1,2 @@
-export const bebopProtocolVersion = 1 as const;
+export * from "./scalars.ts";
+export * from "./workflow.ts";

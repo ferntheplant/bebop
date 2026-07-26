@@ -215,6 +215,10 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 ### Milestone 2: Define Contracts and State Machines
 
+**Status:** In progress
+
+**Current checkpoint:** Scalar schemas and workflow vocabulary.
+
 **Work**
 
 - Encode IDs, timestamps, SHAs, sequence numbers, and protocol versions as schemas.

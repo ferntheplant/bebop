@@ -16,6 +16,9 @@
   "scripts": {
     "build": "vp pack"
   },
+  "dependencies": {
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "typescript": "catalog:",
     "vite-plus": "catalog:"

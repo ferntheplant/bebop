@@ -1,13 +1,22 @@
 import { Schema } from "effect";
 
+import { PrivatePreviewAttachments } from "./attachments.ts";
 import { Candidate } from "./candidate.ts";
 import { ConstraintKey } from "./constraints.ts";
+import {
+  EvidenceUploadCommittedMessage,
+  EvidenceUploadFinalizeMessage,
+  EvidenceUploadOfferMessage,
+  EvidenceUploadRejectedMessage,
+  EvidenceUploadRequiredMessage,
+} from "./evidence-upload.ts";
 import {
   BountyId,
   CommandId,
   ConnectionId,
   EventSequence,
   GitSha,
+  ProducedEventSequence,
   ProtocolVersion,
   SeatId,
   Timestamp,
@@ -88,12 +97,18 @@ export const AttentionRequiredEvent = Schema.Struct({
   reason: ProtocolMessage,
 });
 
+export const AttachmentsUpdatedEvent = Schema.Struct({
+  type: Schema.Literal("attachments_updated"),
+  previews: PrivatePreviewAttachments,
+});
+
 export const SwordfishEvent = Schema.Union([
   StageChangedEvent,
   LeaseChangedEvent,
   EffectiveSpecSetEvent,
   CandidateSubmittedEvent,
   AttentionRequiredEvent,
+  AttachmentsUpdatedEvent,
 ]);
 export type SwordfishEvent = typeof SwordfishEvent.Type;
 
@@ -102,7 +117,7 @@ export const EventMessage = Schema.Struct({
   protocolVersion: ProtocolVersion,
   bountyId: BountyId,
   vmId: VmId,
-  sequence: EventSequence,
+  sequence: ProducedEventSequence,
   occurredAt: Timestamp,
   event: SwordfishEvent,
 });
@@ -208,6 +223,8 @@ export const SwordfishToBebopMessage = Schema.Union([
   HeartbeatMessage,
   EventMessage,
   CommandResultMessage,
+  EvidenceUploadOfferMessage,
+  EvidenceUploadFinalizeMessage,
   ProtocolErrorMessage,
 ]);
 export type SwordfishToBebopMessage = typeof SwordfishToBebopMessage.Type;
@@ -216,6 +233,9 @@ export const BebopToSwordfishMessage = Schema.Union([
   RegisteredMessage,
   EventAcknowledgedMessage,
   CommandMessage,
+  EvidenceUploadRequiredMessage,
+  EvidenceUploadCommittedMessage,
+  EvidenceUploadRejectedMessage,
   ProtocolErrorMessage,
 ]);
 export type BebopToSwordfishMessage = typeof BebopToSwordfishMessage.Type;

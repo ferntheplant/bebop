@@ -54,6 +54,22 @@ describe("Swordfish to Bebop protocol", () => {
     expect(Schema.encodeSync(SwordfishToBebopMessage)(decoded)).toEqual(encoded);
   });
 
+  test("round-trips attachment replacement snapshots", () => {
+    const encoded = {
+      ...identity,
+      type: "event",
+      sequence: 14,
+      occurredAt: timestamp,
+      event: {
+        type: "attachments_updated",
+        previews: [{ label: "web", url: "https://web.example.private/", port: 3_000 }],
+      },
+    } as const;
+    const decoded = Schema.decodeUnknownSync(SwordfishToBebopMessage)(encoded);
+
+    expect(Schema.encodeSync(SwordfishToBebopMessage)(decoded)).toEqual(encoded);
+  });
+
   test("round-trips command results for deduplication", () => {
     const encoded = {
       ...identity,
@@ -95,6 +111,15 @@ describe("Swordfish to Bebop protocol", () => {
         ...identity,
         type: "event",
         sequence: -1,
+        occurredAt: timestamp,
+        event: { type: "stage_changed", stage: "implementing" },
+      }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SwordfishToBebopMessage)({
+        ...identity,
+        type: "event",
+        sequence: 0,
         occurredAt: timestamp,
         event: { type: "stage_changed", stage: "implementing" },
       }),

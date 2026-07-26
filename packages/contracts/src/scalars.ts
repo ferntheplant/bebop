@@ -74,6 +74,12 @@ export const EventSequence = Schema.Number.pipe(
 );
 export type EventSequence = typeof EventSequence.Type;
 
+export const ProducedEventSequence = Schema.Number.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+  Schema.brand("ProducedEventSequence"),
+);
+export type ProducedEventSequence = typeof ProducedEventSequence.Type;
+
 export const ByteCount = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
   Schema.brand("ByteCount"),
@@ -89,6 +95,33 @@ export type SpecRevision = typeof SpecRevision.Type;
 
 export const Port = PositiveSafeInteger.pipe(Schema.check(Schema.isLessThanOrEqualTo(65_535)), Schema.brand("Port"));
 export type Port = typeof Port.Type;
+
+export const HttpsUrl = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(schemaLimits.httpsUrlMaxLength),
+    Schema.isTrimmed(),
+    Schema.makeFilter<string>((value) => {
+      try {
+        const url = Schema.decodeUnknownSync(Schema.URLFromString)(value);
+        if (url.protocol !== "https:") {
+          return "Expected an HTTPS URL";
+        }
+        if (url.username.length > 0 || url.password.length > 0) {
+          return "Expected an HTTPS URL without embedded credentials";
+        }
+        if (url.hash.length > 0) {
+          return "Expected an HTTPS URL without a fragment";
+        }
+        return Schema.encodeSync(Schema.URLFromString)(url) === value ? undefined : "Expected a canonical HTTPS URL";
+      } catch {
+        return "Expected a valid HTTPS URL";
+      }
+    }),
+  ),
+  Schema.brand("HttpsUrl"),
+);
+export type HttpsUrl = typeof HttpsUrl.Type;
 
 export const LineNumber = PositiveSafeInteger.pipe(Schema.brand("LineNumber"));
 export type LineNumber = typeof LineNumber.Type;

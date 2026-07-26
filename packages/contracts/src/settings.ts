@@ -1,5 +1,8 @@
 export const schemaLimits = {
   acceptanceCriteriaMinItems: 1,
+  attachmentHostMaxLength: 253,
+  attachmentLabelMaxLength: 100,
+  attachmentUserMaxLength: 64,
   bountyIdMaxLength: 63,
   candidateCommandMaxLength: 1_000,
   candidateServerNameMaxLength: 100,
@@ -10,6 +13,7 @@ export const schemaLimits = {
   evidenceMediaTypeMaxLength: 255,
   evidenceToolNameMaxLength: 100,
   evidenceVersionMaxLength: 200,
+  httpsUrlMaxLength: 4_096,
   opaqueIdentifierMaxLength: 128,
   protocolComponentVersionMaxLength: 200,
   protocolMessageMaxLength: 4_000,

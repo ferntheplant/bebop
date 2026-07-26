@@ -6,6 +6,7 @@ import {
   CommandId,
   EventSequence,
   GitSha,
+  ProducedEventSequence,
   ProtocolVersion,
   SeatId,
   Timestamp,
@@ -60,6 +61,11 @@ describe("wire scalar schemas", () => {
     expect(() => Schema.decodeUnknownSync(EventSequence)(-1)).toThrow();
     expect(() => Schema.decodeUnknownSync(EventSequence)(1.5)).toThrow();
     expect(() => Schema.decodeUnknownSync(EventSequence)(Number.MAX_SAFE_INTEGER + 1)).toThrow();
+  });
+
+  test("reserves zero for cursors rather than produced events", () => {
+    expect(Schema.decodeUnknownSync(ProducedEventSequence)(1)).toBe(1);
+    expect(() => Schema.decodeUnknownSync(ProducedEventSequence)(0)).toThrow();
   });
 
   test("rejects unknown protocol versions", () => {

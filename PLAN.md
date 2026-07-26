@@ -18,8 +18,8 @@ Progress through 2026-07-26:
 
 - **Milestone 0 is in progress:** Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The Postgres/SQLite round trip, pinned OpenCode fake-model turn, plugin lease guard, and tmux input-lock spikes remain.
 - **Milestone 1 is complete and validated:** the monorepo, three apps, shared contracts and testkit packages, strict per-workspace TypeScript environments, conventional-commit hooks, CI, builds, process-level entrypoint tests, artifact smokes, and workspace documentation are in place. Frozen install and `vp run ready` pass.
-- **Milestone 2 is in progress:** scalar schemas, workflow vocabulary, effective specs, candidates, review findings, constraint profiles, evidence manifests, CAS metadata, and the core bidirectional Bebop-Swordfish control protocol are implemented.
-- **Milestone 2 remaining:** attachment and evidence-upload protocol extensions, local `sf` control contracts, typed process configuration, Bebop HTTP/SSE contracts and OpenAPI, projection/workflow reducers, and golden replay/idempotency tests.
+- **Milestone 2 is in progress:** scalar schemas, workflow vocabulary, effective specs, candidates, review findings, constraint profiles, evidence manifests, CAS metadata, attachment snapshots, evidence-upload negotiation, stable protocol decode errors, and the bidirectional Bebop-Swordfish control protocol are implemented.
+- **Milestone 2 remaining:** local `sf` control contracts, typed process configuration, Bebop HTTP/SSE contracts and OpenAPI, projection/workflow reducers, and golden replay/idempotency tests.
 
 ## 2. Repository Decisions
 
@@ -226,7 +226,7 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 **Status:** In progress
 
-**Current checkpoint:** Core Bebop-Swordfish control protocol envelopes.
+**Current checkpoint:** Attachment and evidence-upload protocol extensions with typed boundary errors.
 
 **Work**
 

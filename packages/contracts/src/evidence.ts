@@ -77,6 +77,14 @@ const EvidenceArtifacts = Schema.Array(EvidenceArtifact).pipe(
       if (paths.size !== artifacts.length) {
         return "Expected unique artifact paths";
       }
+      const sizesByHash = new Map<Sha256, ByteCount>();
+      for (const artifact of artifacts) {
+        const existingSize = sizesByHash.get(artifact.sha256);
+        if (existingSize !== undefined && existingSize !== artifact.sizeBytes) {
+          return "Expected one size for each evidence blob hash";
+        }
+        sizesByHash.set(artifact.sha256, artifact.sizeBytes);
+      }
       const totalSize = artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0);
       return totalSize > schemaLimits.evidenceBundleMaxBytes
         ? `Expected at most ${schemaLimits.evidenceBundleMaxBytes} logical evidence bytes`
@@ -98,6 +106,20 @@ export const EvidenceBundleManifest = Schema.Struct({
   artifacts: EvidenceArtifacts,
 });
 export type EvidenceBundleManifest = typeof EvidenceBundleManifest.Type;
+
+export const EvidenceBlobDescriptor = Schema.Struct({
+  sha256: Sha256,
+  sizeBytes: ByteCount,
+});
+export type EvidenceBlobDescriptor = typeof EvidenceBlobDescriptor.Type;
+
+export function evidenceBlobDescriptors(manifest: EvidenceBundleManifest): ReadonlyArray<EvidenceBlobDescriptor> {
+  const descriptors = new Map<Sha256, EvidenceBlobDescriptor>();
+  for (const artifact of manifest.artifacts) {
+    descriptors.set(artifact.sha256, { sha256: artifact.sha256, sizeBytes: artifact.sizeBytes });
+  }
+  return [...descriptors.values()];
+}
 
 export function evidenceBlobObjectKey(sha256: Sha256): string {
   return `blobs/sha256/${sha256.slice(0, 2)}/${sha256}`;

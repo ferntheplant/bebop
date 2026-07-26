@@ -1,7 +1,7 @@
 import { DateTime, Schema } from "effect";
 import { describe, expect, test } from "vite-plus/test";
 
-import { EvidenceBundleManifest, evidenceBlobObjectKey } from "#src/evidence.ts";
+import { EvidenceBundleManifest, evidenceBlobDescriptors, evidenceBlobObjectKey } from "#src/evidence.ts";
 import { Sha256 } from "#src/scalars.ts";
 import { schemaLimits } from "#src/settings.ts";
 
@@ -51,6 +51,23 @@ describe("EvidenceBundleManifest", () => {
     });
 
     expect(manifest.artifacts).toHaveLength(2);
+    expect(evidenceBlobDescriptors(manifest)).toEqual([{ sha256: artifactHash, sizeBytes: 1_024 }]);
+  });
+
+  test("rejects conflicting sizes for the same content hash", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(EvidenceBundleManifest)({
+        ...encodedManifest,
+        artifacts: [
+          encodedManifest.artifacts[0],
+          {
+            ...encodedManifest.artifacts[0],
+            path: "validation/combined.log",
+            sizeBytes: 2_048,
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   test("requires at least one artifact with a unique canonical path", () => {

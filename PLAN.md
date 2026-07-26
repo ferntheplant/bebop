@@ -131,12 +131,12 @@ Scopes such as `bebop`, `swordfish`, `plugin`, and `contracts` are recommended b
 The root package exposes a small command surface:
 
 ```text
-bun run dev
-bun run check
-bun run test
-bun run test:integration
-bun run test:e2e
-bun run ready
+vp run dev
+vp run check
+vp run test
+vp run test:integration
+vp run test:e2e
+vp run ready
 ```
 
 `ready` runs formatting verification, linting, type checking, unit tests, and integration tests that do not require external credentials. Credentialed exe.dev and GitHub smoke tests remain separate commands.
@@ -193,9 +193,11 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 ### Milestone 1: Initialize the Monorepo
 
+**Status:** Complete (2026-07-26)
+
 **Work**
 
-- Initialize Git without changing `SPEC.md` or `PLAN.md` content.
+- Initialize Git without changing `SPEC.md`; update `PLAN.md` only when implementation corrects a planning assumption.
 - Create the root Bun workspace and lockfile.
 - Add the Vite+ configuration adapted from Blueberry.
 - Add strict root and workspace TypeScript configurations.
@@ -207,7 +209,7 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 **Exit criteria**
 
-- A clean clone can run `bun install --frozen-lockfile` and `bun run ready`.
+- A clean clone can run `vp install --frozen-lockfile` and `vp run ready`.
 - Each app has a minimal executable or loadable entrypoint.
 - Invalid formatting, lint, types, tests, and commit messages each fail in the expected layer.
 
@@ -546,7 +548,7 @@ A milestone is complete only when:
 - resources are cleaned after success and failure;
 - logs identify the bounty and operation;
 - the relevant `SPEC.md` acceptance criteria are demonstrably closer to passing;
-- `bun run ready` passes from a clean checkout;
+- `vp run ready` passes from a clean checkout;
 - the plan is updated when implementation invalidates an assumption.
 
 The MVP is complete when Milestone 11 passes and all acceptance criteria in `SPEC.md` section 27 have a corresponding automated test, provider smoke test, or explicitly documented manual inspection step.

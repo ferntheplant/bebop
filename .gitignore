@@ -8,9 +8,17 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.vite
+coverage
 dist
 dist-ssr
+build
 *.local
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+.bebop-data/
+.test-data/
 
 # dotenv environment variable files
 .env

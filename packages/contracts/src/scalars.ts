@@ -149,32 +149,80 @@ export type SpecRevision = typeof SpecRevision.Type;
 export const Port = PositiveSafeInteger.pipe(Schema.check(Schema.isLessThanOrEqualTo(65_535)), Schema.brand("Port"));
 export type Port = typeof Port.Type;
 
+/**
+ * Shared URL discipline: parseable, no embedded credentials, no fragment, and identical to
+ * its own canonical form so two spellings of one URL cannot both be stored.
+ *
+ * `URL.canParse` keeps this a total function. The earlier version ran a schema decode
+ * inside the filter and used `try`/`catch` for control flow on every value, which matters
+ * once this validates upload targets in bulk.
+ */
+function checkUrl(value: string, allowedProtocols: ReadonlyArray<string>, label: string): string | undefined {
+  if (!URL.canParse(value)) {
+    return `Expected a valid ${label}`;
+  }
+  const url = new URL(value);
+  if (!allowedProtocols.includes(url.protocol)) {
+    return `Expected ${label === "HTTPS URL" ? "an" : "a"} ${label}`;
+  }
+  if (url.username.length > 0 || url.password.length > 0) {
+    return `Expected a ${label} without embedded credentials`;
+  }
+  if (url.hash.length > 0) {
+    return `Expected a ${label} without a fragment`;
+  }
+  return url.href === value ? undefined : `Expected a canonical ${label}`;
+}
+
 export const HttpsUrl = Schema.String.pipe(
   Schema.check(
     Schema.isMinLength(1),
     Schema.isMaxLength(schemaLimits.httpsUrlMaxLength),
     Schema.isTrimmed(),
-    Schema.makeFilter<string>((value) => {
-      try {
-        const url = Schema.decodeUnknownSync(Schema.URLFromString)(value);
-        if (url.protocol !== "https:") {
-          return "Expected an HTTPS URL";
-        }
-        if (url.username.length > 0 || url.password.length > 0) {
-          return "Expected an HTTPS URL without embedded credentials";
-        }
-        if (url.hash.length > 0) {
-          return "Expected an HTTPS URL without a fragment";
-        }
-        return Schema.encodeSync(Schema.URLFromString)(url) === value ? undefined : "Expected a canonical HTTPS URL";
-      } catch {
-        return "Expected a valid HTTPS URL";
-      }
-    }),
+    Schema.makeFilter<string>((value) => checkUrl(value, ["https:"], "HTTPS URL")),
   ),
   Schema.brand("HttpsUrl"),
 );
 export type HttpsUrl = typeof HttpsUrl.Type;
+
+/**
+ * The address of a development server ein reports alongside a candidate.
+ *
+ * These run inside the bounty VM and are plain HTTP far more often than not, so `HttpsUrl`
+ * is genuinely the wrong schema — but the canonicalization discipline still applies, and
+ * this was the one raw `Schema.URLFromString` left in the package.
+ *
+ * The host is deliberately unconstrained. A development server bound to `0.0.0.0` and
+ * referred to by the VM's own hostname is ordinary, and `SPEC.md` does not require
+ * loopback, so narrowing this to `localhost` would invent a constraint the design has not
+ * made.
+ */
+export const DevelopmentServerUrl = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(schemaLimits.httpsUrlMaxLength),
+    Schema.isTrimmed(),
+    Schema.makeFilter<string>((value) => checkUrl(value, ["http:", "https:"], "development server URL")),
+  ),
+  Schema.brand("DevelopmentServerUrl"),
+);
+export type DevelopmentServerUrl = typeof DevelopmentServerUrl.Type;
+
+/**
+ * An opaque pagination cursor for `GET /api/bounties`.
+ *
+ * Bounded and pattern-checked like every other identifier in the package. The alphabet is
+ * base64url so an encoded cursor needs no further escaping in a query string.
+ */
+export const BountyListCursor = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(schemaLimits.bountyListCursorMaxLength),
+    Schema.isPattern(/^[A-Za-z0-9_-]+$/),
+  ),
+  Schema.brand("BountyListCursor"),
+);
+export type BountyListCursor = typeof BountyListCursor.Type;
 
 export const LineNumber = PositiveSafeInteger.pipe(Schema.brand("LineNumber"));
 export type LineNumber = typeof LineNumber.Type;

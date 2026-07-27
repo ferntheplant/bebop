@@ -4,6 +4,7 @@ export const schemaLimits = {
   attachmentLabelMaxLength: 100,
   attachmentUserMaxLength: 64,
   bountyIdMaxLength: 63,
+  bountyListCursorMaxLength: 256,
   candidateCommandMaxLength: 1_000,
   candidateServerNameMaxLength: 100,
   candidateSummaryMaxLength: 4_000,

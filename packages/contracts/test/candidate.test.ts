@@ -29,8 +29,27 @@ describe("Candidate", () => {
   test("decodes and re-encodes candidate metadata", () => {
     const candidate = Schema.decodeUnknownSync(Candidate)(encodedCandidate);
 
-    expect(candidate.activeDevelopmentServers[0]?.url).toBeInstanceOf(URL);
+    expect(candidate.activeDevelopmentServers[0]?.url).toBe("http://127.0.0.1:3000/");
     expect(Schema.encodeSync(Candidate)(candidate)).toEqual(encodedCandidate);
+  });
+
+  test("holds development server urls to the same canonicalization as every other url", () => {
+    const withUrl = (url: string) => ({
+      ...encodedCandidate,
+      activeDevelopmentServers: [{ name: "api", port: 3000, url }],
+    });
+
+    // `http://127.0.0.1:3000` normalises to a trailing slash, so the non-canonical
+    // spelling must not be storable alongside the canonical one.
+    expect(() => Schema.decodeUnknownSync(Candidate)(withUrl("http://127.0.0.1:3000"))).toThrow();
+    expect(() => Schema.decodeUnknownSync(Candidate)(withUrl("http://user:pw@127.0.0.1:3000/"))).toThrow();
+    expect(() => Schema.decodeUnknownSync(Candidate)(withUrl("http://127.0.0.1:3000/#top"))).toThrow();
+    expect(() => Schema.decodeUnknownSync(Candidate)(withUrl("ftp://127.0.0.1:3000/"))).toThrow();
+    expect(() => Schema.decodeUnknownSync(Candidate)(withUrl("not a url"))).toThrow();
+
+    // Plain HTTP is the normal case for a server running inside the bounty VM.
+    const decoded = Schema.decodeUnknownSync(Candidate)(withUrl("https://api.vm.internal/"));
+    expect(decoded.activeDevelopmentServers[0]?.url).toBe("https://api.vm.internal/");
   });
 
   test("permits candidates without checks or active development servers", () => {

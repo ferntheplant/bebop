@@ -2,7 +2,7 @@ import { Schema } from "effect";
 
 import { PrivatePreviewAttachments } from "./attachments.ts";
 import { Candidate } from "./candidate.ts";
-import { ConstraintKey } from "./constraints.ts";
+import { ExtendConstraintCommand, RetryStageCommand, StopCommand, TakeoverCommand } from "./commands.ts";
 import {
   EvidenceUploadCommittedMessage,
   EvidenceUploadFinalizeMessage,
@@ -32,7 +32,6 @@ import {
   LeaseOwner,
   SeatRole,
   SwordfishStage,
-  VerificationStage,
 } from "./workflow.ts";
 
 const ProtocolMessage = Schema.String.pipe(
@@ -164,30 +163,9 @@ export const EventAcknowledgedMessage = Schema.Struct({
 });
 export type EventAcknowledgedMessage = typeof EventAcknowledgedMessage.Type;
 
-export const StopCommand = Schema.Struct({
-  type: Schema.Literal("stop"),
-  reason: Schema.optionalKey(ProtocolMessage),
-});
-
-export const TakeoverCommand = Schema.Struct({
-  type: Schema.Literal("takeover"),
-  seat: SeatRole,
-  force: Schema.Boolean,
-});
-
 export const HandbackCommand = Schema.Struct({
   type: Schema.Literal("handback"),
   seat: SeatRole,
-});
-
-export const ExtendConstraintCommand = Schema.Struct({
-  type: Schema.Literal("extend_constraint"),
-  constraint: ConstraintKey,
-});
-
-export const RetryStageCommand = Schema.Struct({
-  type: Schema.Literal("retry_stage"),
-  stage: VerificationStage,
 });
 
 export const ApproveConfigCommand = Schema.Struct({
@@ -201,6 +179,10 @@ export const ExternalCiCompletedCommand = Schema.Struct({
   specRevision: SpecRevision,
   outcome: GateOutcome,
 });
+
+// Re-exported so a consumer of the protocol does not need to know which payloads are
+// shared with the local `sf` socket. `commands.ts` records what that sharing costs.
+export { ExtendConstraintCommand, RetryStageCommand, StopCommand, TakeoverCommand };
 
 export const BebopCommand = Schema.Union([
   StopCommand,

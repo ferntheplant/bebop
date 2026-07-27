@@ -17,6 +17,7 @@ import {
   BountyEventCursor,
   BountyEventCursorString,
   BountyId,
+  BountyListCursor,
   GitRef,
   GitSha,
   HttpsUrl,
@@ -73,7 +74,7 @@ export type BountyDetail = typeof BountyDetail.Type;
 export const CreateBountyResponse = BountyDetail.pipe(HttpApiSchema.status("Created"));
 export const ListBountiesResponse = Schema.Struct({
   bounties: Schema.Array(BountySummary),
-  nextCursor: Schema.optionalKey(Schema.String),
+  nextCursor: Schema.optionalKey(BountyListCursor),
 });
 export const GetBountyResponse = BountyDetail;
 export const BountyAttachmentsResponse = AttachmentSnapshot;
@@ -175,7 +176,7 @@ export const CreateBountyEndpoint = HttpApiEndpoint.post("createBounty", "/api/b
   error: [...commonErrors, ConflictError, PayloadTooLargeError, UnprocessableEntityError],
 });
 export const ListBountiesEndpoint = HttpApiEndpoint.get("listBounties", "/api/bounties", {
-  query: { cursor: Schema.optionalKey(Schema.String) },
+  query: { cursor: Schema.optionalKey(BountyListCursor) },
   success: ListBountiesResponse,
   error: commonErrors,
 });

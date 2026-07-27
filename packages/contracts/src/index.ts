@@ -2,6 +2,7 @@ export * from "./attachments.ts";
 export * from "./candidate.ts";
 export * from "./constraints.ts";
 export * from "./evidence.ts";
+export * from "./feedback.ts";
 export * from "./evidence-upload.ts";
 export * from "./http.ts";
 export * from "./protocol-decode.ts";

@@ -10,6 +10,7 @@ import {
   EvidenceUploadRejectedMessage,
   EvidenceUploadRequiredMessage,
 } from "./evidence-upload.ts";
+import { GateFeedback, isFeedbackForGate } from "./feedback.ts";
 import {
   BountyId,
   CommandId,
@@ -115,13 +116,42 @@ export const AttachmentsUpdatedEvent = Schema.Struct({
   previews: PrivatePreviewAttachments,
 });
 
-export const GateCompletedEvent = Schema.Struct({
+const GateCompletedEventBase = Schema.Struct({
   type: Schema.Literal("gate_completed"),
   gate: CandidateGate,
   candidateSha: GitSha,
   specRevision: SpecRevision,
   outcome: GateOutcome,
+  feedback: Schema.optionalKey(GateFeedback),
 });
+
+/**
+ * A gate outcome, with the structured result that produced it.
+ *
+ * Two rules are enforced here rather than left to the implementation:
+ *
+ * 1. **A failed gate must carry feedback.** A failure with no explanation cannot be
+ *    returned to ein as a revision packet (SPEC section 12.8), so the schema refuses it.
+ *    A stage whose agent produced nothing usable says so with `kind: "unstructured"` and a
+ *    reason — that is the detectable error, and it is not the same value as an empty
+ *    findings list.
+ * 2. **The feedback must match the gate.** Review findings cannot arrive on a QA gate.
+ *
+ * A passed gate may still carry feedback: non-blocking review findings ride along and are
+ * summarised at ready time (SPEC section 12.6).
+ */
+export const GateCompletedEvent = GateCompletedEventBase.pipe(
+  Schema.check(
+    Schema.makeFilter<typeof GateCompletedEventBase.Type>((event) => {
+      if (event.outcome === "failed" && event.feedback === undefined) {
+        return { path: ["feedback"], issue: "Expected a failed gate to carry structured feedback" };
+      }
+      return event.feedback === undefined || isFeedbackForGate(event.gate, event.feedback)
+        ? undefined
+        : { path: ["feedback"], issue: `Expected feedback matching the ${event.gate} gate` };
+    }),
+  ),
+);
 
 export const CandidateInvalidatedEvent = Schema.Struct({
   type: Schema.Literal("candidate_invalidated"),

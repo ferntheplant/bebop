@@ -106,13 +106,15 @@ describe("workflow core", () => {
     let state = throughPushedCandidate();
     state = apply(state, 5, { type: "stage_changed", stage: "cancelling" });
 
-    // In-flight hooks and CI polls legitimately land after a stop command.
+    // In-flight hooks and CI polls legitimately land after a stop command. A failed gate
+    // must carry the feedback that explains it, or the contract rejects the event.
     state = apply(state, 6, {
       type: "gate_completed",
       gate: "pr_ci",
       candidateSha,
       specRevision: 1,
       outcome: "failed",
+      feedback: { kind: "external_ci", checks: [{ name: "build", outcome: "failed" }] },
     });
 
     expect(state.stage).toBe("cancelling");

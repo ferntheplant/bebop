@@ -47,6 +47,29 @@ export type ReviewFindingId = typeof ReviewFindingId.Type;
 export const EvidenceBundleId = SafeIdentifier.pipe(Schema.brand("EvidenceBundleId"));
 export type EvidenceBundleId = typeof EvidenceBundleId.Type;
 
+export const QaScenarioId = SafeIdentifier.pipe(Schema.brand("QaScenarioId"));
+export type QaScenarioId = typeof QaScenarioId.Type;
+
+export const ApiTokenId = SafeIdentifier.pipe(Schema.brand("ApiTokenId"));
+export type ApiTokenId = typeof ApiTokenId.Type;
+
+/** The human-facing name of a bearer token, such as `fern-cli` (SPEC section 17.4). */
+export const ApiTokenName = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(schemaLimits.apiTokenNameMaxLength),
+    Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/),
+  ),
+  Schema.brand("ApiTokenName"),
+);
+export type ApiTokenName = typeof ApiTokenName.Type;
+
+export const ApiTokenSecret = Schema.String.pipe(
+  Schema.check(Schema.isMinLength(1), Schema.isMaxLength(schemaLimits.apiTokenSecretMaxLength), Schema.isTrimmed()),
+  Schema.brand("ApiTokenSecret"),
+);
+export type ApiTokenSecret = typeof ApiTokenSecret.Type;
+
 export const ConnectionId = SafeIdentifier.pipe(Schema.brand("ConnectionId"));
 export type ConnectionId = typeof ConnectionId.Type;
 

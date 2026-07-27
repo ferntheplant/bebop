@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { GitSha, Port, SpecRevision } from "./scalars.ts";
+import { DevelopmentServerUrl, GitSha, Port, SpecRevision } from "./scalars.ts";
 import { schemaLimits } from "./settings.ts";
 import { AgentDisposition } from "./workflow.ts";
 
@@ -32,7 +32,7 @@ export type ClaimedLocalCheck = typeof ClaimedLocalCheck.Type;
 export const DevelopmentServer = Schema.Struct({
   name: ServerName,
   port: Port,
-  url: Schema.optionalKey(Schema.URLFromString),
+  url: Schema.optionalKey(DevelopmentServerUrl),
 });
 export type DevelopmentServer = typeof DevelopmentServer.Type;
 

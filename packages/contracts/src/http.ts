@@ -14,9 +14,13 @@ import { EvidenceArtifactPath, EvidenceBundleManifest } from "./evidence.ts";
 import { SwordfishEvent } from "./protocol.ts";
 import {
   ApiRequestId,
+  ApiTokenId,
+  ApiTokenName,
+  ApiTokenSecret,
   BountyEventCursor,
   BountyEventCursorString,
   BountyId,
+  BountyListCursor,
   GitRef,
   GitSha,
   HttpsUrl,
@@ -73,7 +77,7 @@ export type BountyDetail = typeof BountyDetail.Type;
 export const CreateBountyResponse = BountyDetail.pipe(HttpApiSchema.status("Created"));
 export const ListBountiesResponse = Schema.Struct({
   bounties: Schema.Array(BountySummary),
-  nextCursor: Schema.optionalKey(Schema.String),
+  nextCursor: Schema.optionalKey(BountyListCursor),
 });
 export const GetBountyResponse = BountyDetail;
 export const BountyAttachmentsResponse = AttachmentSnapshot;
@@ -175,7 +179,7 @@ export const CreateBountyEndpoint = HttpApiEndpoint.post("createBounty", "/api/b
   error: [...commonErrors, ConflictError, PayloadTooLargeError, UnprocessableEntityError],
 });
 export const ListBountiesEndpoint = HttpApiEndpoint.get("listBounties", "/api/bounties", {
-  query: { cursor: Schema.optionalKey(Schema.String) },
+  query: { cursor: Schema.optionalKey(BountyListCursor) },
   success: ListBountiesResponse,
   error: commonErrors,
 });
@@ -228,24 +232,82 @@ export const DestroyBountyEndpoint = HttpApiEndpoint.delete("destroyBounty", "/a
   error: mutationErrors,
 });
 
+export const ApiTokenSummary = Schema.Struct({
+  tokenId: ApiTokenId,
+  name: ApiTokenName,
+  createdAt: Timestamp,
+  lastUsedAt: Schema.optionalKey(Timestamp),
+  revokedAt: Schema.optionalKey(Timestamp),
+});
+export type ApiTokenSummary = typeof ApiTokenSummary.Type;
+
+export const CreateTokenRequest = Schema.Struct({ name: ApiTokenName });
+
+/**
+ * The only response that carries the secret.
+ *
+ * Bebop stores tokens hashed (SPEC section 17.4), so the plaintext exists exactly once, in
+ * this response. It is `Redacted` so it cannot reach a log through an accidental
+ * interpolation, and unlike the process-configuration secrets it does not set
+ * `disallowEncode` — this response body *is* its transport boundary. `RedactedFromValue`
+ * rather than `Redacted`, because the wire form is a plain string.
+ */
+export const CreateTokenResponse = Schema.Struct({
+  token: ApiTokenSummary,
+  secret: Schema.RedactedFromValue(ApiTokenSecret, { label: "api-token-secret" }),
+}).pipe(HttpApiSchema.status("Created"));
+
+export const ListTokensResponse = Schema.Struct({ tokens: Schema.Array(ApiTokenSummary) });
+export const RevokeTokenResponse = ApiTokenSummary.pipe(HttpApiSchema.status("Accepted"));
+
+export const TokenNotFoundError = errorSchema("token_not_found", "NotFound");
+
+const tokenErrors = [...commonErrors, TokenNotFoundError] as const;
+
+export const CreateTokenEndpoint = HttpApiEndpoint.post("createToken", "/api/tokens", {
+  payload: CreateTokenRequest,
+  success: CreateTokenResponse,
+  error: [...commonErrors, ConflictError, UnprocessableEntityError],
+});
+export const ListTokensEndpoint = HttpApiEndpoint.get("listTokens", "/api/tokens", {
+  success: ListTokensResponse,
+  error: commonErrors,
+});
+export const RevokeTokenEndpoint = HttpApiEndpoint.delete("revokeToken", "/api/tokens/:tokenId", {
+  params: { tokenId: ApiTokenId },
+  success: RevokeTokenResponse,
+  error: tokenErrors,
+});
+
+// Health carries no bearer middleware. SPEC section 24 puts health-checked blue/green
+// containers behind Caddy, and a liveness probe that needs a credential means baking a
+// token into the image or the compose file — a durable secret created solely to ask a
+// process whether it is alive. The route exposes only liveness; every route that can read
+// or change bounty state is authenticated below.
 export const HealthApiGroup = HttpApiGroup.make("health").add(HealthEndpoint);
-export const BountiesApiGroup = HttpApiGroup.make("bounties").add(
-  CreateBountyEndpoint,
-  ListBountiesEndpoint,
-  GetBountyEndpoint,
-  StreamBountyEventsEndpoint,
-  GetBountyAttachmentsEndpoint,
-  GetBountyEvidenceEndpoint,
-  ApproveConfigEndpoint,
-  MergeBountyEndpoint,
-  StopBountyEndpoint,
-  RecoverBountyEndpoint,
-  DestroyBountyEndpoint,
-);
+// `middleware` applies only to the endpoints already added, so it comes last.
+export const BountiesApiGroup = HttpApiGroup.make("bounties")
+  .add(
+    CreateBountyEndpoint,
+    ListBountiesEndpoint,
+    GetBountyEndpoint,
+    StreamBountyEventsEndpoint,
+    GetBountyAttachmentsEndpoint,
+    GetBountyEvidenceEndpoint,
+    ApproveConfigEndpoint,
+    MergeBountyEndpoint,
+    StopBountyEndpoint,
+    RecoverBountyEndpoint,
+    DestroyBountyEndpoint,
+  )
+  .middleware(BearerAuthentication);
+
+export const TokensApiGroup = HttpApiGroup.make("tokens")
+  .add(CreateTokenEndpoint, ListTokensEndpoint, RevokeTokenEndpoint)
+  .middleware(BearerAuthentication);
 
 export const BebopHttpApi = HttpApi.make("BebopHttpApi")
-  .add(HealthApiGroup, BountiesApiGroup)
-  .middleware(BearerAuthentication)
+  .add(HealthApiGroup, BountiesApiGroup, TokensApiGroup)
   .annotateMerge(
     OpenApi.annotations({ title: "Bebop API", version: "1.0.0", description: "Bebop bounty control API" }),
   );

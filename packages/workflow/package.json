@@ -1,22 +1,23 @@
 {
-  "name": "@bebop/swordfish",
+  "name": "@bebop/workflow",
   "version": "0.0.0",
   "private": true,
-  "bin": {
-    "sf": "./dist/cli.mjs",
-    "swordfish": "./dist/daemon.mjs"
-  },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "imports": {
     "#src/*": "./src/*"
   },
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
   "scripts": {
-    "build": "vp pack",
-    "dev": "bun --watch src/daemon.ts"
+    "build": "vp pack"
   },
   "dependencies": {
     "@bebop/contracts": "workspace:*",
-    "@bebop/workflow": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

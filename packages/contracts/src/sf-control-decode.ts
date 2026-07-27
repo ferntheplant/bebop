@@ -5,6 +5,7 @@ import {
   SfControlRequest,
   SfControlResponse,
   currentSfControlVersion,
+  type SfControlCommand as SfControlCommandType,
   type SfControlRequest as SfControlRequestType,
   type SfControlResponse as SfControlResponseType,
 } from "./sf-control.ts";
@@ -45,6 +46,20 @@ export class UnexpectedSfControlResponseError extends Error {
   }
 }
 
+/**
+ * Structural equality derived from the schema itself.
+ *
+ * The previous comparison serialised both commands with `JSON.stringify` and compared the
+ * strings, which is key-order dependent. It happened to work because both sides were
+ * encoded through the same schema in the same process; it would have started rejecting
+ * valid responses the moment one side was built by hand or round-tripped through a store.
+ */
+const commandEquivalence = Schema.toEquivalence(SfControlCommand);
+
+function sameCommand(left: SfControlCommandType, right: SfControlCommandType): boolean {
+  return commandEquivalence(left, right);
+}
+
 function assertSupportedVersion(input: unknown): void {
   if (typeof input !== "object" || input === null || !("controlVersion" in input)) {
     return;
@@ -81,11 +96,7 @@ export function decodeSfControlResponseForRequest(
   if (response.correlationId !== request.correlationId) {
     throw new UnexpectedSfControlResponseError();
   }
-  if (
-    response.type === "success" &&
-    JSON.stringify(Schema.encodeSync(SfControlCommand)(response.result.command)) !==
-      JSON.stringify(Schema.encodeSync(SfControlCommand)(request.command))
-  ) {
+  if (response.type === "success" && !sameCommand(response.result.command, request.command)) {
     throw new UnexpectedSfControlResponseError();
   }
   return response;

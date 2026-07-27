@@ -345,6 +345,10 @@ interface EffectiveSpec {
 }
 ```
 
+`acceptanceCriteria` must contain **at least one** entry. Everything downstream of the spec — jet's review, faye's QA scenarios, the readiness claim in §9.4 — is an assessment against these criteria, so a spec with none of them describes work that cannot be verified and therefore cannot be finished. The `/auto` flow in §10.4 must not hand off such a spec for confirmation.
+
+This constraint was added by the contracts implementation rather than by the original design, and is recorded here per `PLAN.md` §9.
+
 ### 7.6 Candidate
 
 A candidate is an explicit ein submission tied to one commit SHA.
@@ -836,6 +840,10 @@ Swordfish prepares QA with `.bebop/` hooks in a clean worktree and disposable ru
 
 CI, review, and QA failures are normalized and returned to ein's original seat.
 
+Structured stage results — validator runs (§12.4), review findings (§12.6), and QA scenario outcomes (§12.7) — **ride the Bebop-Swordfish protocol** on the `gate_completed` event, bound to the same candidate SHA and spec revision as the gate outcome. They do not ride the evidence bundle, which remains the durable archive rather than the feedback channel.
+
+A gate that failed **must** carry its structured result. A stage whose agent produced nothing usable — prose instead of findings, output that does not decode, an abort before any output — records that explicitly, with a reason. This is a detectable error rather than a silent absence, and it is deliberately not the same value as a clean result: "jet found nothing" and "jet did not answer" must never be indistinguishable.
+
 Ein:
 
 1. receives an aggregated feedback packet;
@@ -1130,8 +1138,15 @@ POST   /api/bounties/:bountyId/merge
 POST   /api/bounties/:bountyId/stop
 POST   /api/bounties/:bountyId/recover
 DELETE /api/bounties/:bountyId
-GET    /api/health
+POST   /api/tokens
+GET    /api/tokens
+DELETE /api/tokens/:tokenId
+GET    /api/health                           # unauthenticated liveness
 ```
+
+The token routes back `bebop token create|revoke|list` in §17.3. They were previously absent from this table while the CLI listed the commands, which contradicted §4.3's rule that the CLI has no behavior the API lacks. The create response is the only place a token's plaintext exists; §17.4 stores it hashed, and listing returns metadata only.
+
+`GET /api/health` is the **one unauthenticated route**. §24 runs health-checked blue/green containers behind Caddy, and requiring a bearer token for a liveness probe would mean baking a durable credential into the image or the compose file purely to ask a process whether it is alive. The route exposes liveness and nothing else; every route that can read or change bounty state is authenticated.
 
 The events endpoint serves the stored event projection: live via SSE, historical via cursor-based replay. This exists in the MVP precisely so reactive clients never need to be retrofitted. Webhooks (outbound push) remain deferred.
 
@@ -1200,11 +1215,15 @@ The channel carries:
 - acknowledgement cursors;
 - stop and lifecycle messages.
 
-### 18.2 Authentication _(provisional)_
+### 18.2 Authentication _(resolved)_
 
 - a bounty-scoped token minted by bebop and injected at VM bootstrap;
 - bound to the expected VM identity (bounty ID ↔ VM ID);
-- expiring, rotated on reconnect.
+- presented on the WebSocket upgrade, and valid for the life of the bounty.
+
+Rotation and expiry were specified here and never built, which left Milestone 5's "an invalid token is rejected" scenario with no contract to test the token half against. Both are struck rather than implemented.
+
+Expiry on a wall clock is a lockout: the token is checked only at the upgrade, so a Swordfish that stays connected longer than the token's lifetime reconnects with a dead credential and there is no mid-connection route to re-issue one. Rotation would need that route, or a handback slot in the registration exchange, to be worth having — and neither buys much against the threat model in §21.1, since the credential lives on the VM full-time either way. A token that leaks off the VM is bounded by the bounty's own lifetime, and bebop revokes it at deprovisioning.
 
 ### 18.3 Delivery
 

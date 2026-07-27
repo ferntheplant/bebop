@@ -55,6 +55,7 @@ function apply(state: BebopSwordfishProjection, sequence: number, event: typeof 
     type: "event_received",
     connectionId,
     message: eventMessage(sequence, event),
+    observedAt,
   });
   if (!result.ok) {
     throw new Error(`Projection rejected ${result.error.type}`);
@@ -141,12 +142,14 @@ describe("Bebop Swordfish projection reducer", () => {
       type: "event_received",
       connectionId,
       message: eventMessage(2, { type: "candidate_submitted", candidate }),
+      observedAt,
     });
-    expect(duplicate).toEqual({ ok: true, applied: false, state });
+    expect(duplicate).toEqual({ ok: true, applied: false, reason: "already_applied", state });
     const collision = reduceBebopSwordfishProjection(state, {
       type: "event_received",
       connectionId,
       message: eventMessage(2, { type: "attention_required", reason: "conflict" }),
+      observedAt,
     });
     expect(collision).toMatchObject({ ok: false, error: { type: "sequence_collision", sequence: 2 } });
 
@@ -154,6 +157,7 @@ describe("Bebop Swordfish projection reducer", () => {
       type: "event_received",
       connectionId,
       message: eventMessage(4, { type: "attention_required", reason: "gap" }),
+      observedAt,
     });
     expect(gap).toMatchObject({ ok: false, error: { type: "sequence_gap", expected: 3, received: 4 } });
 
@@ -208,7 +212,14 @@ describe("Bebop Swordfish projection reducer", () => {
       message: heartbeat,
       observedAt,
     });
-    expect(delayedHeartbeat).toEqual({ ok: true, applied: false, state: disconnected.state });
+    // `connection_lost` cleared `connectionId`, so a heartbeat still claiming that
+    // connection can no longer match one. The gateway must not acknowledge this.
+    expect(delayedHeartbeat).toEqual({
+      ok: true,
+      applied: false,
+      reason: "wrong_connection",
+      state: disconnected.state,
+    });
   });
 
   test("ignores stale disconnects and marks the active connection stale", () => {
@@ -226,7 +237,7 @@ describe("Bebop Swordfish projection reducer", () => {
       connectionId,
       detectedAt: observedAt,
     });
-    expect(oldDisconnect).toEqual({ ok: true, applied: false, state: replaced.state });
+    expect(oldDisconnect).toEqual({ ok: true, applied: false, reason: "wrong_connection", state: replaced.state });
 
     const stale = reduceBebopSwordfishProjection(replaced.state, {
       type: "freshness_expired",
@@ -234,6 +245,93 @@ describe("Bebop Swordfish projection reducer", () => {
       detectedAt: observedAt,
     });
     expect(stale).toMatchObject({ ok: true, state: { freshness: { status: "stale" } } });
+  });
+
+  test("a late heartbeat on the current connection recovers from stale", () => {
+    // Without a recovery edge, a merely late heartbeat -- a GC pause, a slow link, a
+    // tightly tuned staleness threshold -- froze Bebop's view of a live socket forever.
+    const state = initialProjection();
+    const stale = reduceBebopSwordfishProjection(state, {
+      type: "freshness_expired",
+      connectionId,
+      detectedAt: observedAt,
+    });
+    if (!stale.ok) {
+      throw new Error(stale.error.type);
+    }
+    expect(stale.state.freshness.status).toBe("stale");
+
+    const laterObservedAt = Schema.decodeUnknownSync(Timestamp)("2026-07-26T12:40:00.000Z");
+    const recovered = reduceBebopSwordfishProjection(stale.state, {
+      type: "heartbeat_observed",
+      connectionId,
+      message: Schema.decodeUnknownSync(HeartbeatMessage)({
+        type: "heartbeat",
+        protocolVersion: 1,
+        bountyId,
+        vmId,
+        sentAt: timestamp,
+        lastProducedEventSequence: 1,
+      }),
+      observedAt: laterObservedAt,
+    });
+    expect(recovered).toMatchObject({
+      ok: true,
+      applied: true,
+      state: { freshness: { status: "connected", lastObservedAt: laterObservedAt } },
+    });
+  });
+
+  test("an event on a stale current connection is applied, not discarded", () => {
+    const state = initialProjection();
+    const stale = reduceBebopSwordfishProjection(state, {
+      type: "freshness_expired",
+      connectionId,
+      detectedAt: observedAt,
+    });
+    if (!stale.ok) {
+      throw new Error(stale.error.type);
+    }
+
+    const result = reduceBebopSwordfishProjection(stale.state, {
+      type: "event_received",
+      connectionId,
+      message: eventMessage(1, { type: "effective_spec_set", spec }),
+      observedAt,
+    });
+    // Traffic is traffic: an arriving event proves the socket is alive just as a heartbeat
+    // does, and the event itself must not be silently dropped.
+    expect(result).toMatchObject({
+      ok: true,
+      applied: true,
+      state: { stage: "implementing", freshness: { status: "connected" } },
+    });
+  });
+
+  test("freshness still refreshes when the event itself is a duplicate", () => {
+    let state = initialProjection();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    const stale = reduceBebopSwordfishProjection(state, {
+      type: "freshness_expired",
+      connectionId,
+      detectedAt: observedAt,
+    });
+    if (!stale.ok) {
+      throw new Error(stale.error.type);
+    }
+
+    const duplicate = reduceBebopSwordfishProjection(stale.state, {
+      type: "event_received",
+      connectionId,
+      message: eventMessage(1, { type: "effective_spec_set", spec }),
+      observedAt,
+    });
+    expect(duplicate).toMatchObject({
+      ok: true,
+      applied: false,
+      reason: "already_applied",
+      state: { freshness: { status: "connected" } },
+    });
   });
 
   test("rejects pushing a candidate before local validation passes", () => {
@@ -244,6 +342,7 @@ describe("Bebop Swordfish projection reducer", () => {
       type: "event_received",
       connectionId,
       message: eventMessage(3, { type: "stage_changed", stage: "pushed_candidate" }),
+      observedAt,
     });
     expect(result).toMatchObject({ ok: false, error: { type: "illegal_transition" } });
   });

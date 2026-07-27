@@ -17,7 +17,7 @@ The first useful milestone is not a fully provisioned bounty. It is a local Bebo
 Progress through 2026-07-26:
 
 - **Milestone 0 is complete and validated:** every build-critical spike now has a runnable fixture and a recorded verdict, and all four pass (41 probes total). Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The plugin lease guard, the pinned OpenCode fake-model turn, and the OpenCode version pin are proven together by `spikes/lease-guard/` against OpenCode 1.18.5; two gaps were found and both close with verified OpenCode configuration rather than new architecture, raising `SPEC.md` §11.5 from two enforcement layers to four and binding the seat credential's lifetime to the control lease. `spikes/persistence/` proves the Postgres and SQLite round trip, `spikes/tmux-input-lock/` proves the cockpit input lock, and `spikes/effect-runtime/` proves Effect's HTTP, SSE, WebSocket, and CLI modules run as processes on the pinned Bun. Four findings change work in later milestones; they are listed under Milestone 0 below.
-- **A Milestone 1–2 implementation review is recorded in [`REVIEW.md`](./REVIEW.md).** Its findings are not yet actioned; H1 (duplicated workflow reducer) and M3 (undiscriminated `applied: false`) should be resolved before Milestone 3 builds on either boundary.
+- **The Milestone 1–2 implementation review is complete and fully actioned.** All eighteen findings are closed; the review document has been removed now that its content lives in the code, in `SPEC.md`, and in the decision list under Milestone 2 below. The structural outcome was `packages/workflow`: two apps had independently written down what the shared wire types _mean_, and the copies had drifted in two places that were user-visible. Four findings needed design decisions rather than edits, and all four are now recorded in `SPEC.md` — structured stage feedback rides the protocol (§12.8), the `bebop token` routes exist (§17.2), `GET /api/health` is the one unauthenticated route (§17.2, §24), and Swordfish token rotation and expiry are struck (§18.2).
 - **Milestone 1 is complete and validated:** the monorepo, three apps, shared contracts and testkit packages, strict per-workspace TypeScript environments, conventional-commit hooks, CI, builds, process-level entrypoint tests, artifact smokes, and workspace documentation are in place. Frozen install and `vp run ready` pass.
 - **Correction (2026-07-26):** Milestone 1's exit criterion "a clean clone can run `vp install --frozen-lockfile` and `vp run ready`" was **not** actually met when it was marked complete. `ready` passed only on a machine that already had `dist` from an earlier build, and CI had been failing on `main` since `6cba85f` for this reason. Two ordering faults: Vite+ resolves a bare `./dist/*.mjs` command as a binary at plan time, before `build` runs; and `vp check` type-checks apps against `@bebop/contracts`, which resolves through its built `dist`. Fixed by invoking executable artifacts as `sh -c './dist/cli.mjs'`, and by replacing the shell `&&` chains with Vite+ `dependsOn` task dependencies so each task builds its own prerequisites. Verified by a fresh clone plus frozen install.
 - **Milestone 2 is complete and validated:** shared wire and domain schemas, bidirectional Bebop-Swordfish and local `sf` protocols, typed process configuration, authenticated Bebop HTTP/SSE contracts with generated OpenAPI, pure workflow/projection reducers, and golden replay/idempotency coverage are implemented. Frozen install and `vp run ready` pass.
@@ -64,6 +64,9 @@ packages/
   contracts/
     src/
     test/
+  workflow/
+    src/
+    test/
   testkit/
     src/
     fixtures/
@@ -79,9 +82,13 @@ bun.lock
 
 `packages/contracts` is the only required production package at initialization. It contains Effect Schemas and transport-neutral domain values shared by two or more apps.
 
+`packages/workflow` was added after Milestone 2, when a second app needed it. It holds the pure Swordfish workflow transition core — the interpretation of the event stream that Swordfish and Bebop's projection must agree on. It has no I/O and no persistence. Bebop's projection is that core plus connection identity and freshness, which is Bebop's own concern; Swordfish's reducer is that core plus a non-null starting stage.
+
 `packages/testkit` is development-only. It contains process harnesses, protocol peers, temporary Git repositories, fixture hooks, fake model endpoints, clocks, and eventually a fake exe.dev adapter.
 
 Do not create a generic `utils` package during initialization. Code stays with its first consumer and moves into a narrowly named package only after a second app needs it. Apps must not import source code directly from other apps.
+
+`packages/workflow` is what that rule looks like when it fires: sharing the wire types was not enough, because two apps had independently written down what those types _mean_ and the two copies had already drifted.
 
 ### 2.2 Entrypoints
 
@@ -272,15 +279,25 @@ README carries the evidence.
 
 **Implementation decisions established during review**
 
-- Protocol cursors may be zero, but produced events start at one. Reducers reject gaps, treat exact replay as a no-op, and retain fingerprints for every applied sequence so conflicting replay fails closed.
+- Protocol cursors may be zero, but produced events start at one. Reducers reject gaps, treat exact replay as a no-op, and retain event fingerprints so conflicting replay fails closed. Retention is a bounded window (`fingerprintWindow`) of hashed fingerprints with an explicit `fingerprintFloor` in state: below the floor a replay reports `unverifiable_replay`, and inside the window a missing fingerprint is an error rather than a silent pass.
 - `candidate_submitted` carries only a `candidate_ready` disposition. Gate outcomes are bound to both candidate SHA and spec revision; CI and review remain independent parallel gates; Swordfish readiness is a claim that Bebop must verify independently.
 - Candidate invalidation clears every gate and readiness claim. Human control remains visible until explicit handback, while the suspended workflow stage survives invalidation, attention, repeated attention, and nested human-control transitions.
 - Bebop connection freshness is scoped to a `connectionId`. Delayed events, heartbeats, disconnects, or stale timers from replaced or closed connections cannot mutate the active projection, and freshness changes never rewrite workflow authority.
 - Local `sf handback` and `sf approve-config` requests are argument-free; the daemon derives and atomically rechecks the active seat or pending candidate. Responses must match both the request correlation ID and command.
 - Evidence upload uses `bundleId` as the durable idempotency key: offer manifest, upload only missing content-addressed blobs through bounded HTTPS targets, then finalize. Manifest paths and download paths are canonical and must match exactly.
-- Every HTTP endpoint, including health, declares bearer authentication. SSE replay has one cursor source (`Last-Event-ID`), and each canonical SSE ID must equal its typed event cursor.
+- Every HTTP endpoint **except `GET /api/health`** declares bearer authentication; liveness is unauthenticated so `SPEC.md` §24's container health checks need no credential baked into an image. Bearer middleware is applied per group, and only to endpoints already added to it. SSE replay has one cursor source (`Last-Event-ID`), and each canonical SSE ID must equal its typed event cursor.
 - Process configuration rejects unsafe URL schemes, non-positive limits, non-canonical paths, overlapping Swordfish state/workspace paths, and invalid heartbeat or reconnect timing relationships. Secrets remain `Redacted` until their transport boundary.
-- The pinned Effect 4 beta exposes HttpApi, OpenAPI, CLI, and related platform APIs under `effect/unstable/*`; adding current Effect 3 `@effect/platform` or `@effect/cli` packages would create an incompatible peer-dependency stack.
+- The pinned Effect 4 beta exposes HttpApi, OpenAPI, CLI, and related platform APIs under `effect/unstable/*`; adding current Effect 3 `@effect/platform` or `@effect/cli` packages would create an incompatible peer-dependency stack. The Effect **4** beta line does publish `@effect/sql-pg`, `@effect/sql-sqlite-bun`, and `@effect/platform-bun` at the same version, and those are pinned in the root catalog.
+
+**Decisions established by the Milestones 1-2 review**
+
+- The workflow transition core is one implementation in `packages/workflow`, shared by Swordfish and Bebop's projection. Sharing wire types was not enough: both apps had written down what those types _mean_ and the copies had drifted.
+- Every result that applies no event carries a reason, because the Milestone 3 gateway's acknowledgement decision depends on it. `already_applied` and `unverifiable_replay` may be acknowledged; `wrong_connection` must not, since acknowledging an input Bebop discarded makes Swordfish drop it from its outbox permanently.
+- Any inbound traffic on the current connection restores freshness from `stale`. `disconnected` is not recoverable this way, because `connection_lost` clears the connection id.
+- `cancelling` is a suspended stage: a late gate result is recorded in `suspendedStage` and cannot resurrect a cancelled run, while the evidence the hook produced is still kept.
+- Structured stage results ride the protocol on `gate_completed`, not the evidence bundle. A failed gate must carry feedback, feedback must match its gate, and a stage that produced nothing usable records that explicitly with a reason — "the agent found nothing" and "the agent did not answer" are different values.
+- Command payloads shared by the WebSocket protocol and the local `sf` socket live in `packages/contracts/src/commands.ts`. Changing one bumps both protocol versions; `commands.test.ts` enforces it because neither protocol's golden fixtures can.
+- The bounty-scoped Swordfish token is presented at the WebSocket upgrade and is valid for the life of the bounty. Rotation and wall-clock expiry are struck from `SPEC.md` §18.2: expiry would lock out a Swordfish whose connection outlived its token, and rotation needs a re-issue path that the threat model does not justify.
 
 ### Milestone 3: Implement a Local Bebop Server
 

@@ -47,6 +47,29 @@ export type ReviewFindingId = typeof ReviewFindingId.Type;
 export const EvidenceBundleId = SafeIdentifier.pipe(Schema.brand("EvidenceBundleId"));
 export type EvidenceBundleId = typeof EvidenceBundleId.Type;
 
+export const QaScenarioId = SafeIdentifier.pipe(Schema.brand("QaScenarioId"));
+export type QaScenarioId = typeof QaScenarioId.Type;
+
+export const ApiTokenId = SafeIdentifier.pipe(Schema.brand("ApiTokenId"));
+export type ApiTokenId = typeof ApiTokenId.Type;
+
+/** The human-facing name of a bearer token, such as `fern-cli` (SPEC section 17.4). */
+export const ApiTokenName = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(schemaLimits.apiTokenNameMaxLength),
+    Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/),
+  ),
+  Schema.brand("ApiTokenName"),
+);
+export type ApiTokenName = typeof ApiTokenName.Type;
+
+export const ApiTokenSecret = Schema.String.pipe(
+  Schema.check(Schema.isMinLength(1), Schema.isMaxLength(schemaLimits.apiTokenSecretMaxLength), Schema.isTrimmed()),
+  Schema.brand("ApiTokenSecret"),
+);
+export type ApiTokenSecret = typeof ApiTokenSecret.Type;
+
 export const ConnectionId = SafeIdentifier.pipe(Schema.brand("ConnectionId"));
 export type ConnectionId = typeof ConnectionId.Type;
 
@@ -116,6 +139,17 @@ export const ProducedEventSequence = Schema.Number.pipe(
 );
 export type ProducedEventSequence = typeof ProducedEventSequence.Type;
 
+/**
+ * Widens a produced sequence (at least 1) into an applied cursor (at least 0).
+ *
+ * Every produced sequence is a valid cursor, so this cannot fail. It exists as a named
+ * function because the alternative at each call site was `value as number as EventSequence`,
+ * a double cast that defeats both brands and is invisible to a search for unsafe casts.
+ */
+export function toEventSequence(sequence: ProducedEventSequence): EventSequence {
+  return sequence as number as EventSequence;
+}
+
 export const ByteCount = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
   Schema.brand("ByteCount"),
@@ -138,32 +172,80 @@ export type SpecRevision = typeof SpecRevision.Type;
 export const Port = PositiveSafeInteger.pipe(Schema.check(Schema.isLessThanOrEqualTo(65_535)), Schema.brand("Port"));
 export type Port = typeof Port.Type;
 
+/**
+ * Shared URL discipline: parseable, no embedded credentials, no fragment, and identical to
+ * its own canonical form so two spellings of one URL cannot both be stored.
+ *
+ * `URL.canParse` keeps this a total function. The earlier version ran a schema decode
+ * inside the filter and used `try`/`catch` for control flow on every value, which matters
+ * once this validates upload targets in bulk.
+ */
+function checkUrl(value: string, allowedProtocols: ReadonlyArray<string>, label: string): string | undefined {
+  if (!URL.canParse(value)) {
+    return `Expected a valid ${label}`;
+  }
+  const url = new URL(value);
+  if (!allowedProtocols.includes(url.protocol)) {
+    return `Expected ${label === "HTTPS URL" ? "an" : "a"} ${label}`;
+  }
+  if (url.username.length > 0 || url.password.length > 0) {
+    return `Expected a ${label} without embedded credentials`;
+  }
+  if (url.hash.length > 0) {
+    return `Expected a ${label} without a fragment`;
+  }
+  return url.href === value ? undefined : `Expected a canonical ${label}`;
+}
+
 export const HttpsUrl = Schema.String.pipe(
   Schema.check(
     Schema.isMinLength(1),
     Schema.isMaxLength(schemaLimits.httpsUrlMaxLength),
     Schema.isTrimmed(),
-    Schema.makeFilter<string>((value) => {
-      try {
-        const url = Schema.decodeUnknownSync(Schema.URLFromString)(value);
-        if (url.protocol !== "https:") {
-          return "Expected an HTTPS URL";
-        }
-        if (url.username.length > 0 || url.password.length > 0) {
-          return "Expected an HTTPS URL without embedded credentials";
-        }
-        if (url.hash.length > 0) {
-          return "Expected an HTTPS URL without a fragment";
-        }
-        return Schema.encodeSync(Schema.URLFromString)(url) === value ? undefined : "Expected a canonical HTTPS URL";
-      } catch {
-        return "Expected a valid HTTPS URL";
-      }
-    }),
+    Schema.makeFilter<string>((value) => checkUrl(value, ["https:"], "HTTPS URL")),
   ),
   Schema.brand("HttpsUrl"),
 );
 export type HttpsUrl = typeof HttpsUrl.Type;
+
+/**
+ * The address of a development server ein reports alongside a candidate.
+ *
+ * These run inside the bounty VM and are plain HTTP far more often than not, so `HttpsUrl`
+ * is genuinely the wrong schema — but the canonicalization discipline still applies, and
+ * this was the one raw `Schema.URLFromString` left in the package.
+ *
+ * The host is deliberately unconstrained. A development server bound to `0.0.0.0` and
+ * referred to by the VM's own hostname is ordinary, and `SPEC.md` does not require
+ * loopback, so narrowing this to `localhost` would invent a constraint the design has not
+ * made.
+ */
+export const DevelopmentServerUrl = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(schemaLimits.httpsUrlMaxLength),
+    Schema.isTrimmed(),
+    Schema.makeFilter<string>((value) => checkUrl(value, ["http:", "https:"], "development server URL")),
+  ),
+  Schema.brand("DevelopmentServerUrl"),
+);
+export type DevelopmentServerUrl = typeof DevelopmentServerUrl.Type;
+
+/**
+ * An opaque pagination cursor for `GET /api/bounties`.
+ *
+ * Bounded and pattern-checked like every other identifier in the package. The alphabet is
+ * base64url so an encoded cursor needs no further escaping in a query string.
+ */
+export const BountyListCursor = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(schemaLimits.bountyListCursorMaxLength),
+    Schema.isPattern(/^[A-Za-z0-9_-]+$/),
+  ),
+  Schema.brand("BountyListCursor"),
+);
+export type BountyListCursor = typeof BountyListCursor.Type;
 
 export const LineNumber = PositiveSafeInteger.pipe(Schema.brand("LineNumber"));
 export type LineNumber = typeof LineNumber.Type;

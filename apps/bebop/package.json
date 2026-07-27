@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@bebop/contracts": "workspace:*",
+    "@bebop/workflow": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

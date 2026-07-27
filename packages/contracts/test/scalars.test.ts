@@ -3,6 +3,7 @@ import { describe, expect, test } from "vite-plus/test";
 
 import {
   BountyId,
+  BountyListCursor,
   CommandId,
   EventSequence,
   GitSha,
@@ -71,5 +72,16 @@ describe("wire scalar schemas", () => {
   test("rejects unknown protocol versions", () => {
     expect(Schema.decodeUnknownSync(ProtocolVersion)(currentProtocolVersion)).toBe(1);
     expect(() => Schema.decodeUnknownSync(ProtocolVersion)(2)).toThrow();
+  });
+
+  test("bounds the bounty list cursor like every other identifier", () => {
+    expect(Schema.decodeUnknownSync(BountyListCursor)("eyJhZnRlciI6ImJ0eS0x_-")).toBe("eyJhZnRlciI6ImJ0eS0x_-");
+
+    // It reaches the server in a query string and comes back in a response body, so it is
+    // bounded and pattern-checked rather than an arbitrary string.
+    expect(() => Schema.decodeUnknownSync(BountyListCursor)("")).toThrow();
+    expect(() => Schema.decodeUnknownSync(BountyListCursor)("has spaces")).toThrow();
+    expect(() => Schema.decodeUnknownSync(BountyListCursor)("has/slash")).toThrow();
+    expect(() => Schema.decodeUnknownSync(BountyListCursor)("a".repeat(257))).toThrow();
   });
 });

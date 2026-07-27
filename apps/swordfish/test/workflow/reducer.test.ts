@@ -78,7 +78,7 @@ describe("Swordfish workflow reducer", () => {
 
     const finalMessage = message(goldenReplay.length, goldenReplay.at(-1) as typeof SwordfishEvent.Encoded);
     const duplicate = reduceSwordfishWorkflow(state, finalMessage);
-    expect(duplicate).toEqual({ ok: true, applied: false, state });
+    expect(duplicate).toEqual({ ok: true, applied: false, reason: "already_applied", state });
 
     const oldCollision = reduceSwordfishWorkflow(
       state,
@@ -130,7 +130,7 @@ describe("Swordfish workflow reducer", () => {
     expect(state.readinessClaim).toEqual({ candidateSha, specRevision: 1 });
 
     const duplicate = reduceSwordfishWorkflow(state, message(9, readyEvent));
-    expect(duplicate).toEqual({ ok: true, applied: false, state });
+    expect(duplicate).toEqual({ ok: true, applied: false, reason: "already_applied", state });
     const collision = reduceSwordfishWorkflow(state, message(9, { type: "attention_required", reason: "conflict" }));
     expect(collision).toMatchObject({ ok: false, error: { type: "sequence_collision", sequence: 9 } });
 

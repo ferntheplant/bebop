@@ -116,6 +116,17 @@ export const ProducedEventSequence = Schema.Number.pipe(
 );
 export type ProducedEventSequence = typeof ProducedEventSequence.Type;
 
+/**
+ * Widens a produced sequence (at least 1) into an applied cursor (at least 0).
+ *
+ * Every produced sequence is a valid cursor, so this cannot fail. It exists as a named
+ * function because the alternative at each call site was `value as number as EventSequence`,
+ * a double cast that defeats both brands and is invisible to a search for unsafe casts.
+ */
+export function toEventSequence(sequence: ProducedEventSequence): EventSequence {
+  return sequence as number as EventSequence;
+}
+
 export const ByteCount = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
   Schema.brand("ByteCount"),

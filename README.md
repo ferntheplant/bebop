@@ -12,9 +12,14 @@ defined in [`SPEC.md`](./SPEC.md), and the implementation sequence is tracked in
 | `apps/bebop-opencode-plugin` | OpenCode workflow tools and lease enforcement            |
 | `packages/contracts`         | Shared schemas and wire contracts                        |
 | `packages/testkit`           | Shared test processes, fixtures, and deterministic fakes |
+| `spikes/*`                   | Throwaway experiments that validate a design assumption  |
 
 Apps may depend on packages, but one app must not import source from another app. Shared code remains with its
 first consumer until a second app needs a narrowly named package.
+
+Spikes are excluded from `vp run test` and are run on demand. Each spike records its verdict in its own
+`README.md`, and any assumption it invalidates is reflected in [`SPEC.md`](./SPEC.md) before implementation
+continues.
 
 ## Development
 

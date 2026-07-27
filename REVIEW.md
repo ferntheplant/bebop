@@ -8,6 +8,22 @@
 
 **Scope:** Everything merged through `6cba85f feat(contracts): complete milestone 2`
 
+## Resolution status
+
+Findings are annotated inline as they are actioned. As of 2026-07-26:
+
+| Finding                              | Status                                                    |
+| ------------------------------------ | --------------------------------------------------------- |
+| H1 duplicated workflow state machine | **Resolved** — `packages/workflow`                        |
+| M2 freshness has no recovery path    | **Resolved** — traffic on the current connection recovers |
+| M3 undiscriminated `applied: false`  | **Resolved** — skip reasons                               |
+| M4 `cancelling` unprotected          | **Resolved** — added to the suspended set                 |
+| M6 unbounded fingerprint map         | **Resolved** — bounded window, hashed, explicit floor     |
+| L5 double-cast sequence brand        | **Resolved** — `toEventSequence`                          |
+| L8 duplicated error taxonomies       | **Resolved** — follows from H1                            |
+| §6 sequencing (Milestone 0 spikes)   | **Resolved** — Milestone 0 complete, all spikes run       |
+| H2, H3, M1, M5, M7, L1–L4, L6, L7    | Open                                                      |
+
 ## 1. Baseline
 
 Verified before reviewing:
@@ -85,6 +101,13 @@ core plus connection and freshness scoping, which is its genuinely distinct conc
 3 and 4 write persistence on top of both copies — after that the two diverge under schema pressure and the
 divergence becomes a migration.
 
+**Resolved (2026-07-26).** `packages/workflow` holds `applyWorkflowEvent`, the state shape, and the gate
+helpers. Both apps are now thin: Swordfish's reducer is 32 lines whose only distinct content is that it starts
+at `interactive` rather than `null`, and Bebop's projection keeps connection identity, freshness, and
+`lastProducedSequence`. A **second drift** was found during the extraction and is also fixed: Bebop's
+resume-from-suspended branch did not clear `attentionReason`, so a resumed bounty kept the reason that
+suspended it. Both drifts have tests in `packages/workflow/test/core.test.ts`.
+
 ### H2. No schema exists for the outputs of the stages the workflow gates on
 
 `ReviewFinding` (`packages/contracts/src/review.ts:20`) is defined, exported, tested, and referenced by
@@ -131,6 +154,17 @@ Either heartbeats on the current connection should restore `connected`, or the g
 close the socket when it marks a connection stale, making "stale implies closing" an invariant. Neither is
 expressed today, and the reducer permits the bad state.
 
+**Resolved (2026-07-26)** by the first option, extended slightly: **any** inbound traffic on the current
+connection restores `connected`, not only heartbeats. An arriving event is evidence of life exactly as a
+heartbeat is, and restoring on events too closes the "silently discards everything that socket sends" half of
+the finding rather than only the freezing half. The freshness refresh is applied before the event and survives
+a duplicate, so a replayed event still proves liveness.
+
+`disconnected` is deliberately **not** recoverable this way: `connection_lost` clears `connectionId`, so
+traffic claiming that connection can no longer match one, and is refused as `wrong_connection`. This required
+adding `observedAt` to the `event_received` input — freshness is about when Bebop observed the frame, which
+`message.occurredAt` (when Swordfish produced it) cannot answer.
+
 ### M3. `{ ok: true, applied: false }` conflates "duplicate, safe to acknowledge" with "stale, must not acknowledge"
 
 **Verified** — both cases produce the identical result value:
@@ -148,6 +182,18 @@ Add a discriminator — `applied: false` plus `reason: "already_applied" | "stal
 — before the gateway is written. Otherwise Milestone 5's criterion "duplicate events are acknowledged without
 duplicate projection changes" will be satisfied by an implementation that also acknowledges events it discarded.
 
+**Resolved (2026-07-26).** Every `applied: false` now carries a reason. The set differs slightly from the one
+proposed above because the M2 fix removed one of the cases:
+
+| Reason                | Meaning                                                    | Gateway may acknowledge |
+| --------------------- | ---------------------------------------------------------- | ----------------------- |
+| `already_applied`     | seen before, fingerprint verified identical                | yes                     |
+| `unverifiable_replay` | behind the frontier, fingerprint pruned (see M6)           | yes                     |
+| `wrong_connection`    | not the authoritative connection; nothing was applied      | **no**                  |
+| `already_stale`       | a staleness timer fired for a connection that already left | n/a — no peer waiting   |
+
+`stale_connection` is absent because a stale current connection no longer discards anything: it recovers.
+
 ### M4. `cancelling` is unprotected, so a late gate result resurrects a cancelled run
 
 **Verified** in both reducers:
@@ -161,6 +207,11 @@ stage after late gate result: revision
 hooks and CI polls legitimately land _after_ a stop command, so this is reachable in normal operation, not only
 adversarially. Add `cancelling` to the suspended set, or reject candidate-bound events outright while
 cancelling.
+
+**Resolved (2026-07-26)** by the first option. `cancelling` joins the suspended set, so a late gate result is
+recorded — the gate outcome is still real evidence and is kept — but lands in `suspendedStage` rather than
+`stage`, and the run proceeds to `cancelled`. Rejecting the events outright would have discarded evidence that
+a hook genuinely produced.
 
 ### M5. The two protocols share payloads but version independently
 
@@ -182,6 +233,25 @@ The fingerprint only needs to defend against conflicting replay near the acknowl
 bounded window. Note also the fail-open at `reducer.ts:263-270`: a sequence at or below `lastAppliedSequence`
 with no fingerprint present is treated as an idempotent no-op, so any future pruning silently weakens the
 collision check unless the prune boundary is made explicit in state.
+
+**Resolved (2026-07-26).** Three changes, and the third is the one the note above asked for:
+
+1. Fingerprints are a truncated SHA-256 of the encoded event rather than the event itself. Only identity is ever
+   compared, so 32 bytes carries the whole signal.
+2. Retention is a window of the last `fingerprintWindow` (128) applied sequences.
+3. `fingerprintFloor` is now a field of state, so the fail-open is explicit. Below the floor a replay returns
+   `unverifiable_replay` and the caller knows the check did not run. **Inside** the window a missing fingerprint
+   is no longer treated as a no-op at all — it means the state is inconsistent and returns a new
+   `fingerprint_missing` error.
+
+Measured, same shape as the original probe:
+
+```text
+before:  60 events -> 16.8 KB, growing without bound
+after:   60 events ->  2.3 KB
+        500 events ->  5.1 KB   (128 retained, floor 373)
+       5000 events ->  5.3 KB   (128 retained, floor 4873)
+```
 
 ### M7. Health sits behind bearer authentication
 
@@ -215,7 +285,8 @@ for control flow on every decode. Immaterial at current volumes; worth rememberi
 
 **L5.** `applied()` casts `message.sequence as number as EventSequence` (`reducer.ts:103`) to launder
 `ProducedEventSequence` (at least 1) into `EventSequence` (at least 0). Correct, but the double cast defeats
-both brands. A `toEventSequence()` helper in contracts would be honest and greppable.
+both brands. A `toEventSequence()` helper in contracts would be honest and greppable. — **Resolved
+(2026-07-26):** `toEventSequence` is in `scalars.ts` and is the only place the cast appears.
 
 **L6.** `Candidate.activeDevelopmentServers[].url` is a raw `Schema.URLFromString` (`candidate.ts:35`) while
 every other URL in the package is the canonicalized, scheme-checked `HttpsUrl`. Development servers are
@@ -228,7 +299,8 @@ verify against — but it is an implementation-added constraint that should be r
 PLAN §9.
 
 **L8.** The two reducers' error taxonomies are separate types with the same members (`WorkflowReducerError`
-versus `BebopProjectionError` plus `identity_mismatch`). The H1 extraction resolves this.
+versus `BebopProjectionError` plus `identity_mismatch`). The H1 extraction resolves this. — **Resolved
+(2026-07-26):** both are `WorkflowError`; Bebop's is that union plus `identity_mismatch`.
 
 ## 6. Sequencing concern
 
@@ -260,3 +332,13 @@ to the control lease (§10.4, §10.5, §16.3, §16.4, §29.15).
 This is the argument for the remaining Milestone 0 spikes. Two of four assumptions in one afternoon were
 incorrect in ways that changed the design; the tmux input lock and the Postgres/SQLite round trip are still
 untested, and the tmux lock is the last piece of the control model resting on assumption rather than evidence.
+
+**Resolved (2026-07-26).** Milestone 0 is complete. `spikes/persistence`, `spikes/tmux-input-lock`, and
+`spikes/effect-runtime` were built and run; 41 probes pass across the four spikes. The tmux lock held — including
+against a real attached client — so the control model no longer rests on an untested assumption.
+
+The argument above was right about the payoff, though the later spikes were kinder than the lease guard: no
+further assumption was invalidated, but six findings changed work in Milestones 3, 4, and 8, and three of them
+are the sort that only surface once real data exists (`jsonb` reordering breaking fingerprint recomputation,
+`bigint` decoding as a string, and a security middleware that silently skips its route if written the obvious
+way). They are recorded under Milestone 0 in `PLAN.md`.

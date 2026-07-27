@@ -17,7 +17,7 @@ The first useful milestone is not a fully provisioned bounty. It is a local Bebo
 Progress through 2026-07-26:
 
 - **Milestone 0 is complete and validated:** every build-critical spike now has a runnable fixture and a recorded verdict, and all four pass (41 probes total). Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The plugin lease guard, the pinned OpenCode fake-model turn, and the OpenCode version pin are proven together by `spikes/lease-guard/` against OpenCode 1.18.5; two gaps were found and both close with verified OpenCode configuration rather than new architecture, raising `SPEC.md` §11.5 from two enforcement layers to four and binding the seat credential's lifetime to the control lease. `spikes/persistence/` proves the Postgres and SQLite round trip, `spikes/tmux-input-lock/` proves the cockpit input lock, and `spikes/effect-runtime/` proves Effect's HTTP, SSE, WebSocket, and CLI modules run as processes on the pinned Bun. Four findings change work in later milestones; they are listed under Milestone 0 below.
-- **A Milestone 1–2 implementation review is recorded in [`REVIEW.md`](./REVIEW.md).** Its findings are not yet actioned; H1 (duplicated workflow reducer) and M3 (undiscriminated `applied: false`) should be resolved before Milestone 3 builds on either boundary.
+- **The Milestone 1–2 review in [`REVIEW.md`](./REVIEW.md) is partly actioned.** The two findings flagged as blocking Milestone 3 are resolved, along with everything else at the reducer boundary: H1 (`packages/workflow` now holds the single transition core), M2 (freshness recovers on traffic), M3 (`applied: false` carries a reason so the gateway knows whether to acknowledge), M4 (`cancelling` protected), M6 (bounded, hashed fingerprints with an explicit floor), L5, and L8. A second drift was found during the extraction and fixed: Bebop's projection did not clear `attentionReason` on resume. `REVIEW.md` carries the per-finding resolution notes and a status table. Still open: H2 and H3 (missing schemas and routes), M1 (token rotation has no wire representation), M5 (shared command payloads version independently), M7 (health behind bearer auth), and L1–L4, L6, L7.
 - **Milestone 1 is complete and validated:** the monorepo, three apps, shared contracts and testkit packages, strict per-workspace TypeScript environments, conventional-commit hooks, CI, builds, process-level entrypoint tests, artifact smokes, and workspace documentation are in place. Frozen install and `vp run ready` pass.
 - **Correction (2026-07-26):** Milestone 1's exit criterion "a clean clone can run `vp install --frozen-lockfile` and `vp run ready`" was **not** actually met when it was marked complete. `ready` passed only on a machine that already had `dist` from an earlier build, and CI had been failing on `main` since `6cba85f` for this reason. Two ordering faults: Vite+ resolves a bare `./dist/*.mjs` command as a binary at plan time, before `build` runs; and `vp check` type-checks apps against `@bebop/contracts`, which resolves through its built `dist`. Fixed by invoking executable artifacts as `sh -c './dist/cli.mjs'`, and by replacing the shell `&&` chains with Vite+ `dependsOn` task dependencies so each task builds its own prerequisites. Verified by a fresh clone plus frozen install.
 - **Milestone 2 is complete and validated:** shared wire and domain schemas, bidirectional Bebop-Swordfish and local `sf` protocols, typed process configuration, authenticated Bebop HTTP/SSE contracts with generated OpenAPI, pure workflow/projection reducers, and golden replay/idempotency coverage are implemented. Frozen install and `vp run ready` pass.
@@ -64,6 +64,9 @@ packages/
   contracts/
     src/
     test/
+  workflow/
+    src/
+    test/
   testkit/
     src/
     fixtures/
@@ -79,9 +82,13 @@ bun.lock
 
 `packages/contracts` is the only required production package at initialization. It contains Effect Schemas and transport-neutral domain values shared by two or more apps.
 
+`packages/workflow` was added after Milestone 2, when a second app needed it. It holds the pure Swordfish workflow transition core — the interpretation of the event stream that Swordfish and Bebop's projection must agree on. It has no I/O and no persistence. Bebop's projection is that core plus connection identity and freshness, which is Bebop's own concern; Swordfish's reducer is that core plus a non-null starting stage.
+
 `packages/testkit` is development-only. It contains process harnesses, protocol peers, temporary Git repositories, fixture hooks, fake model endpoints, clocks, and eventually a fake exe.dev adapter.
 
 Do not create a generic `utils` package during initialization. Code stays with its first consumer and moves into a narrowly named package only after a second app needs it. Apps must not import source code directly from other apps.
+
+`packages/workflow` is what that rule looks like when it fires: sharing the wire types was not enough, because two apps had independently written down what those types _mean_ and the two copies had already drifted.
 
 ### 2.2 Entrypoints
 

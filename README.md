@@ -11,6 +11,7 @@ defined in [`SPEC.md`](./SPEC.md), and the implementation sequence is tracked in
 | `apps/swordfish`             | Swordfish daemon and local `sf` CLI                      |
 | `apps/bebop-opencode-plugin` | OpenCode workflow tools and lease enforcement            |
 | `packages/contracts`         | Shared schemas and wire contracts                        |
+| `packages/workflow`          | The pure Swordfish workflow transition core              |
 | `packages/testkit`           | Shared test processes, fixtures, and deterministic fakes |
 | `spikes/*`                   | Throwaway experiments that validate a design assumption  |
 

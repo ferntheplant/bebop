@@ -345,6 +345,10 @@ interface EffectiveSpec {
 }
 ```
 
+`acceptanceCriteria` must contain **at least one** entry. Everything downstream of the spec — jet's review, faye's QA scenarios, the readiness claim in §9.4 — is an assessment against these criteria, so a spec with none of them describes work that cannot be verified and therefore cannot be finished. The `/auto` flow in §10.4 must not hand off such a spec for confirmation.
+
+This constraint was added by the contracts implementation rather than by the original design, and is recorded here per `PLAN.md` §9.
+
 ### 7.6 Candidate
 
 A candidate is an explicit ein submission tied to one commit SHA.

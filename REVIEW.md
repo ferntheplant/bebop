@@ -19,10 +19,17 @@ Findings are annotated inline as they are actioned. As of 2026-07-26:
 | M3 undiscriminated `applied: false`  | **Resolved** — skip reasons                               |
 | M4 `cancelling` unprotected          | **Resolved** — added to the suspended set                 |
 | M6 unbounded fingerprint map         | **Resolved** — bounded window, hashed, explicit floor     |
+| M5 shared payloads version apart     | **Resolved** — `commands.ts` plus a coupling tripwire     |
+| L1 unbranded list cursors            | **Resolved** — `BountyListCursor`                         |
+| L2 illegal golden transcript         | **Resolved** — renamed to `protocol-v1-encoding.json`     |
+| L3 key-order-dependent comparison    | **Resolved** — `Schema.toEquivalence`                     |
+| L4 `try`/`catch` in the URL filter   | **Resolved** — `URL.canParse`                             |
 | L5 double-cast sequence brand        | **Resolved** — `toEventSequence`                          |
+| L6 uncanonicalized dev server url    | **Resolved** — `DevelopmentServerUrl`                     |
+| L7 undocumented spec tightening      | **Resolved** — recorded in `SPEC.md` §7.5                 |
 | L8 duplicated error taxonomies       | **Resolved** — follows from H1                            |
 | §6 sequencing (Milestone 0 spikes)   | **Resolved** — Milestone 0 complete, all spikes run       |
-| H2, H3, M1, M5, M7, L1–L4, L6, L7    | Open                                                      |
+| H2, H3, M1, M7                       | Open — each needs a design decision                       |
 
 ## 1. Baseline
 
@@ -223,6 +230,12 @@ socket contract without bumping its version.
 The reuse itself is good. It needs one line of policy — shared command payloads live in a third module and both
 versions bump together — because the golden fixtures cannot catch this.
 
+**Resolved (2026-07-26).** `packages/contracts/src/commands.ts` holds the four shared payloads and states the
+policy at the top of the file. Because a policy in a comment is not enforcement, `commands.test.ts` pins both
+version constants next to the encoded shape of every shared command, and asserts the set of shared command
+names as well as their shapes: editing a payload, or adding a fifth shared command, fails a test that mentions
+both protocols.
+
 ### M6. `appliedEventFingerprints` is an unbounded map of full event copies
 
 **Verified:** 60 events produce 60 retained fingerprints totalling 16.8 KB, and the map is a field of both
@@ -266,22 +279,30 @@ distinct from the authenticated `/api/health`.
 
 **L1.** `ListBountiesEndpoint`'s `cursor` (`http.ts:178`) and `nextCursor` (`http.ts:76`) are bare
 `Schema.String` — the only unvalidated strings at a boundary in an otherwise uniformly branded and
-length-bounded contract. Give them a brand, pattern, and maximum length, as `BountyEventCursorString` has.
+length-bounded contract. Give them a brand, pattern, and maximum length, as `BountyEventCursorString` has. —
+**Resolved (2026-07-26):** `BountyListCursor`, base64url alphabet, 256 characters, used by both the query
+parameter and the response field.
 
 **L2.** `packages/contracts/test/golden/protocol-v1.json` is wire-valid but workflow-illegal: sequence 1
 (`effective_spec_set`) already lands the reducer in `implementing`, then sequence 3 is
 `stage_changed → implementing`, which `changeStage` rejects. Nothing fails today because the fixture is used
 only for serialization round-trips, but a golden transcript that cannot be replayed is a trap for whoever wires
-up Milestone 5. Either make it a legal transcript or rename it `protocol-v1-encoding.json`.
+up Milestone 5. Either make it a legal transcript or rename it `protocol-v1-encoding.json`. — **Resolved
+(2026-07-26)** by the rename, because the other option would have duplicated something that already exists: the
+legal transcript is `apps/swordfish/test/workflow/golden-replay-v1.json`, replayed against the real reducer.
+`golden.test.ts` now says which fixture is which and why this one's ordering is deliberately not legal.
 
 **L3.** `decodeSfControlResponseForRequest` compares commands via `JSON.stringify` of encoded values
 (`sf-control-decode.ts:86`), which is key-order dependent. It works because both sides encode through the same
 schema, but it breaks if a response is ever constructed by hand or round-tripped through a store. The same
-pattern in `EvidenceBundleDownload` (`http.ts:91`) is safe because both arrays are sorted first.
+pattern in `EvidenceBundleDownload` (`http.ts:91`) is safe because both arrays are sorted first. — **Resolved
+(2026-07-26):** replaced with `Schema.toEquivalence(SfControlCommand)`, a structural comparison derived from the
+schema itself, so it does not depend on how either side was built.
 
 **L4.** `HttpsUrl` (`scalars.ts:141`) calls `Schema.decodeUnknownSync` inside a filter and uses `try`/`catch`
 for control flow on every decode. Immaterial at current volumes; worth remembering when it validates
-`EvidenceBlobUploadTargets` in bulk.
+`EvidenceBlobUploadTargets` in bulk. — **Resolved (2026-07-26):** the filter is now a total function over
+`URL.canParse`, shared by `HttpsUrl` and the new `DevelopmentServerUrl`.
 
 **L5.** `applied()` casts `message.sequence as number as EventSequence` (`reducer.ts:103`) to launder
 `ProducedEventSequence` (at least 1) into `EventSequence` (at least 0). Correct, but the double cast defeats
@@ -291,12 +312,17 @@ both brands. A `toEventSequence()` helper in contracts would be honest and grepp
 **L6.** `Candidate.activeDevelopmentServers[].url` is a raw `Schema.URLFromString` (`candidate.ts:35`) while
 every other URL in the package is the canonicalized, scheme-checked `HttpsUrl`. Development servers are
 http/localhost so `HttpsUrl` is genuinely wrong here, but a `LocalHttpUrl` with matching canonicalization would
-fit the package's discipline.
+fit the package's discipline. — **Resolved (2026-07-26)** as `DevelopmentServerUrl` rather than `LocalHttpUrl`:
+it allows http and https and applies the same canonicalization, but deliberately does **not** constrain the
+host, because a server bound to `0.0.0.0` and reached by the VM's hostname is ordinary and `SPEC.md` does not
+require loopback. Naming it `Local*` while not enforcing locality would have been the misleading half of the
+suggestion.
 
 **L7.** `EffectiveSpec` requires at least one acceptance criterion (`spec.ts:32`), which SPEC §7.5 does not
 mandate. This looks like a deliberate and good tightening — `/auto` cannot hand off a spec with nothing to
 verify against — but it is an implementation-added constraint that should be reflected back into SPEC §7.5 per
-PLAN §9.
+PLAN §9. — **Resolved (2026-07-26):** recorded in `SPEC.md` §7.5, with the reason (nothing downstream can
+assess a spec that states no criteria) and a note that it came from the implementation.
 
 **L8.** The two reducers' error taxonomies are separate types with the same members (`WorkflowReducerError`
 versus `BebopProjectionError` plus `identity_mismatch`). The H1 extraction resolves this. — **Resolved

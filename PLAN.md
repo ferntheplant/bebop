@@ -16,7 +16,7 @@ The first useful milestone is not a fully provisioned bounty. It is a local Bebo
 
 Progress through 2026-07-26:
 
-- **Milestone 0 is in progress:** Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The plugin lease guard, the pinned OpenCode fake-model turn, and the OpenCode version pin are now proven together by `spikes/lease-guard/` against OpenCode 1.18.5. Two gaps were found and both close with verified OpenCode configuration rather than new architecture, raising `SPEC.md` §11.5 from two enforcement layers to four and binding the seat credential's lifetime to the control lease; see that spike's README. The Postgres/SQLite round trip and the tmux input-lock spike remain.
+- **Milestone 0 is complete and validated:** every build-critical spike now has a runnable fixture and a recorded verdict, and all four pass (41 probes total). Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The plugin lease guard, the pinned OpenCode fake-model turn, and the OpenCode version pin are proven together by `spikes/lease-guard/` against OpenCode 1.18.5; two gaps were found and both close with verified OpenCode configuration rather than new architecture, raising `SPEC.md` §11.5 from two enforcement layers to four and binding the seat credential's lifetime to the control lease. `spikes/persistence/` proves the Postgres and SQLite round trip, `spikes/tmux-input-lock/` proves the cockpit input lock, and `spikes/effect-runtime/` proves Effect's HTTP, SSE, WebSocket, and CLI modules run as processes on the pinned Bun. Four findings change work in later milestones; they are listed under Milestone 0 below.
 - **A Milestone 1–2 implementation review is recorded in [`REVIEW.md`](./REVIEW.md).** Its findings are not yet actioned; H1 (duplicated workflow reducer) and M3 (undiscriminated `applied: false`) should be resolved before Milestone 3 builds on either boundary.
 - **Milestone 1 is complete and validated:** the monorepo, three apps, shared contracts and testkit packages, strict per-workspace TypeScript environments, conventional-commit hooks, CI, builds, process-level entrypoint tests, artifact smokes, and workspace documentation are in place. Frozen install and `vp run ready` pass.
 - **Correction (2026-07-26):** Milestone 1's exit criterion "a clean clone can run `vp install --frozen-lockfile` and `vp run ready`" was **not** actually met when it was marked complete. `ready` passed only on a machine that already had `dist` from an earlier build, and CI had been failing on `main` since `6cba85f` for this reason. Two ordering faults: Vite+ resolves a bare `./dist/*.mjs` command as a binary at plan time, before `build` runs; and `vp check` type-checks apps against `@bebop/contracts`, which resolves through its built `dist`. Fixed by invoking executable artifacts as `sh -c './dist/cli.mjs'`, and by replacing the shell `&&` chains with Vite+ `dependsOn` task dependencies so each task builds its own prerequisites. Verified by a fresh clone plus frozen install.
@@ -188,22 +188,40 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 
 ### Milestone 0: Resolve Build-Critical Spikes
 
+**Status:** Complete and validated (2026-07-26)
+
+Every spike is a runnable fixture under `spikes/`, invoked as `vp run @bebop/spike-<name>#spike`. Each exits
+nonzero if any probe fails, tears its own state down before it starts so an interrupted run cannot make a later
+run lie, and records a verdict in its `README.md`.
+
 **Work**
 
-- Verify the pinned Bun version can install and run Vite+ in a Bun workspace.
-- Verify Vite+ invokes type-aware Oxlint, Oxfmt, and Vitest correctly under Bun.
-- Verify Effect HTTP, Postgres, SQLite, WebSocket, and CLI packages work on the selected Bun version.
+- ~~Verify the pinned Bun version can install and run Vite+ in a Bun workspace.~~ **Done:** proven by the repository itself.
+- ~~Verify Vite+ invokes type-aware Oxlint, Oxfmt, and Vitest correctly under Bun.~~ **Done:** proven by `vp run ready`.
+- ~~Verify Effect HTTP, Postgres, SQLite, WebSocket, and CLI packages work on the selected Bun version.~~ **Done:** `spikes/persistence/` (16 probes) covers Postgres and SQLite; `spikes/effect-runtime/` (14 probes) covers HTTP, SSE, WebSocket, and CLI. Both confirm the assumption.
 - ~~Pin an OpenCode version and capture its OpenAPI document and event names.~~ **Done:** 1.18.5, pinned in the root catalog.
 - ~~Prove the OpenCode plugin API can reject prompt submission for a leased seat.~~ **Done with a gap:** confirmed for `message`, `prompt_async`, and `command`; `POST /session/:id/shell` bypasses every hook, so `SPEC.md` §11.5 now requires a Swordfish-owned transport layer. See `spikes/lease-guard/README.md`.
 - ~~Prove OpenCode can use a local fake model endpoint for deterministic integration tests.~~ **Done:** `spikes/lease-guard/fake-model.ts` serves an OpenAI-compatible streaming endpoint and counts every request.
-- Prove tmux can disable input to one pane without hiding its output.
+- ~~Prove tmux can disable input to one pane without hiding its output.~~ **Done:** `spikes/tmux-input-lock/` (11 probes) confirms it, including for a real attached client. See that spike's README.
 
 **Exit criteria**
 
-- A throwaway workspace passes `vp check` and one Vitest test under Bun.
-- A small Effect process round-trips one row through Postgres and SQLite.
-- A pinned OpenCode process starts, emits events, accepts a plugin, and completes one scripted fake-model turn.
-- Any failed assumption is reflected in `SPEC.md` before implementation continues.
+- ~~A throwaway workspace passes `vp check` and one Vitest test under Bun.~~ **Met.**
+- ~~A small Effect process round-trips one row through Postgres and SQLite.~~ **Met** by `spikes/persistence/`.
+- ~~A pinned OpenCode process starts, emits events, accepts a plugin, and completes one scripted fake-model turn.~~ **Met** by `spikes/lease-guard/`.
+- ~~Any failed assumption is reflected in `SPEC.md` before implementation continues.~~ **Met.** The lease-guard gap raised `SPEC.md` §11.5 to four enforcement layers. The only other correction is factual: §25 named `@effect/sql-sqlite`, and the package that exists on the Effect 4 beta line is `@effect/sql-sqlite-bun`. Nothing else failed.
+
+**Findings that change later milestones**
+
+These are recorded here because they are cheap to honour now and expensive to discover mid-milestone. Each spike's
+README carries the evidence.
+
+- **Postgres `jsonb` does not preserve key order** (`spikes/persistence`, PG4b). The Milestone 2 decision that reducers "retain fingerprints for every applied sequence so conflicting replay fails closed" cannot be implemented by re-serialising a payload read back from `jsonb` — every replay would look like a conflict. Milestone 3 must compute each fingerprint once at the protocol boundary and store it in its own column.
+- **Postgres `bigint` decodes as a JavaScript `string`** (`spikes/persistence`, PG5). Values are exact, but any Milestone 3 schema reading a sequence number, cursor, or acknowledgement offset must accept the string encoding rather than `Schema.Number`.
+- **Effect 4 security middleware wraps the endpoint effect** (`spikes/effect-runtime`, finding 1). It receives the endpoint's own effect and must return it; a handler that returns `Effect.void` on success silently skips the route instead of failing. Bebop declares `BearerAuthentication` on the whole API, so Milestone 3 needs a test asserting an _authorised_ request reaches its handler, not only that an unauthorised one is refused.
+- **`Migrator.fromFileSystem` will not survive `vp pack`** (`spikes/persistence`, finding 6). It loads migrations by dynamic import from a directory. The packaged single-binary Swordfish in `SPEC.md` §25 needs `Migrator.fromGlob`, whose imports are statically analysable; `fromFileSystem` stays fine for tests.
+- **`Command.run` reads argv from the `Stdio` service** (`spikes/effect-runtime`, finding 4), which `BunRuntime.runMain` does not provide. Both CLIs must supply `BunStdio.layer` or every invocation fails at startup, including `--help`.
+- **The tmux input lock is clearable by any pane in the session** (`spikes/tmux-input-lock`, finding 4). Milestone 8 must not present it as protection, and its exit criterion should be asserted against the seat program's received input rather than a terminal snapshot.
 
 ### Milestone 1: Initialize the Monorepo
 

@@ -10,8 +10,7 @@
     ".": "./dist/index.mjs"
   },
   "scripts": {
-    "build": "vp pack",
-    "smoke": "bun -e 'await import(\"@bebop/opencode-plugin\")'"
+    "build": "vp pack"
   },
   "devDependencies": {
     "typescript": "catalog:",

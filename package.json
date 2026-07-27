@@ -10,13 +10,7 @@
   "type": "module",
   "scripts": {
     "build": "vp run -r build",
-    "check": "vp check",
     "dev": "vp run @bebop/server#dev",
-    "ready": "vp run build && vp check && vp run test && vp run test:integration && vp run smoke",
-    "smoke": "vp run @bebop/server#smoke && vp run @bebop/swordfish#smoke && vp run @bebop/opencode-plugin#smoke",
-    "test": "vp test --run apps packages",
-    "test:e2e": "vp test --run --passWithNoTests test/e2e",
-    "test:integration": "vp test --run test/integration",
     "prepare": "vp config"
   },
   "devDependencies": {

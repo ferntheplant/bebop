@@ -93,6 +93,23 @@ export default defineConfig({
   },
   run: {
     cache: true,
+    tasks: {
+      // `check` and the test tasks type-check and import `@bebop/contracts`, which
+      // resolves through its built `dist`, so every one of them needs a build first.
+      check: { command: "vp check", dependsOn: ["build"] },
+      test: { command: "vp test --run apps packages", dependsOn: ["build"] },
+      "test:integration": { command: "vp test --run test/integration", dependsOn: ["build"] },
+      "test:e2e": { command: "vp test --run --passWithNoTests test/e2e", dependsOn: ["build"] },
+      smoke: {
+        command: "echo 'smoke: artifacts started'",
+        dependsOn: ["@bebop/server#smoke", "@bebop/swordfish#smoke", "@bebop/opencode-plugin#smoke"],
+      },
+      // Aggregator: the gate is its dependencies, not its command.
+      ready: {
+        command: "echo 'ready: check, tests, and artifact smokes passed'",
+        dependsOn: ["check", "test", "test:integration", "smoke"],
+      },
+    },
   },
   test: {
     passWithNoTests: false,

@@ -19,7 +19,7 @@ Progress through 2026-07-26:
 - **Milestone 0 is in progress:** Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The plugin lease guard, the pinned OpenCode fake-model turn, and the OpenCode version pin are now proven together by `spikes/lease-guard/` against OpenCode 1.18.5. Two gaps were found and both close with verified OpenCode configuration rather than new architecture, raising `SPEC.md` §11.5 from two enforcement layers to four and binding the seat credential's lifetime to the control lease; see that spike's README. The Postgres/SQLite round trip and the tmux input-lock spike remain.
 - **A Milestone 1–2 implementation review is recorded in [`REVIEW.md`](./REVIEW.md).** Its findings are not yet actioned; H1 (duplicated workflow reducer) and M3 (undiscriminated `applied: false`) should be resolved before Milestone 3 builds on either boundary.
 - **Milestone 1 is complete and validated:** the monorepo, three apps, shared contracts and testkit packages, strict per-workspace TypeScript environments, conventional-commit hooks, CI, builds, process-level entrypoint tests, artifact smokes, and workspace documentation are in place. Frozen install and `vp run ready` pass.
-- **Correction (2026-07-26):** Milestone 1's exit criterion "a clean clone can run `vp install --frozen-lockfile` and `vp run ready`" was **not** actually met when it was marked complete. `ready` passed only on a machine that already had `dist` from an earlier build, and CI had been failing on `main` since `6cba85f` for this reason. Two ordering faults: Vite+ resolves a bare `./dist/*.mjs` command as a binary at plan time, before `build` runs; and `vp check` type-checks apps against `@bebop/contracts`, which resolves through its built `dist`. Fixed by invoking executable artifacts as `sh -c './dist/cli.mjs'` and by ordering `ready` as build, check, test, integration, smoke. Verified by a fresh clone plus frozen install.
+- **Correction (2026-07-26):** Milestone 1's exit criterion "a clean clone can run `vp install --frozen-lockfile` and `vp run ready`" was **not** actually met when it was marked complete. `ready` passed only on a machine that already had `dist` from an earlier build, and CI had been failing on `main` since `6cba85f` for this reason. Two ordering faults: Vite+ resolves a bare `./dist/*.mjs` command as a binary at plan time, before `build` runs; and `vp check` type-checks apps against `@bebop/contracts`, which resolves through its built `dist`. Fixed by invoking executable artifacts as `sh -c './dist/cli.mjs'`, and by replacing the shell `&&` chains with Vite+ `dependsOn` task dependencies so each task builds its own prerequisites. Verified by a fresh clone plus frozen install.
 - **Milestone 2 is complete and validated:** shared wire and domain schemas, bidirectional Bebop-Swordfish and local `sf` protocols, typed process configuration, authenticated Bebop HTTP/SSE contracts with generated OpenAPI, pure workflow/projection reducers, and golden replay/idempotency coverage are implemented. Frozen install and `vp run ready` pass.
 
 ## 2. Repository Decisions
@@ -142,14 +142,18 @@ The root package exposes a small command surface:
 
 ```text
 vp run dev
+vp run build
 vp run check
 vp run test
 vp run test:integration
 vp run test:e2e
+vp run smoke
 vp run ready
 ```
 
-`ready` runs formatting verification, linting, type checking, unit tests, and integration tests that do not require external credentials. Credentialed exe.dev and GitHub smoke tests remain separate commands.
+`ready` runs formatting verification, linting, type checking, unit tests, integration tests that do not require external credentials, and artifact smokes. Credentialed exe.dev and GitHub smoke tests remain separate commands.
+
+These are Vite+ tasks declared in `vite.config.ts`, not shell chains. Each declares its prerequisites with `dependsOn`, so any of them can be run alone on a clean checkout and will build what it needs first. `ready` is an aggregator: its gate is its dependency set.
 
 ## 4. Architectural Rules
 

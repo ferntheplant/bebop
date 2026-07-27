@@ -37,10 +37,16 @@ Run the complete local readiness check:
 vp run ready
 ```
 
-`ready` builds before it checks and tests, because `@bebop/contracts` resolves through its built `dist`, and
-because Vite+ resolves a bare `./dist/*.mjs` command as a binary at _plan_ time — before any task runs. That is
-why the executable smoke scripts invoke their artifacts as `sh -c './dist/cli.mjs'` rather than directly:
-without it, `vp run ready` cannot plan on a clean checkout where `dist` does not yet exist.
+Tasks declare their own prerequisites with Vite+ `dependsOn` in `vite.config.ts` rather than being chained with
+shell `&&`, so every task is correct when run on its own from a clean checkout — `vp run smoke` builds what it
+needs before it runs. `ready` is an aggregator whose gate is its dependencies.
+
+Two constraints shaped that wiring:
+
+- `check` and the test tasks resolve `@bebop/contracts` through its built `dist`, so they depend on `build`;
+- Vite+ resolves a bare `./dist/*.mjs` command as a binary at _plan_ time, before any task runs, so the
+  executable smoke tasks invoke their artifacts as `sh -c './dist/cli.mjs'`. Without that, planning fails on a
+  clean checkout where `dist` does not exist yet, no matter how the dependencies are declared.
 
 Run individual checks:
 

@@ -1,18 +1,14 @@
 {
-  "name": "@bebop/opencode-plugin",
+  "name": "@bebop/spike-lease-guard",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "imports": {
-    "#src/*": "./src/*"
-  },
-  "exports": {
-    ".": "./dist/index.mjs"
-  },
   "scripts": {
-    "build": "vp pack"
+    "spike": "bun run.ts"
   },
   "devDependencies": {
+    "@opencode-ai/plugin": "catalog:",
+    "@opencode-ai/sdk": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   }

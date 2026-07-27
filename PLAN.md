@@ -16,8 +16,10 @@ The first useful milestone is not a fully provisioned bounty. It is a local Bebo
 
 Progress through 2026-07-26:
 
-- **Milestone 0 is in progress:** Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The Postgres/SQLite round trip, pinned OpenCode fake-model turn, plugin lease guard, and tmux input-lock spikes remain.
+- **Milestone 0 is in progress:** Bun/Vite+ workspace operation and Effect Schema on Bun are proven. The plugin lease guard, the pinned OpenCode fake-model turn, and the OpenCode version pin are now proven together by `spikes/lease-guard/` against OpenCode 1.18.5. Two gaps were found and both close with verified OpenCode configuration rather than new architecture, raising `SPEC.md` §11.5 from two enforcement layers to four and binding the seat credential's lifetime to the control lease; see that spike's README. The Postgres/SQLite round trip and the tmux input-lock spike remain.
+- **A Milestone 1–2 implementation review is recorded in [`REVIEW.md`](./REVIEW.md).** Its findings are not yet actioned; H1 (duplicated workflow reducer) and M3 (undiscriminated `applied: false`) should be resolved before Milestone 3 builds on either boundary.
 - **Milestone 1 is complete and validated:** the monorepo, three apps, shared contracts and testkit packages, strict per-workspace TypeScript environments, conventional-commit hooks, CI, builds, process-level entrypoint tests, artifact smokes, and workspace documentation are in place. Frozen install and `vp run ready` pass.
+- **Correction (2026-07-26):** Milestone 1's exit criterion "a clean clone can run `vp install --frozen-lockfile` and `vp run ready`" was **not** actually met when it was marked complete. `ready` passed only on a machine that already had `dist` from an earlier build, and CI had been failing on `main` since `6cba85f` for this reason. Two ordering faults: Vite+ resolves a bare `./dist/*.mjs` command as a binary at plan time, before `build` runs; and `vp check` type-checks apps against `@bebop/contracts`, which resolves through its built `dist`. Fixed by invoking executable artifacts as `sh -c './dist/cli.mjs'`, and by replacing the shell `&&` chains with Vite+ `dependsOn` task dependencies so each task builds its own prerequisites. Verified by a fresh clone plus frozen install.
 - **Milestone 2 is complete and validated:** shared wire and domain schemas, bidirectional Bebop-Swordfish and local `sf` protocols, typed process configuration, authenticated Bebop HTTP/SSE contracts with generated OpenAPI, pure workflow/projection reducers, and golden replay/idempotency coverage are implemented. Frozen install and `vp run ready` pass.
 
 ## 2. Repository Decisions
@@ -140,14 +142,18 @@ The root package exposes a small command surface:
 
 ```text
 vp run dev
+vp run build
 vp run check
 vp run test
 vp run test:integration
 vp run test:e2e
+vp run smoke
 vp run ready
 ```
 
-`ready` runs formatting verification, linting, type checking, unit tests, and integration tests that do not require external credentials. Credentialed exe.dev and GitHub smoke tests remain separate commands.
+`ready` runs formatting verification, linting, type checking, unit tests, integration tests that do not require external credentials, and artifact smokes. Credentialed exe.dev and GitHub smoke tests remain separate commands.
+
+These are Vite+ tasks declared in `vite.config.ts`, not shell chains. Each declares its prerequisites with `dependsOn`, so any of them can be run alone on a clean checkout and will build what it needs first. `ready` is an aggregator: its gate is its dependency set.
 
 ## 4. Architectural Rules
 
@@ -187,9 +193,9 @@ Each milestone ends with a runnable demonstration and an automated exit check. A
 - Verify the pinned Bun version can install and run Vite+ in a Bun workspace.
 - Verify Vite+ invokes type-aware Oxlint, Oxfmt, and Vitest correctly under Bun.
 - Verify Effect HTTP, Postgres, SQLite, WebSocket, and CLI packages work on the selected Bun version.
-- Pin an OpenCode version and capture its OpenAPI document and event names.
-- Prove the OpenCode plugin API can reject prompt submission for a leased seat.
-- Prove OpenCode can use a local fake model endpoint for deterministic integration tests.
+- ~~Pin an OpenCode version and capture its OpenAPI document and event names.~~ **Done:** 1.18.5, pinned in the root catalog.
+- ~~Prove the OpenCode plugin API can reject prompt submission for a leased seat.~~ **Done with a gap:** confirmed for `message`, `prompt_async`, and `command`; `POST /session/:id/shell` bypasses every hook, so `SPEC.md` §11.5 now requires a Swordfish-owned transport layer. See `spikes/lease-guard/README.md`.
+- ~~Prove OpenCode can use a local fake model endpoint for deterministic integration tests.~~ **Done:** `spikes/lease-guard/fake-model.ts` serves an OpenAI-compatible streaming endpoint and counts every request.
 - Prove tmux can disable input to one pane without hiding its output.
 
 **Exit criteria**
@@ -397,11 +403,15 @@ Build the OpenCode client and Bebop plugin together against the pinned version p
 
 **Plugin work**
 
-- Implement `/auto` and the effective-spec confirmation flow.
+- Implement `/auto` and the effective-spec confirmation flow, including seat-credential revocation inside the atomic `set_spec` transition.
 - Implement `set_spec`, `candidate_ready`, `blocked`, `continue`, and role-aware handback tools.
 - Inject role, stage, spec, candidate, and constraint context into prompts.
 - Correlate the OpenCode session ID to the Swordfish seat.
-- Enforce the control lease before prompt submission, regardless of client.
+- Enforce the control lease before prompt submission, regardless of client, via `chat.message` and `command.execute.before`.
+- Spawn each seat's OpenCode server with a random per-boot `OPENCODE_SERVER_PASSWORD` and a private `OPENCODE_DB`, closing the unhooked `POST /session/:id/shell` route and second-instance access that no plugin hook observes.
+- Treat the seat password as the seat's write capability: never publish it, issue it only through `sf takeover`, and rotate it on every control release when one was issued.
+- Rotate by restarting the seat server, re-attaching seat panes and the event subscription, and reconciling the restart like any other externally visible operation.
+- Record any seat activity Swordfish did not originate as an intrusion and escalate to `needs_attention`.
 - Deny and report unexpected permission requests while Swordfish owns the lease.
 
 **Integration strategy**
@@ -418,10 +428,14 @@ Build the OpenCode client and Bebop plugin together against the pinned version p
 - idle without `set_spec` remains interactive after one recovery failure;
 - `candidate_ready` records the exact SHA and current spec revision;
 - idle without a disposition is re-prompted once, then needs attention;
-- a human prompt to a Swordfish-leased seat is rejected by the plugin;
+- a human prompt to a Swordfish-leased seat is rejected by the plugin, asserted by the fake model endpoint receiving zero requests rather than by the rejection status alone;
+- a leased seat cannot be driven through `POST /session/:id/shell`, which bypasses every plugin hook and is closed by the server password;
+- a second OpenCode instance started in the seat's directory with `--pure` cannot see or reach the seat's session;
+- seat activity that Swordfish did not originate is recorded as an intrusion rather than silently applied;
 - takeover aborts at a safe boundary before transferring the lease;
 - forced takeover records an interrupted boundary;
 - handback resumes the same spec or proposes a new confirmed revision;
+- a credential issued by `sf takeover` stops working the moment control is released, by handback or by `set_spec`;
 - a permission event is denied and recorded;
 - reconnecting to OpenCode does not duplicate a prompt whose completion is uncertain;
 - an OpenCode version mismatch prevents autonomous work.
@@ -441,7 +455,11 @@ Build the OpenCode client and Bebop plugin together against the pinned version p
 - Render the status TUI from durable Swordfish state.
 - Start seat panes, shell panes, and configured service-log panes.
 - Disable tmux input for Swordfish-controlled seat panes.
+- Keep the seat server's password out of the tmux session environment and shell profiles, since `opencode attach` defaults `--password` to `OPENCODE_SERVER_PASSWORD`.
+- Disable the embedded web UI, mDNS discovery, and extra CORS origins in the base image.
 - Route takeover, handback, retry, extension, approval, and stop through `sf`.
+- Print the seat URL, session ID, and lease owner in `sf status`, and never the seat credential.
+- Issue the attach credential only through `sf takeover`, and revoke it on release.
 - Preserve observation while preventing accidental terminal steering.
 - Add SSH attach metadata to the local fake lifecycle provider.
 
@@ -450,7 +468,8 @@ Build the OpenCode client and Bebop plugin together against the pinned version p
 - A user can observe a working seat but cannot type into its pane while Swordfish holds the lease.
 - The plugin rejects prompts from a second OpenCode client even if tmux is bypassed.
 - Safe and forced takeover visibly update the pane, lease, status, and event stream.
-- Disconnecting SSH does not imply handback.
+- Disconnecting SSH does not imply handback, and leaves no usable seat credential behind.
+- A second client attached during takeover loses write access at handback without Swordfish touching that client.
 
 ### Milestone 9: exe.dev Provisioning and Authentication
 

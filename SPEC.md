@@ -542,6 +542,7 @@ The bebop OpenCode plugin instructs ein to:
 - persists a new spec revision;
 - records user confirmation;
 - transfers ein's control lease to Swordfish;
+- revokes any seat credential issued to the user during this control episode, rotating the seat server password (§11.5);
 - enters the autonomous implementation stage.
 
 If OpenCode emits `session.idle` without `set_spec`, Swordfish re-prompts the same seat once. Repeated failure leaves the bounty interactive and marks it as needing attention. It never starts autonomous work without an effective spec.
@@ -556,10 +557,12 @@ To steer an active agent, the user issues a cockpit takeover command. Swordfish:
 2. records the takeover;
 3. transfers the control lease;
 4. enables input to that seat pane;
-5. changes the bounty status to `human_controlled`.
+5. issues the seat credential if the user requested a second client (§11.5);
+6. changes the bounty status to `human_controlled`.
 
 When returning control:
 
+- any seat credential issued during the control episode is revoked (§11.5);
 - ein's handback checks whether the effective spec remains valid;
 - implementation-only guidance may continue under the same spec revision;
 - changed product behavior produces a proposed spec revision and requires confirmation;
@@ -647,10 +650,35 @@ The VM is the sandbox; the harness is not a second permission boundary.
 
 Only one actor may submit prompts to a controlled seat: `human` or `swordfish`.
 
-Enforcement is two-layered _(resolved — see §16.2)_:
+Enforcement is layered _(revised 2026-07-26 after the lease-guard spike; see §16.2)_:
 
 1. **tmux (UX layer):** the cockpit disables keyboard input to Swordfish-controlled seat panes.
-2. **plugin (authoritative layer):** the bebop plugin rejects prompt submission on a leased seat regardless of how the prompt arrived — including a user who opens a second OpenCode client from a shell pane — and tells the user to run the takeover command.
+2. **plugin (authoritative layer for model turns):** the bebop plugin rejects prompt submission on a leased seat regardless of how the prompt arrived — including a user who opens a second OpenCode client from a shell pane.
+3. **transport layer (required):** Swordfish spawns the seat's OpenCode server with a random per-boot `OPENCODE_SERVER_PASSWORD` and a private `OPENCODE_DB`, so the server is unreachable without the secret and its sessions are invisible to any other OpenCode instance.
+4. **detection layer (required):** Swordfish knows which prompts it originated. Any message or tool execution on a leased seat that Swordfish did not originate is recorded as an intrusion and escalates to `needs_attention`.
+
+The spike in `spikes/lease-guard/` proved against pinned OpenCode 1.18.5 that:
+
+- throwing from `chat.message` or `command.execute.before` aborts the turn **before the model provider is contacted**, covering `POST /session/:id/message`, `POST /session/:id/prompt_async`, and `POST /session/:id/command`;
+- `POST /session/:id/shell` executes in a leased seat **without invoking any plugin hook**, so the plugin alone cannot satisfy "regardless of how the prompt arrived";
+- session state is shared per project on disk, and `opencode serve --pure` skips project-local plugins, so a second instance in the same directory drove a leased seat with no guard loaded;
+- `OPENCODE_SERVER_PASSWORD` (HTTP Basic, username `opencode`) returns `401` on every route including `/shell`, and a private `OPENCODE_DB` makes the seat unreachable from another instance even by explicit session ID;
+- a hook's thrown message does not reach the HTTP caller — the synchronous route returns an opaque server error and the asynchronous route returns `204` — so the "run the takeover command" instruction must be delivered through the event stream, the seat TUI, or the Swordfish status pane, not the response body.
+
+The layers compose and fail independently, which is the point: the plugin is authoritative for model turns, the transport controls close the routes and instances the plugin cannot see, and detection is route-agnostic so it still catches an unhooked route added by a future OpenCode version. Bypass remains possible for a determined operator with a shell in the VM — that is accepted (§21.1), and the goal is that it cannot happen by accident. Any test of the guard must assert that the model endpoint received zero requests, not merely that an error was returned.
+
+#### Seat credential lifecycle
+
+The seat server's password is not ambient configuration. It is the write capability for the seat, and its lifetime is bound to the control lease.
+
+- **Swordfish never publishes it.** `sf status` shows the seat URL, the session ID, and the lease owner, but not the credential. The tmux seat pane is already attached, so the normal observe-and-takeover path never needs it.
+- **`sf takeover` may issue it.** A user who wants a second client — a wider terminal, a separate SSH session — receives the credential as part of takeover, which is already a durable, recorded state transition. Obtaining the ability to write to a seat therefore cannot happen without recording that it was taken.
+- **Any release of control revokes it.** Whenever the lease returns from `human` to `swordfish` — explicit `sf handback`, the `/auto` confirmation flow, or role-aware plugin handback — Swordfish rotates the seat password if one was issued during that control episode. Rotation invalidates any client the user left attached elsewhere.
+- **Rotation is conditional.** If no credential was issued during a control episode, there is nothing to revoke and no rotation occurs. This keeps the common path — the user steering through the tmux pane and handing back — free of a seat-server restart.
+
+The resulting invariant: **no human-held seat credential survives a control release.** A user who wants back in runs `sf takeover` again. This is what makes the lease meaningful after the first takeover; without rotation, one takeover would grant permanent shell-route access to that seat and every later lease would be advisory.
+
+Rotating the password requires restarting the seat's OpenCode server, because `OPENCODE_SERVER_PASSWORD` is read at process start. Sessions survive the restart because they live in the seat's `OPENCODE_DB`, but Swordfish must re-attach the seat panes and re-establish its own event subscription. Handback and `set_spec` are already safe-boundary transitions, so this is an acceptable place to absorb a restart — but it is a real moving part and must be reconciled like any other externally visible operation (§22.3).
 
 Takeover and handback are durable state transitions, not cosmetic terminal modes.
 
@@ -1013,7 +1041,9 @@ The cockpit is a Swordfish-owned tmux session reached over SSH (mosh after SSH w
 The cockpit's job is not only access but **protection from accidental interference**: the user must not be able to naively steer an agent mid-flight and corrupt bounty state.
 
 - tmux disables keyboard input to seat panes whose lease Swordfish holds (UX layer);
-- the bebop plugin authoritatively rejects any prompt reaching a leased seat by other routes (§11.5);
+- the bebop plugin authoritatively rejects any prompt or command reaching a leased seat by other routes (§11.5);
+- the seat's OpenCode server requires a Swordfish-held password and keeps private session storage, closing the shell route and second-instance access that plugin hooks cannot see (§11.5);
+- Swordfish records any seat activity it did not originate as an intrusion (§11.5);
 - all steering flows through explicit `sf` commands.
 
 ### 16.3 Commands _(provisional)_
@@ -1032,9 +1062,21 @@ sf stop
 
 Safe takeover waits for a session-abort boundary (abort → idle event → last message ID recorded); `--force` interrupts immediately. Config approval is also available remotely via `bebop bounty approve-config`.
 
+`sf status` prints the seat server URL, each seat's session ID, and the lease owner, but never the seat credential. `sf takeover` optionally issues that credential so the user can attach a second client:
+
+```text
+opencode attach <seat-url> --session <session-id> --password <credential>
+```
+
+The credential is a seat-server HTTP Basic password (username `opencode`). `OPENCODE_DB` is server-side only, so a client never needs the database path. `sf handback` and the `/auto` flow revoke it (§11.5).
+
+Swordfish must not export the credential into the tmux session environment or a shell profile: `opencode attach` defaults `--password` to `OPENCODE_SERVER_PASSWORD`, so an inherited variable would silently re-grant seat write access to every free shell pane. It is passed only to the processes Swordfish itself spawns.
+
 ### 16.4 Handback
 
 Handback must be explicit. Swordfish never guesses that closing SSH means autonomous work should resume.
+
+Every handback revokes the seat credential if one was issued, so a client the user left attached in another terminal stops working at the moment control returns. This is why disconnecting SSH cannot imply handback and also cannot leave a usable write path open: the lease and the credential expire together, and only together.
 
 For ein's seat, the role-aware `/auto` flow asks the agent to determine whether:
 
@@ -1679,7 +1721,7 @@ Draft 0.2's open questions are resolved as follows. Items marked **⚠ provision
 
 7. **Version pinning:** exact version baked into the base image; upgrades qualified by a smoke bounty. ⚠ provisional
 8. **Models:** ein GPT-5.6 Sol high and jet medium via the exe.dev LLM integration; faye GLM 5.2 via an exe.dev HTTP Proxy to OpenCode Go (§14.1, §20.2).
-9. **Read-only pane enforcement:** two layers — tmux input disable (UX) + plugin lease guard (authoritative) (§11.5).
+9. **Read-only pane enforcement:** four layers — tmux input disable (UX) + plugin lease guard (authoritative for model turns) + transport controls (`OPENCODE_SERVER_PASSWORD` and a private `OPENCODE_DB`, closing the unhooked shell route and second-instance access) + Swordfish intrusion detection. Revised 2026-07-26 from two layers after the lease-guard spike (§11.5).
 10. **Safe interrupt:** `session.abort` → wait for idle/aborted event → record last message ID; takeover only at that boundary unless forced. ⚠ provisional
 11. **Permission prompts:** none in autonomous mode; allow-all ein, locked jet/faye; stray events denied and logged (§11.4).
 12. **Compaction:** no extra checkpoints; Swordfish SQLite is durable truth and prompts restate spec + stage (§22.5). ⚠ provisional
@@ -1688,7 +1730,7 @@ Draft 0.2's open questions are resolved as follows. Items marked **⚠ provision
 
 13. **Cockpit:** Swordfish-owned tmux with status pane, locked seat panes, free shell panes (§16.1).
 14. **mosh:** after SSH works. ⚠ provisional
-15. **Commands:** `sf status/takeover/handback/extend/retry/approve-config/stop` (§16.3). ⚠ provisional
+15. **Commands and seat credential lifecycle:** `sf status/takeover/handback/extend/retry/approve-config/stop` (§16.3). The seat server password is the seat's write capability, so `sf status` never prints it, `sf takeover` may issue it, and every control release (`sf handback`, `/auto` `set_spec`, role-aware handback) revokes it by rotating the password. Command set ⚠ provisional; credential lifecycle added 2026-07-26 from the lease-guard spike (§11.5).
 16. **Log panes:** generated from `config.yml` services. ⚠ provisional
 
 ### exe.dev and provisioning
@@ -1745,7 +1787,7 @@ Facts assumed above that need confirmation against the live tools:
 
 - the exe.dev LLM integration's OpenAI strategy can serve ein and jet through the connected ChatGPT subscription as configured;
 - the exe.dev HTTP Proxy integration can serve OpenCode Go with injected authorization, streaming, cancellation, and safe path joining as specified in §20.2;
-- the OpenCode plugin API exposes a hook capable of rejecting prompt submission (the lease guard, §11.5);
+- ~~the OpenCode plugin API exposes a hook capable of rejecting prompt submission (the lease guard, §11.5)~~ — **verified 2026-07-26 against OpenCode 1.18.5, with one gap.** Throwing from `chat.message` or `command.execute.before` aborts the turn before the provider is contacted; `POST /session/:id/shell` bypasses every hook. §11.5 gains a required transport layer as a result. See `spikes/lease-guard/`;
 - tmux pane-input disabling behaves as required for the cockpit UX layer.
 
 ---
@@ -1763,7 +1805,7 @@ The design commits to:
 - **full commitment to OpenCode — no harness abstraction; the bebop plugin is a first-class component;**
 - **OpenCode's server API and SSE stream as Swordfish's integration boundary;**
 - **API-first: Effect-Schema contracts generate OpenAPI; the CLI is a thin client; SSE events ship in the MVP for future GUI/Linear clients;**
-- **a visible tmux cockpit with two-layer control-lease enforcement and free shell panes; Herdr waits for authoritative pane locking;**
+- **a visible tmux cockpit with four-layer control-lease enforcement and free shell panes; Herdr waits for authoritative pane locking;**
 - **a deterministic Swordfish with local SQLite state;**
 - **clean-room, SHA-pinned verification worktrees;**
 - **local validation, then CI (polled) and review in parallel, then QA;**

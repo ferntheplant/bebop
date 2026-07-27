@@ -37,6 +37,11 @@ Run the complete local readiness check:
 vp run ready
 ```
 
+`ready` builds before it checks and tests, because `@bebop/contracts` resolves through its built `dist`, and
+because Vite+ resolves a bare `./dist/*.mjs` command as a binary at _plan_ time — before any task runs. That is
+why the executable smoke scripts invoke their artifacts as `sh -c './dist/cli.mjs'` rather than directly:
+without it, `vp run ready` cannot plan on a clean checkout where `dist` does not yet exist.
+
 Run individual checks:
 
 ```bash

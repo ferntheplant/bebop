@@ -12,7 +12,7 @@
   "scripts": {
     "build": "vp pack",
     "dev": "bun --watch src/api.ts",
-    "smoke": "bun dist/api.mjs && bun dist/worker.mjs && ./dist/cli.mjs"
+    "smoke": "bun dist/api.mjs && bun dist/worker.mjs && sh -c './dist/cli.mjs'"
   },
   "dependencies": {
     "@bebop/contracts": "workspace:*",

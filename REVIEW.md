@@ -16,8 +16,15 @@ Verified before reviewing:
 - `vp test --run apps packages` passes — 166 tests across 23 files.
 - The process-level entrypoint integration test runs all five executables.
 
-PLAN's claim that Milestones 1 and 2 are complete and validated is accurate. This review assumes that and
-looks for what will hurt in Milestones 3 through 7.
+PLAN's claim that Milestones 1 and 2 are complete and validated is accurate for the code. This review assumes
+that and looks for what will hurt in Milestones 3 through 7.
+
+**Baseline correction.** That verification was run on a working tree that already contained build output, which
+is the same mistake that let Milestone 1 be marked complete against an exit criterion it did not meet: `vp run
+ready` could not plan on a clean checkout, and CI had been failing on `main` since `6cba85f`. See PLAN's
+Session Progress correction. The lesson generalizes past this instance — a green check on a developer machine
+is not evidence about a clean clone, and this review should have established the baseline the way CI does
+rather than the way that was convenient.
 
 Findings marked **verified** were reproduced with a throwaway probe harness against the real reducers, not
 inferred from reading. The probe was deleted after use.

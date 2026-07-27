@@ -13,7 +13,7 @@
   "scripts": {
     "build": "vp pack",
     "dev": "bun --watch src/daemon.ts",
-    "smoke": "./dist/cli.mjs && ./dist/daemon.mjs"
+    "smoke": "sh -c './dist/cli.mjs' && sh -c './dist/daemon.mjs'"
   },
   "dependencies": {
     "@bebop/contracts": "workspace:*",

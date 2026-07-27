@@ -21,6 +21,20 @@ Spikes are excluded from `vp run test` and are run on demand. Each spike records
 `README.md`, and any assumption it invalidates is reflected in [`SPEC.md`](./SPEC.md) before implementation
 continues.
 
+| Spike                    | Proves                                                       | Needs                     |
+| ------------------------ | ------------------------------------------------------------ | ------------------------- |
+| `spikes/lease-guard`     | The OpenCode plugin can refuse prompts on a leased seat      | `opencode` 1.18.5 on PATH |
+| `spikes/persistence`     | Effect round-trips durable state through Postgres and SQLite | a running Docker daemon   |
+| `spikes/tmux-input-lock` | tmux locks input to one pane without hiding its output       | `tmux` on PATH            |
+| `spikes/effect-runtime`  | Effect HTTP, SSE, WebSocket, and CLI run as processes on Bun | nothing beyond loopback   |
+
+```bash
+vp run @bebop/spike-persistence#spike
+```
+
+Each exits nonzero if any probe fails, and tears down its own state before it starts as well as after, so an
+interrupted run cannot leave a container, socket, or database behind for the next run to inherit.
+
 ## Development
 
 Vite+ manages the configured runtime, Bun package manager, checks, tests, builds, and workspace tasks.

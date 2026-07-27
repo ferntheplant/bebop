@@ -1550,8 +1550,9 @@ The **Effect ecosystem** on **Bun** _(runtime choice provisional)_, across all c
 | Shared contracts     | Effect Schema in a shared monorepo package — API messages, Swordfish events/commands, effective specs, candidates, findings, constraints, evidence manifests |
 | HTTP API             | Effect 4 `effect/unstable/httpapi` — OpenAPI generated directly from the schemas                                                                             |
 | CLI                  | Effect 4 `effect/unstable/cli`, wrapping the generated API client                                                                                            |
+| Platform services    | `@effect/platform-bun` — filesystem, path, stdio, HTTP server, and process spawning; required by the HTTP API, the CLI, and both Migrators                   |
 | Postgres             | `@effect/sql-pg` + its Migrator                                                                                                                              |
-| Swordfish SQLite     | `@effect/sql-sqlite`                                                                                                                                         |
+| Swordfish SQLite     | `@effect/sql-sqlite-bun` + its Migrator                                                                                                                      |
 | Background jobs      | Durable job rows in Postgres worked by Effect fibers in `bebop-worker`; `@effect/cluster` only if that outgrows a single worker _(provisional)_              |
 | OpenCode integration | OpenCode SDK (from its OpenAPI spec) wrapped in Effect services; the bebop plugin shares the schemas package                                                 |
 | QA browser           | Playwright, preinstalled in the base image, driven via Playwright MCP _(provisional)_                                                                        |

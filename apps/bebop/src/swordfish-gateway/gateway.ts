@@ -35,7 +35,7 @@ import {
   UnsupportedProtocolVersionError,
 } from "@bebop/contracts";
 import { BebopToSwordfishMessage as BebopToSwordfishMessageSchema } from "@bebop/contracts";
-import { Effect, Result, Schedule, Schema } from "effect";
+import { Effect, Fiber, Queue, Result, Schedule, Schema } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { HttpRouter } from "effect/unstable/http";
 import { Socket } from "effect/unstable/socket";
@@ -45,7 +45,6 @@ import { Identity } from "#src/domain/identity.ts";
 import type { BebopSwordfishProjection } from "#src/domain/swordfish-projection.ts";
 import { BountyRepository } from "#src/persistence/bounties.ts";
 import { CommandRepository } from "#src/persistence/commands.ts";
-import { SwordfishProjectionRepository } from "#src/persistence/swordfish.ts";
 import { applyProjectionInput } from "#src/service/projection.ts";
 import { hashSwordfishToken, presentedSwordfishToken } from "#src/swordfish-gateway/credentials.ts";
 
@@ -56,6 +55,9 @@ const encodeOutbound = Schema.encodeUnknownSync(BebopToSwordfishMessageSchema);
 
 /** How many queued commands one drain sends. Bounded so a long backlog cannot stall a turn. */
 const commandBatchSize = 32;
+
+/** Frames waiting for the one ordered protocol consumer. */
+const inboundFrameCapacity = 64;
 
 interface Session {
   readonly connectionId: ConnectionId;
@@ -72,7 +74,6 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
       const config = yield* BebopConfiguration;
       const identity = yield* Identity;
       const bounties = yield* BountyRepository;
-      const projections = yield* SwordfishProjectionRepository;
       const commands = yield* CommandRepository;
 
       const presented = presentedSwordfishToken(request.headers);
@@ -80,8 +81,8 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
         yield* Effect.logWarning("swordfish upgrade without a credential");
         return HttpServerResponse.empty({ status: 401 });
       }
-      const authorizedBountyId = yield* bounties.bountyForSwordfishTokenHash(hashSwordfishToken(presented));
-      if (authorizedBountyId === null) {
+      const authorizedIdentity = yield* bounties.swordfishIdentityForTokenHash(hashSwordfishToken(presented));
+      if (authorizedIdentity === null) {
         yield* Effect.logWarning("swordfish upgrade with an unknown credential");
         return HttpServerResponse.empty({ status: 401 });
       }
@@ -98,8 +99,6 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
       // meaningful, which is what `session` being null encodes.
       let session: Session | null = null;
 
-      const loadProjection = (current: Session) => projections.load({ bountyId: current.bountyId, vmId: current.vmId });
-
       /**
        * Sends every queued command Swordfish has not been given yet.
        *
@@ -109,7 +108,7 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
        */
       const drainCommands = (current: Session) =>
         Effect.gen(function* () {
-          const pending = yield* commands.undelivered({ bountyId: current.bountyId, limit: commandBatchSize });
+          const pending = yield* commands.pendingDelivery({ bountyId: current.bountyId, limit: commandBatchSize });
           for (const queued of pending) {
             const issuedAt = yield* identity.now;
             yield* send({
@@ -136,22 +135,16 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
 
       const handleRegister = (message: RegisterMessage) =>
         Effect.gen(function* () {
-          if (message.bountyId !== authorizedBountyId) {
+          if (message.bountyId !== authorizedIdentity.bountyId || message.vmId !== authorizedIdentity.vmId) {
             // The credential names the bounty. A register claiming a different one is not a
             // routing mistake to be corrected — it is a credential being used for a bounty it
             // was not minted for.
-            yield* protocolError("identity_mismatch", "The credential does not authorise this bounty.");
+            yield* protocolError("identity_mismatch", "The credential does not authorise this bounty and VM.");
             return;
           }
           const connectionId = yield* identity.connectionId;
           const observedAt = yield* identity.now;
           const current: Session = { connectionId, bountyId: message.bountyId, vmId: message.vmId };
-
-          const existing = yield* projections.load({ bountyId: current.bountyId, vmId: current.vmId });
-          if (existing.lastAppliedSequence > 0 && existing.vmId !== current.vmId) {
-            yield* protocolError("identity_mismatch", "This bounty is bound to a different VM.");
-            return;
-          }
 
           // Recorded before `registered` is written, not after. Swordfish sends its first
           // event the instant it sees that reply, and a session assigned afterwards leaves a
@@ -160,10 +153,16 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
           session = current;
 
           const applied = yield* applyProjectionInput({
-            projection: { ...existing, vmId: current.vmId },
+            bountyId: current.bountyId,
+            vmId: current.vmId,
             input: { type: "connection_registered", connectionId, observedAt },
             at: observedAt,
           });
+          if (!applied.result.ok) {
+            session = null;
+            yield* protocolError("identity_mismatch", "The stored projection belongs to a different VM.");
+            return;
+          }
 
           yield* send({
             type: "registered",
@@ -187,13 +186,9 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
       const handleEvent = (current: Session, message: EventMessage) =>
         Effect.gen(function* () {
           const observedAt = yield* identity.now;
-          const projection = yield* loadProjection(current);
-          // The projection is passed as stored, with the connection it actually believes is
-          // authoritative. Forcing `connectionId` to this socket's would make the reducer's
-          // comparison trivially true and silently apply events from a connection that has
-          // since been replaced — which is the whole thing connection scoping exists to stop.
           const applied = yield* applyProjectionInput({
-            projection,
+            bountyId: current.bountyId,
+            vmId: current.vmId,
             input: { type: "event_received", connectionId: current.connectionId, message, observedAt },
             at: observedAt,
           });
@@ -217,9 +212,9 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
       const handleHeartbeat = (current: Session, message: HeartbeatMessage) =>
         Effect.gen(function* () {
           const observedAt = yield* identity.now;
-          const projection = yield* loadProjection(current);
           yield* applyProjectionInput({
-            projection,
+            bountyId: current.bountyId,
+            vmId: current.vmId,
             input: { type: "heartbeat_observed", connectionId: current.connectionId, message, observedAt },
             at: observedAt,
           });
@@ -256,12 +251,17 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
               return yield* handleHeartbeat(current, message);
             case "command_result": {
               const reportedAt = yield* identity.now;
-              return yield* commands.recordResult({
+              const recorded = yield* commands.recordResult({
+                bountyId: current.bountyId,
                 commandId: message.commandId,
                 status: message.status,
                 reportedAt,
                 ...(message.error === undefined ? {} : { error: message.error }),
               });
+              if (recorded === null) {
+                return yield* protocolError("invalid_message", "The command does not belong to this bounty.");
+              }
+              return;
             }
             default:
               // Evidence upload negotiation lands with the blob store in Milestone 10.
@@ -277,10 +277,13 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
           if (current !== null) {
             yield* drainCommands(current);
           }
-        }).pipe(Effect.repeat(Schedule.spaced(config.commandPollInterval)), Effect.ignore),
+        }).pipe(
+          Effect.catchCause((cause) => Effect.logError("swordfish command poll failed", cause)),
+          Effect.repeat(Schedule.spaced(config.commandPollInterval)),
+        ),
       );
 
-      yield* socket.runString((frame) =>
+      const processFrame = (frame: string) =>
         Effect.gen(function* () {
           if (frame.length > config.maxProtocolMessageBytes) {
             // Fail closed: refuse and close rather than buffering an unbounded message or
@@ -302,24 +305,60 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
               cause instanceof UnsupportedProtocolVersionError || cause instanceof InvalidProtocolMessageError
                 ? cause.message
                 : "The message could not be decoded.";
-            return yield* protocolError(code, message);
+            yield* protocolError(code, message);
+            return yield* write(new Socket.CloseEvent(1008, "invalid protocol message"));
           }
           return yield* handle(decoded.success);
+        });
+
+      // Effect's Bun socket adapter dispatches each message handler in its own fiber. The
+      // protocol is ordered, so handlers only enqueue here and one consumer performs every
+      // stateful operation. `offerUnsafe` fails immediately rather than accumulating an
+      // unbounded set of fibers blocked on a full queue.
+      const inbound = yield* Queue.bounded<string>(inboundFrameCapacity);
+      const consumer = yield* Effect.forkScoped(Effect.forever(Queue.take(inbound).pipe(Effect.flatMap(processFrame))));
+      let overloaded = false;
+      const recordDisconnect = Effect.suspend(() => {
+        const current = session;
+        if (current === null) {
+          return Effect.void;
+        }
+        return Effect.gen(function* () {
+          const detectedAt = yield* identity.now;
+          yield* applyProjectionInput({
+            bountyId: current.bountyId,
+            vmId: current.vmId,
+            input: { type: "connection_lost", connectionId: current.connectionId, detectedAt },
+            at: detectedAt,
+          });
         }).pipe(
-          // One bad message must not take the connection — or the server — down. It is
-          // reported, logged, and the socket carries on.
-          Effect.catchCause((cause) => Effect.logError("swordfish gateway message failed", cause)),
-        ),
-      );
+          Effect.catchCause((cause) =>
+            Effect.logError("could not record swordfish disconnect", cause).pipe(
+              Effect.annotateLogs("bounty_id", current.bountyId),
+              Effect.annotateLogs("connection_id", current.connectionId),
+            ),
+          ),
+        );
+      });
+      yield* Effect.raceFirst(
+        socket
+          .runString((frame) =>
+            Effect.gen(function* () {
+              if (overloaded) {
+                return;
+              }
+              if (!Queue.offerUnsafe(inbound, frame)) {
+                overloaded = true;
+                yield* protocolError("invalid_message", "The inbound message queue is full.");
+                yield* write(new Socket.CloseEvent(1013, "inbound queue full"));
+              }
+            }),
+          )
+          .pipe(Effect.catchIf(Socket.isSocketError, (error) => Effect.logDebug("swordfish socket closed", error))),
+        Fiber.join(consumer),
+      ).pipe(Effect.ensuring(recordDisconnect));
 
       return HttpServerResponse.empty();
-    }).pipe(
-      Effect.scoped,
-      // A client disconnect interrupts this fiber. That is an ordinary end to a connection,
-      // not a server error, and it must not propagate (`spikes/effect-runtime`, finding 3).
-      Effect.catchCause((cause) =>
-        Effect.logDebug("swordfish connection ended", cause).pipe(Effect.as(HttpServerResponse.empty())),
-      ),
-    ),
+    }).pipe(Effect.scoped),
   ),
 );

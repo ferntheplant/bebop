@@ -137,14 +137,20 @@ export interface BountyRepositoryService {
     readonly tokenHash: string;
     readonly at: Timestamp;
   }) => Effect.Effect<void, SqlError.SqlError>;
-  /** Resolves a presented Swordfish credential to the single bounty it was minted for. */
-  readonly bountyForSwordfishTokenHash: (tokenHash: string) => Effect.Effect<BountyId | null, SqlError.SqlError>;
+  /** Resolves a credential only together with its still-live authoritative VM mapping. */
+  readonly swordfishIdentityForTokenHash: (
+    tokenHash: string,
+  ) => Effect.Effect<{ readonly bountyId: BountyId; readonly vmId: VmId } | null, SqlError.SqlError>;
+  readonly revokeSwordfishToken: (options: {
+    readonly bountyId: BountyId;
+    readonly at: Timestamp;
+  }) => Effect.Effect<void, SqlError.SqlError>;
 
   readonly recordConfigApproval: (options: {
     readonly bountyId: BountyId;
     readonly candidateSha: GitSha;
     readonly approvedAt: Timestamp;
-  }) => Effect.Effect<void, SqlError.SqlError>;
+  }) => Effect.Effect<boolean, SqlError.SqlError>;
   readonly approvedConfigShas: (bountyId: BountyId) => Effect.Effect<ReadonlyArray<string>, SqlError.SqlError>;
 }
 
@@ -243,17 +249,37 @@ export const BountyRepositoryLayer: Layer.Layer<BountyRepository, never, PgClien
           WHERE bounty_id = ${bountyId}
         `.pipe(Effect.asVoid),
 
-      bountyForSwordfishTokenHash: (tokenHash) =>
-        sql`SELECT bounty_id FROM bounties WHERE swordfish_token_hash = ${tokenHash}`.pipe(
-          Effect.map((rows) => (rows[0] === undefined ? null : decodeBountyId(text(rows[0] as Row, "bounty_id")))),
+      swordfishIdentityForTokenHash: (tokenHash) =>
+        sql`
+          SELECT b.bounty_id, vm.vm_id
+          FROM bounties b
+          JOIN vm_mappings vm ON vm.bounty_id = b.bounty_id AND vm.destroyed_at IS NULL
+          WHERE b.swordfish_token_hash = ${tokenHash}
+        `.pipe(
+          Effect.map((rows) =>
+            rows[0] === undefined
+              ? null
+              : {
+                  bountyId: decodeBountyId(text(rows[0] as Row, "bounty_id")),
+                  vmId: decodeVmId(text(rows[0] as Row, "vm_id")),
+                },
+          ),
         ),
+
+      revokeSwordfishToken: ({ at, bountyId }) =>
+        sql`
+          UPDATE bounties
+          SET swordfish_token_hash = NULL, updated_at = ${timestampToIso(at)}
+          WHERE bounty_id = ${bountyId}
+        `.pipe(Effect.asVoid),
 
       recordConfigApproval: ({ approvedAt, bountyId, candidateSha }) =>
         sql`
           INSERT INTO config_approvals (bounty_id, candidate_sha, approved_at)
           VALUES (${bountyId}, ${candidateSha}, ${timestampToIso(approvedAt)})
           ON CONFLICT (bounty_id, candidate_sha) DO NOTHING
-        `.pipe(Effect.asVoid),
+          RETURNING candidate_sha
+        `.pipe(Effect.map((rows) => rows.length === 1)),
 
       approvedConfigShas: (bountyId) =>
         sql`SELECT candidate_sha FROM config_approvals WHERE bounty_id = ${bountyId} ORDER BY approved_at`.pipe(

@@ -119,8 +119,18 @@ BEBOP_HEARTBEAT_INTERVAL='5 seconds' \
 BEBOP_SWORDFISH_STALE_AFTER='20 seconds' \
 BEBOP_MAX_PROTOCOL_MESSAGE_BYTES=262144 \
 BEBOP_SHUTDOWN_TIMEOUT='15 seconds' \
+BEBOP_SWORDFISH_CREDENTIAL_KEY='replace-with-at-least-32-random-bytes' \
+BEBOP_BOOTSTRAP_API_TOKEN='bebop_replace-with-a-random-bootstrap-token' \
 vp run dev
 ```
+
+`BEBOP_BOOTSTRAP_API_TOKEN` seeds the first named API token only when `api_tokens` is empty. Create the normal
+client tokens through `/api/tokens`, then remove the bootstrap value from the environment. It is never reapplied
+after a token row exists.
+
+`BEBOP_SWORDFISH_CREDENTIAL_KEY` must be at least 32 characters and must remain stable while bounties are live.
+It derives retry-stable bounty credentials without storing their plaintext; changing it invalidates reconnects
+for VMs provisioned under the previous key.
 
 `bebop-worker` takes the same configuration and runs the durable lifecycle jobs and the connection freshness
 sweep. Both processes apply migrations at startup, so either one may be started first.

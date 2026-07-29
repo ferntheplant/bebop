@@ -70,22 +70,39 @@ export interface LifecycleJobRepositoryService {
     readonly payload: unknown;
     readonly at: Timestamp;
   }) => Effect.Effect<LifecycleJob, SqlError.SqlError>;
+  /** Re-arms a terminal deduplicated job, or returns its already-runnable attempt. */
+  readonly requeue: (options: {
+    readonly dedupeKey: string;
+    readonly at: Timestamp;
+  }) => Effect.Effect<LifecycleJob | null, SqlError.SqlError>;
   /** Claims one runnable job for this worker, or `null` when there is nothing to do. */
   readonly claim: (options: {
     readonly workerId: string;
     readonly at: Timestamp;
+    readonly reclaimBefore: Timestamp;
   }) => Effect.Effect<LifecycleJob | null, SqlError.SqlError>;
+  /** Extends a claim only while this exact worker attempt still owns it. */
+  readonly renew: (options: {
+    readonly jobId: string;
+    readonly workerId: string;
+    readonly attempt: number;
+    readonly at: Timestamp;
+  }) => Effect.Effect<boolean, SqlError.SqlError>;
   readonly complete: (options: {
     readonly jobId: string;
+    readonly workerId: string;
+    readonly attempt: number;
     readonly at: Timestamp;
-  }) => Effect.Effect<void, SqlError.SqlError>;
+  }) => Effect.Effect<boolean, SqlError.SqlError>;
   /** Releases a failed job for another attempt, or parks it once attempts run out. */
   readonly fail: (options: {
     readonly jobId: string;
+    readonly workerId: string;
+    readonly attempt: number;
     readonly at: Timestamp;
     readonly error: string;
     readonly retryAfter: Duration.Duration;
-  }) => Effect.Effect<LifecycleJobStatus, SqlError.SqlError>;
+  }) => Effect.Effect<LifecycleJobStatus | null, SqlError.SqlError>;
   readonly get: (jobId: string) => Effect.Effect<LifecycleJob | null, SqlError.SqlError>;
   readonly forBounty: (bountyId: BountyId) => Effect.Effect<ReadonlyArray<LifecycleJob>, SqlError.SqlError>;
 }
@@ -113,17 +130,37 @@ export const LifecycleJobRepositoryLayer: Layer.Layer<LifecycleJobRepository, ne
           RETURNING ${sql.literal(jobColumns)}
         `.pipe(Effect.map((rows) => toJob(rows[0] as Row))),
 
-      claim: ({ at, workerId }) =>
+      requeue: ({ at, dedupeKey }) =>
+        Effect.gen(function* () {
+          const requeued = yield* sql`
+            UPDATE lifecycle_jobs
+            SET status = 'pending', attempts = 0, run_after = ${timestampToIso(at)},
+                locked_by = NULL, locked_at = NULL, last_error = NULL, updated_at = ${timestampToIso(at)}
+            WHERE dedupe_key = ${dedupeKey} AND status IN ('succeeded', 'failed')
+            RETURNING ${sql.literal(jobColumns)}
+          `;
+          if (requeued[0] !== undefined) {
+            return toJob(requeued[0] as Row);
+          }
+          const existing = yield* sql`
+            SELECT ${sql.literal(jobColumns)} FROM lifecycle_jobs WHERE dedupe_key = ${dedupeKey}
+          `;
+          return existing[0] === undefined ? null : toJob(existing[0] as Row);
+        }),
+
+      claim: ({ at, reclaimBefore, workerId }) =>
         sql`
           UPDATE lifecycle_jobs SET
             status = 'running',
-            attempts = attempts + 1,
+            attempts = CASE WHEN status = 'pending' THEN attempts + 1 ELSE attempts END,
             locked_by = ${workerId},
             locked_at = ${timestampToIso(at)},
             updated_at = ${timestampToIso(at)}
           WHERE job_id = (
             SELECT job_id FROM lifecycle_jobs
-            WHERE status = 'pending' AND run_after <= ${timestampToIso(at)}
+            WHERE
+              (status = 'pending' AND run_after <= ${timestampToIso(at)})
+              OR (status = 'running' AND locked_at <= ${timestampToIso(reclaimBefore)})
             ORDER BY run_after, created_at
             FOR UPDATE SKIP LOCKED
             LIMIT 1
@@ -131,15 +168,24 @@ export const LifecycleJobRepositoryLayer: Layer.Layer<LifecycleJobRepository, ne
           RETURNING ${sql.literal(jobColumns)}
         `.pipe(Effect.map((rows) => (rows[0] === undefined ? null : toJob(rows[0] as Row)))),
 
-      complete: ({ at, jobId }) =>
+      renew: ({ at, attempt, jobId, workerId }) =>
+        sql`
+          UPDATE lifecycle_jobs
+          SET locked_at = ${timestampToIso(at)}, updated_at = ${timestampToIso(at)}
+          WHERE job_id = ${jobId} AND status = 'running' AND locked_by = ${workerId} AND attempts = ${attempt}
+          RETURNING job_id
+        `.pipe(Effect.map((rows) => rows.length === 1)),
+
+      complete: ({ at, attempt, jobId, workerId }) =>
         sql`
           UPDATE lifecycle_jobs
           SET status = 'succeeded', locked_by = NULL, locked_at = NULL, last_error = NULL,
               updated_at = ${timestampToIso(at)}
-          WHERE job_id = ${jobId}
-        `.pipe(Effect.asVoid),
+          WHERE job_id = ${jobId} AND status = 'running' AND locked_by = ${workerId} AND attempts = ${attempt}
+          RETURNING job_id
+        `.pipe(Effect.map((rows) => rows.length === 1)),
 
-      fail: ({ at, error, jobId, retryAfter }) =>
+      fail: ({ at, attempt, error, jobId, retryAfter, workerId }) =>
         sql`
           UPDATE lifecycle_jobs
           SET status = CASE WHEN attempts >= ${maxJobAttempts} THEN 'failed' ELSE 'pending' END,
@@ -148,9 +194,11 @@ export const LifecycleJobRepositoryLayer: Layer.Layer<LifecycleJobRepository, ne
               last_error = ${error},
               run_after = ${new Date(Date.parse(timestampToIso(at)) + Duration.toMillis(retryAfter)).toISOString()},
               updated_at = ${timestampToIso(at)}
-          WHERE job_id = ${jobId}
+          WHERE job_id = ${jobId} AND status = 'running' AND locked_by = ${workerId} AND attempts = ${attempt}
           RETURNING status
-        `.pipe(Effect.map((rows) => oneOf(rows[0] as Row, "status", lifecycleJobStatuses))),
+        `.pipe(
+          Effect.map((rows) => (rows[0] === undefined ? null : oneOf(rows[0] as Row, "status", lifecycleJobStatuses))),
+        ),
 
       get: (jobId) =>
         sql`SELECT ${sql.literal(jobColumns)} FROM lifecycle_jobs WHERE job_id = ${jobId}`.pipe(

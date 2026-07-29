@@ -8,7 +8,7 @@
 
 import type { BountyEventEnvelope } from "@bebop/contracts";
 import { BountyEventEnvelope as BountyEventEnvelopeSchema } from "@bebop/contracts";
-import { Effect, Redacted, Schema } from "effect";
+import { Duration, Effect, Redacted, Schema } from "effect";
 
 import type { CliConnection } from "#src/cli/client.ts";
 
@@ -17,10 +17,18 @@ export type CliEventFrame = BountyEventEnvelope;
 export class EventStreamError extends Error {
   readonly _tag = "EventStreamError";
 
-  constructor(message: string, options?: ErrorOptions) {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    options?: ErrorOptions,
+  ) {
     super(message, options);
     this.name = "EventStreamError";
   }
+}
+
+function eventStreamError(message: string, retryable: boolean, options?: ErrorOptions): EventStreamError {
+  return new EventStreamError(message, retryable, options);
 }
 
 const decodeEnvelope = Schema.decodeUnknownSync(BountyEventEnvelopeSchema);
@@ -37,57 +45,73 @@ export const streamBountyEvents = Effect.fnUntraced(function* (options: {
   readonly lastEventId?: string;
   readonly onFrame: (frame: CliEventFrame) => Effect.Effect<void>;
 }) {
-  const headers: Record<string, string> = { accept: "text/event-stream" };
-  if (options.connection.token !== null) {
-    headers["authorization"] = `Bearer ${Redacted.value(options.connection.token)}`;
-  }
-  if (options.lastEventId !== undefined) {
-    headers["last-event-id"] = options.lastEventId;
-  }
-
-  const response = yield* Effect.tryPromise({
-    try: () =>
-      fetch(`${options.connection.baseUrl}/api/bounties/${encodeURIComponent(options.bountyId)}/events`, { headers }),
-    catch: (cause) => new EventStreamError("The event stream could not be opened.", { cause }),
-  });
-
-  if (!response.ok) {
-    const body = yield* Effect.promise(() => response.text());
-    return yield* Effect.fail(new EventStreamError(`The event stream was refused (${response.status}): ${body}`));
-  }
-  const body = response.body;
-  if (body === null) {
-    return yield* Effect.fail(new EventStreamError("The event stream returned no body."));
-  }
-
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  yield* Effect.addFinalizer(() => Effect.promise(() => reader.cancel().catch(() => undefined)));
-
+  let cursor = options.lastEventId;
   for (;;) {
-    const chunk = yield* Effect.tryPromise({
-      try: () => reader.read(),
-      catch: (cause) => new EventStreamError("The event stream ended unexpectedly.", { cause }),
-    });
-    if (chunk.done) {
-      return;
+    const outcome = yield* Effect.result(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const headers: Record<string, string> = { accept: "text/event-stream" };
+          if (options.connection.token !== null) {
+            headers["authorization"] = `Bearer ${Redacted.value(options.connection.token)}`;
+          }
+          if (cursor !== undefined) {
+            headers["last-event-id"] = cursor;
+          }
+
+          const response = yield* Effect.tryPromise({
+            try: () =>
+              fetch(`${options.connection.baseUrl}/api/bounties/${encodeURIComponent(options.bountyId)}/events`, {
+                headers,
+              }),
+            catch: (cause) => eventStreamError("The event stream could not be opened.", true, { cause }),
+          });
+          if (!response.ok) {
+            const body = yield* Effect.promise(() => response.text());
+            return yield* Effect.fail(
+              eventStreamError(`The event stream was refused (${response.status}): ${body}`, false),
+            );
+          }
+          if (response.body === null) {
+            return yield* Effect.fail(eventStreamError("The event stream returned no body.", true));
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          yield* Effect.addFinalizer(() => Effect.promise(() => reader.cancel().catch(() => undefined)));
+
+          for (;;) {
+            const chunk = yield* Effect.tryPromise({
+              try: () => reader.read(),
+              catch: (cause) => eventStreamError("The event stream ended unexpectedly.", true, { cause }),
+            });
+            if (chunk.done) {
+              return;
+            }
+            buffer += decoder.decode(chunk.value, { stream: true });
+            let boundary = buffer.indexOf("\n\n");
+            while (boundary !== -1) {
+              const block = buffer.slice(0, boundary);
+              buffer = buffer.slice(boundary + 2);
+              const data = /^data: (.*)$/m.exec(block)?.[1];
+              if (data !== undefined) {
+                const frame = yield* Effect.try({
+                  try: () => decodeEnvelope(JSON.parse(data) as unknown),
+                  catch: (cause) =>
+                    eventStreamError("The server sent an event this client cannot read.", false, { cause }),
+                });
+                yield* options.onFrame(frame);
+                cursor = String(frame.cursor);
+              }
+              boundary = buffer.indexOf("\n\n");
+            }
+          }
+        }),
+      ),
+    );
+    if (outcome._tag === "Failure" && !outcome.failure.retryable) {
+      return yield* Effect.fail(outcome.failure);
     }
-    buffer += decoder.decode(chunk.value, { stream: true });
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const block = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      const data = /^data: (.*)$/m.exec(block)?.[1];
-      if (data !== undefined) {
-        const frame = yield* Effect.try({
-          try: () => decodeEnvelope(JSON.parse(data) as unknown),
-          catch: (cause) => new EventStreamError("The server sent an event this client cannot read.", { cause }),
-        });
-        yield* options.onFrame(frame);
-      }
-      boundary = buffer.indexOf("\n\n");
-    }
+    yield* Effect.sleep(Duration.millis(500));
   }
 });

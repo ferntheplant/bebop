@@ -135,9 +135,9 @@ const initial = Effect.gen(function* () {
     )
   `;
   yield* sql`
-    CREATE INDEX bounty_commands_undelivered_idx
+    CREATE INDEX bounty_commands_pending_delivery_idx
       ON bounty_commands (bounty_id, issued_at)
-      WHERE delivered_at IS NULL
+      WHERE status IN ('queued', 'delivered')
   `;
 
   // SHA-pinned privileged-path approvals (SPEC section 13.3).

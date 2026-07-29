@@ -12,7 +12,7 @@ import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import { Duration, Effect, Layer } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 
-import { BebopApiRoutes, reconcileConnectionsOnStartup } from "#src/api/server.ts";
+import { BebopApiRoutes, ensureApiTokenBootstrap, reconcileConnectionsOnStartup } from "#src/api/server.ts";
 import { BebopConfiguration } from "#src/config.ts";
 import { structuredLoggingLayer, withComponent } from "#src/observability/logging.ts";
 import { migrateDatabase } from "#src/persistence/database.ts";
@@ -52,6 +52,7 @@ const ServerLayer = Layer.unwrap(
 export const runBebopApi = Effect.gen(function* () {
   const config = yield* BebopConfiguration;
   yield* migrateDatabase;
+  yield* ensureApiTokenBootstrap;
   yield* reconcileConnectionsOnStartup;
 
   yield* Effect.logInfo("bebop api listening").pipe(
@@ -63,9 +64,8 @@ export const runBebopApi = Effect.gen(function* () {
   // runtime interrupts it on SIGINT or SIGTERM, at which point the listener closes through
   // its own finalizer. A clean shutdown surfaces as an interrupt rather than a failure
   // (`spikes/effect-runtime`, finding 5), which is why nothing here treats it as an error.
-  yield* Effect.never;
+  yield* Effect.suspend(() => Effect.never.pipe(Effect.provide(ServerLayer)));
 }).pipe(
-  Effect.provide(ServerLayer),
   Effect.provide(LocalLifecycleProviderLayer),
   Effect.provide(BebopRuntimeLayer),
   // Replaces the pretty logger `runMain` installs, which is the wrong shape for a container

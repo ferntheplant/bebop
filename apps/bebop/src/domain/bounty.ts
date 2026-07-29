@@ -7,6 +7,7 @@ import type {
   ComputeProfile,
   GitRef,
   RepositorySlug,
+  SwordfishFreshnessStatus,
   SwordfishStage,
   Timestamp,
   VmId,
@@ -72,7 +73,11 @@ export function assignedBranchFor(bountyId: BountyId): string {
  * that verification arrives with GitHub in Milestone 10, and until then readiness is
  * presented as what it is — Swordfish's claim.
  */
-export function deriveBountyStatus(lifecycleState: BountyLifecycleState, stage: SwordfishStage | null): BountyStatus {
+export function deriveBountyStatus(
+  lifecycleState: BountyLifecycleState,
+  stage: SwordfishStage | null,
+  freshness: SwordfishFreshnessStatus,
+): BountyStatus {
   switch (lifecycleState) {
     case "provisioning":
       return "provisioning";
@@ -94,22 +99,35 @@ export function deriveBountyStatus(lifecycleState: BountyLifecycleState, stage: 
   if (stage === null) {
     return "provisioning";
   }
+  let stageStatus: BountyStatus;
   switch (stage) {
     case "interactive":
-      return "interactive";
+      stageStatus = "interactive";
+      break;
     case "human_controlled":
-      return "human_controlled";
+      stageStatus = "human_controlled";
+      break;
     case "needs_attention":
     case "blocked":
-      return "needs_attention";
+      stageStatus = "needs_attention";
+      break;
     case "ready":
-      return "ready";
+      stageStatus = "ready";
+      break;
     case "cancelling":
     case "cancelled":
-      return "stopped";
+      stageStatus = "stopped";
+      break;
     case "failed":
-      return "failed";
+      stageStatus = "failed";
+      break;
     default:
-      return "autonomous";
+      stageStatus = "autonomous";
   }
+
+  return (freshness === "stale" || freshness === "disconnected") &&
+    stageStatus !== "stopped" &&
+    stageStatus !== "failed"
+    ? "needs_attention"
+    : stageStatus;
 }

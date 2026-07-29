@@ -16,6 +16,7 @@ const vmId = Schema.decodeUnknownSync(VmId)("vm_01JZ8J3D9F4X");
 const connectionId = Schema.decodeUnknownSync(ConnectionId)("conn-01");
 const replacementConnectionId = Schema.decodeUnknownSync(ConnectionId)("conn-02");
 const observedAt = Schema.decodeUnknownSync(Timestamp)("2026-07-26T12:35:01.000Z");
+const staleBefore = Schema.decodeUnknownSync(Timestamp)("2026-07-26T12:36:00.000Z");
 const spec = {
   revision: 1,
   title: "Implement replay",
@@ -242,9 +243,22 @@ describe("Bebop Swordfish projection reducer", () => {
     const stale = reduceBebopSwordfishProjection(replaced.state, {
       type: "freshness_expired",
       connectionId: replacementConnectionId,
+      staleBefore,
       detectedAt: observedAt,
     });
     expect(stale).toMatchObject({ ok: true, state: { freshness: { status: "stale" } } });
+  });
+
+  test("does not expire traffic observed after the sweep cutoff", () => {
+    const state = initialProjection();
+    const cutoffBeforeObservation = Schema.decodeUnknownSync(Timestamp)("2026-07-26T12:35:00.000Z");
+    const result = reduceBebopSwordfishProjection(state, {
+      type: "freshness_expired",
+      connectionId,
+      staleBefore: cutoffBeforeObservation,
+      detectedAt: staleBefore,
+    });
+    expect(result).toEqual({ ok: true, applied: false, reason: "recently_observed", state });
   });
 
   test("a late heartbeat on the current connection recovers from stale", () => {
@@ -254,6 +268,7 @@ describe("Bebop Swordfish projection reducer", () => {
     const stale = reduceBebopSwordfishProjection(state, {
       type: "freshness_expired",
       connectionId,
+      staleBefore,
       detectedAt: observedAt,
     });
     if (!stale.ok) {
@@ -287,6 +302,7 @@ describe("Bebop Swordfish projection reducer", () => {
     const stale = reduceBebopSwordfishProjection(state, {
       type: "freshness_expired",
       connectionId,
+      staleBefore,
       detectedAt: observedAt,
     });
     if (!stale.ok) {
@@ -314,6 +330,7 @@ describe("Bebop Swordfish projection reducer", () => {
     const stale = reduceBebopSwordfishProjection(state, {
       type: "freshness_expired",
       connectionId,
+      staleBefore,
       detectedAt: observedAt,
     });
     if (!stale.ok) {

@@ -1,5 +1,5 @@
-import { ApiTokenSecret } from "@bebop/contracts";
-import { Schema } from "effect";
+import { ApiTokenSecret, BountyId } from "@bebop/contracts";
+import { Redacted, Schema } from "effect";
 import { Effect } from "effect";
 import { describe, expect, test } from "vite-plus/test";
 
@@ -10,6 +10,7 @@ import {
   hashSwordfishToken,
   presentedSwordfishToken,
   swordfishTokenPrefix,
+  swordfishTokenForBounty,
 } from "#src/swordfish-gateway/credentials.ts";
 
 const secret = (value: string) => Schema.decodeUnknownSync(ApiTokenSecret)(value);
@@ -45,6 +46,18 @@ describe("generated credentials", () => {
 });
 
 describe("Swordfish credential presentation", () => {
+  test("derives a stable bounty-specific credential without storing plaintext", () => {
+    const key = Redacted.make("test-swordfish-credential-key-at-least-32-bytes");
+    const first = Schema.decodeUnknownSync(BountyId)("bty-first");
+    const second = Schema.decodeUnknownSync(BountyId)("bty-second");
+    expect(Redacted.value(swordfishTokenForBounty(key, first))).toBe(
+      Redacted.value(swordfishTokenForBounty(key, first)),
+    );
+    expect(Redacted.value(swordfishTokenForBounty(key, first))).not.toBe(
+      Redacted.value(swordfishTokenForBounty(key, second)),
+    );
+  });
+
   test("reads a credential from an Authorization header", () => {
     expect(presentedSwordfishToken({ authorization: "Bearer bebop_sf_xyz" })).toBe("bebop_sf_xyz");
     expect(presentedSwordfishToken({ authorization: "bearer bebop_sf_xyz" })).toBe("bebop_sf_xyz");

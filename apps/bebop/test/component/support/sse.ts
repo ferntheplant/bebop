@@ -5,6 +5,9 @@
 // holds an idle connection for `httpIdleTimeout`, and a reader that merely stops reading
 // leaves a live connection behind for the next server shutdown to wait on.
 
+import { BountyEventEnvelope } from "@bebop/contracts";
+import { Schema } from "effect";
+
 import type { Harness } from "#test/component/support/harness.ts";
 
 export interface SseFrame {
@@ -26,8 +29,14 @@ export async function readSseFrames(
       signal: controller.signal,
       ...(options.lastEventId === undefined ? {} : { headers: { "last-event-id": options.lastEventId } }),
     });
+    if (!response.ok) {
+      throw new Error(`SSE request failed with ${response.status}: ${await response.text()}`);
+    }
+    if (!response.headers.get("content-type")?.startsWith("text/event-stream")) {
+      throw new Error(`Expected text/event-stream, got ${response.headers.get("content-type") ?? "no content type"}`);
+    }
     if (response.body === null) {
-      return frames;
+      throw new Error("SSE response had no body");
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -45,7 +54,7 @@ export async function readSseFrames(
         const id = /^id: (.*)$/m.exec(block)?.[1];
         const data = /^data: (.*)$/m.exec(block)?.[1];
         if (id !== undefined && data !== undefined) {
-          const parsed = JSON.parse(data) as { cursor: number; event: { type: string } };
+          const parsed = Schema.decodeUnknownSync(BountyEventEnvelope)(JSON.parse(data) as unknown);
           frames.push({ id, cursor: parsed.cursor, type: parsed.event.type });
         }
         boundary = buffer.indexOf("\n\n");
@@ -59,6 +68,9 @@ export async function readSseFrames(
   } finally {
     clearTimeout(timeout);
     controller.abort();
+  }
+  if (frames.length < options.count) {
+    throw new Error(`Expected ${options.count} SSE frames, received ${frames.length}`);
   }
   return frames;
 }

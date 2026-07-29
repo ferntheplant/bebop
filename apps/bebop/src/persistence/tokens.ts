@@ -50,6 +50,14 @@ export interface ApiTokenRepositoryService {
     readonly secret: ApiTokenSecret;
     readonly createdAt: Timestamp;
   }) => Effect.Effect<ApiTokenSummary, SqlError.SqlError>;
+  /** Seeds the first token only while the table is empty. */
+  readonly bootstrap: (options: {
+    readonly tokenId: ApiTokenId;
+    readonly name: ApiTokenName;
+    readonly secret: ApiTokenSecret;
+    readonly createdAt: Timestamp;
+  }) => Effect.Effect<boolean, SqlError.SqlError>;
+  readonly hasAny: Effect.Effect<boolean, SqlError.SqlError>;
   readonly list: Effect.Effect<ReadonlyArray<ApiTokenSummary>, SqlError.SqlError>;
   readonly revoke: (options: {
     readonly tokenId: ApiTokenId;
@@ -86,6 +94,19 @@ export const ApiTokenRepositoryLayer: Layer.Layer<ApiTokenRepository, never, Sql
           `;
           return { tokenId, name, createdAt };
         }),
+
+      bootstrap: ({ createdAt, name, secret, tokenId }) =>
+        sql`
+          INSERT INTO api_tokens (token_id, name, token_hash, created_at)
+          SELECT ${tokenId}, ${name}, ${hashApiToken(secret)}, ${timestampToIso(createdAt)}
+          WHERE NOT EXISTS (SELECT 1 FROM api_tokens)
+          ON CONFLICT DO NOTHING
+          RETURNING token_id
+        `.pipe(Effect.map((rows) => rows.length === 1)),
+
+      hasAny: sql`SELECT EXISTS (SELECT 1 FROM api_tokens) AS present`.pipe(
+        Effect.map((rows) => rows[0]?.["present"] === true),
+      ),
 
       list: sql`
         SELECT token_id, name, created_at, last_used_at, revoked_at

@@ -17,7 +17,7 @@
 
 import type { BountyEventCursorString, BountyEventEnvelope, BountyId } from "@bebop/contracts";
 import { BountyEventCursorString as BountyEventCursorStringSchema } from "@bebop/contracts";
-import { Effect, Ref, Schema, Stream } from "effect";
+import { Effect, Option, Ref, Schema, Stream } from "effect";
 import type { SqlError } from "effect/unstable/sql";
 
 import { BebopConfiguration } from "#src/config.ts";
@@ -55,27 +55,21 @@ export const bountyEventStream = Effect.fnUntraced(function* (options: {
 
   const cursor = yield* Ref.make(options.afterCursor);
 
-  /** Reads and emits everything after the cursor, advancing it as it goes. */
-  const drain: Effect.Effect<ReadonlyArray<BountyEventEnvelope>, SqlError.SqlError> = Effect.gen(function* () {
-    const collected: Array<BountyEventEnvelope> = [];
-    for (;;) {
+  /** Reads and emits pages after the cursor, advancing only one emitted page at a time. */
+  const drain: Stream.Stream<BountyEventEnvelope, SqlError.SqlError> = Stream.paginate(undefined, () =>
+    Effect.gen(function* () {
       const after = yield* Ref.get(cursor);
       const page = yield* events.read({ bountyId: options.bountyId, afterCursor: after, limit: pageSize });
       if (page.length === 0) {
-        return collected;
+        return [[], Option.none()] as const;
       }
-      collected.push(...page);
       const last = page.at(-1);
       if (last !== undefined) {
         yield* Ref.set(cursor, last.cursor);
       }
-      if (page.length < pageSize) {
-        return collected;
-      }
-    }
-  });
-
-  const replay = Stream.unwrap(Effect.map(drain, Stream.fromIterable));
+      return [page, page.length === pageSize ? Option.some(undefined) : Option.none()] as const;
+    }),
+  );
 
   // A notification wakes the reader immediately; the tick is the floor that keeps delivery
   // correct if a notification is lost, if the listening connection drops, or if the event
@@ -90,12 +84,9 @@ export const bountyEventStream = Effect.fnUntraced(function* (options: {
 
   const wakeups = Stream.merge(notifications, Stream.tick(config.eventStreamPollInterval));
 
-  const live = wakeups.pipe(
-    Stream.mapEffect(() => drain),
-    Stream.flatMap((page) => Stream.fromIterable(page)),
-  );
+  const live = wakeups.pipe(Stream.flatMap(() => drain));
 
   // Concatenation, not merge: the live phase is not subscribed to until replay has finished
   // emitting, so a live event cannot overtake a replayed one.
-  return Stream.concat(replay, live).pipe(Stream.map(toFrame));
+  return Stream.concat(drain, live).pipe(Stream.map(toFrame));
 });

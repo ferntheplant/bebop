@@ -377,6 +377,13 @@ Do not integrate exe.dev or GitHub in this milestone. The fake lifecycle provide
 - **The bounty-scoped Swordfish token is minted at provisioning, not at creation**, because `SPEC.md` §18.2
   injects it at VM bootstrap: a bounty with no computer has nothing to authenticate. Bebop stores only its hash
   and hands the plaintext to the lifecycle provider, which is the component that puts it on the VM.
+- **Provisioning retries derive the same Swordfish token from a deployment HMAC key.** A random in-memory token
+  can be lost after the provider succeeds but before its hash commits, leaving an idempotently returned VM with
+  a credential Bebop no longer recognises. HMAC derivation keeps plaintext out of Postgres while making retries
+  stable; the deployment key cannot rotate while bounties are live.
+- **The first API token is a one-shot environment seed.** Every token route remains authenticated. On an empty
+  token table the API requires `BEBOP_BOOTSTRAP_API_TOKEN` and inserts it once; after any token exists, startup
+  never recreates a token from environment configuration.
 - **Registration must be recorded before the `registered` reply is written.** Swordfish sends its first event
   the instant it sees that reply, and a session assigned afterwards leaves a window in which that event reaches
   a gateway that believes nothing has registered.

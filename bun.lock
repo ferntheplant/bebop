@@ -5,6 +5,7 @@
     "": {
       "name": "bebop",
       "devDependencies": {
+        "@bebop/testkit": "workspace:*",
         "@commitlint/cli": "catalog:",
         "@commitlint/config-conventional": "catalog:",
         "@types/bun": "catalog:",

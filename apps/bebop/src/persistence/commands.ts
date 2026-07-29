@@ -78,7 +78,7 @@ export interface CommandRepositoryService {
     readonly command: BebopCommand;
     readonly issuedAt: Timestamp;
   }) => Effect.Effect<QueuedCommand, SqlError.SqlError>;
-  readonly undelivered: (options: {
+  readonly pendingDelivery: (options: {
     readonly bountyId: BountyId;
     readonly limit: number;
   }) => Effect.Effect<ReadonlyArray<QueuedCommand>, SqlError.SqlError>;
@@ -88,10 +88,11 @@ export interface CommandRepositoryService {
   }) => Effect.Effect<void, SqlError.SqlError>;
   readonly recordResult: (options: {
     readonly commandId: CommandId;
+    readonly bountyId: BountyId;
     readonly status: CommandResultStatus;
     readonly reportedAt: Timestamp;
     readonly error?: string;
-  }) => Effect.Effect<void, SqlError.SqlError>;
+  }) => Effect.Effect<CommandQueueStatus | null, SqlError.SqlError>;
   readonly get: (commandId: CommandId) => Effect.Effect<QueuedCommand | null, SqlError.SqlError>;
 }
 
@@ -114,10 +115,10 @@ export const CommandRepositoryLayer: Layer.Layer<CommandRepository, never, PgCli
           RETURNING ${sql.literal(commandColumns)}
         `.pipe(Effect.map((rows) => toQueuedCommand(rows[0] as Row))),
 
-      undelivered: ({ bountyId, limit }) =>
+      pendingDelivery: ({ bountyId, limit }) =>
         sql`
           SELECT ${sql.literal(commandColumns)} FROM bounty_commands
-          WHERE bounty_id = ${bountyId} AND delivered_at IS NULL
+          WHERE bounty_id = ${bountyId} AND status IN ('queued', 'delivered')
           ORDER BY issued_at, command_id
           LIMIT ${limit}
         `.pipe(Effect.map((rows) => rows.map((row) => toQueuedCommand(row as Row)))),
@@ -130,12 +131,26 @@ export const CommandRepositoryLayer: Layer.Layer<CommandRepository, never, PgCli
           WHERE command_id = ${commandId}
         `.pipe(Effect.asVoid),
 
-      recordResult: ({ commandId, error, reportedAt, status }) =>
+      recordResult: ({ bountyId, commandId, error, reportedAt, status }) =>
         sql`
           UPDATE bounty_commands
-          SET status = ${status}, result_reported_at = ${timestampToIso(reportedAt)}, error = ${error ?? null}
-          WHERE command_id = ${commandId}
-        `.pipe(Effect.asVoid),
+          SET status = CASE
+                WHEN status IN ('completed', 'rejected', 'failed') THEN status
+                ELSE ${status}
+              END,
+              result_reported_at = CASE
+                WHEN status IN ('completed', 'rejected', 'failed') THEN result_reported_at
+                ELSE ${timestampToIso(reportedAt)}
+              END,
+              error = CASE
+                WHEN status IN ('completed', 'rejected', 'failed') THEN error
+                ELSE ${error ?? null}
+              END
+          WHERE command_id = ${commandId} AND bounty_id = ${bountyId}
+          RETURNING status
+        `.pipe(
+          Effect.map((rows) => (rows[0] === undefined ? null : oneOf(rows[0] as Row, "status", commandQueueStatuses))),
+        ),
 
       get: (commandId) =>
         sql`SELECT ${sql.literal(commandColumns)} FROM bounty_commands WHERE command_id = ${commandId}`.pipe(

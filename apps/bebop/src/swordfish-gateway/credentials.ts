@@ -8,8 +8,9 @@
 //
 // Stored hashed, like the API tokens, so a database read cannot recover a working credential.
 
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
+import type { BountyId } from "@bebop/contracts";
 import { Redacted } from "effect";
 
 /** Distinguishes a leaked Swordfish credential from a leaked API token at a glance. */
@@ -19,9 +20,14 @@ export function hashSwordfishToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function mintSwordfishToken(): Redacted.Redacted<string> {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return Redacted.make(`${swordfishTokenPrefix}${Buffer.from(bytes).toString("base64url")}`);
+export function swordfishTokenForBounty(
+  credentialKey: Redacted.Redacted<string>,
+  bountyId: BountyId,
+): Redacted.Redacted<string> {
+  const digest = createHmac("sha256", Redacted.value(credentialKey))
+    .update(`bebop-swordfish:${bountyId}`)
+    .digest("base64url");
+  return Redacted.make(`${swordfishTokenPrefix}${digest}`);
 }
 
 /**

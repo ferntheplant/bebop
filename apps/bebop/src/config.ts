@@ -1,4 +1,4 @@
-import { Port, PositiveByteCount } from "@bebop/contracts";
+import { ApiTokenSecret, Port, PositiveByteCount } from "@bebop/contracts";
 import { Config, ConfigProvider, Context, Duration, Effect, Layer, Schema } from "effect";
 
 const PositiveDuration = Schema.DurationFromString.pipe(
@@ -36,6 +36,10 @@ const HttpsUrl = Schema.URL.pipe(
 const PositiveCount = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(10_000)),
 );
+const CredentialKey = Schema.Redacted(Schema.String.pipe(Schema.check(Schema.isMinLength(32))), {
+  label: "swordfish-credential-key",
+  disallowJsonEncode: true,
+});
 
 /**
  * Values that have a sensible default and are tuning knobs rather than deployment facts.
@@ -50,6 +54,8 @@ const tunableDefaults: {
   readonly eventStreamPollInterval: Duration.Duration;
   readonly commandPollInterval: Duration.Duration;
   readonly workerPollInterval: Duration.Duration;
+  readonly jobLeaseDuration: Duration.Duration;
+  readonly jobRetryDelay: Duration.Duration;
   readonly bountyPageSize: number;
   readonly httpIdleTimeout: Duration.Duration;
 } = {
@@ -61,6 +67,10 @@ const tunableDefaults: {
   commandPollInterval: Duration.seconds(2),
   /** How often the worker claims lifecycle jobs and sweeps connection freshness. */
   workerPollInterval: Duration.seconds(1),
+  /** How long an unrenewed lifecycle claim remains owned by a worker process. */
+  jobLeaseDuration: Duration.minutes(2),
+  /** Delay between typed lifecycle-provider failures. */
+  jobRetryDelay: Duration.seconds(5),
   /** Page size for `GET /api/bounties`. */
   bountyPageSize: 50,
   /**
@@ -86,10 +96,16 @@ const BebopConfigBase = Schema.Struct({
   swordfishStaleAfter: PositiveDuration,
   maxProtocolMessageBytes: PositiveByteCount,
   shutdownTimeout: PositiveDuration,
+  swordfishCredentialKey: CredentialKey,
+  bootstrapApiToken: Schema.optionalKey(
+    Schema.Redacted(ApiTokenSecret, { label: "bootstrap-api-token", disallowJsonEncode: true }),
+  ),
   databasePoolSize: Schema.optionalKey(PositiveCount),
   eventStreamPollInterval: Schema.optionalKey(PositiveDuration),
   commandPollInterval: Schema.optionalKey(PositiveDuration),
   workerPollInterval: Schema.optionalKey(PositiveDuration),
+  jobLeaseDuration: Schema.optionalKey(PositiveDuration),
+  jobRetryDelay: Schema.optionalKey(PositiveDuration),
   bountyPageSize: Schema.optionalKey(PositiveCount),
   httpIdleTimeout: Schema.optionalKey(PositiveDuration),
 });
@@ -115,6 +131,8 @@ function applyDefaults(config: typeof BebopConfigSchema.Type): BebopConfig {
     eventStreamPollInterval: config.eventStreamPollInterval ?? tunableDefaults.eventStreamPollInterval,
     commandPollInterval: config.commandPollInterval ?? tunableDefaults.commandPollInterval,
     workerPollInterval: config.workerPollInterval ?? tunableDefaults.workerPollInterval,
+    jobLeaseDuration: config.jobLeaseDuration ?? tunableDefaults.jobLeaseDuration,
+    jobRetryDelay: config.jobRetryDelay ?? tunableDefaults.jobRetryDelay,
     bountyPageSize: config.bountyPageSize ?? tunableDefaults.bountyPageSize,
     httpIdleTimeout: config.httpIdleTimeout ?? tunableDefaults.httpIdleTimeout,
   };

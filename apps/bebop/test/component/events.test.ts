@@ -73,6 +73,27 @@ suite("Bounty event stream", () => {
     expect(frames[0]?.cursor).toBe(cursorBefore + 1);
   });
 
+  test("streams across a replay page and into a concurrently appended event", async () => {
+    const created = await harness.request("/api/bounties", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "events-paged" },
+      body: JSON.stringify(sampleCreateRequest),
+    });
+    const pagedBountyId = ((await created.json()) as { bountyId: string }).bountyId;
+    // Creation is cursor 1. Add enough history to cross the server's 200-row page boundary.
+    await harness.appendTestEvents(pagedBountyId, 204);
+    const replayAndLive = readSseFrames(harness, `/api/bounties/${pagedBountyId}/events`, {
+      count: 206,
+      timeoutMs: 10_000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await harness.appendTestEvents(pagedBountyId, 1);
+
+    const frames = await replayAndLive;
+    expect(frames.map((frame) => frame.cursor)).toEqual(Array.from({ length: 206 }, (_, index) => index + 1));
+    expect(new Set(frames.map((frame) => frame.cursor)).size).toBe(206);
+  });
+
   test("refuses to stream an unknown bounty", async () => {
     const response = await harness.request("/api/bounties/bty-nope/events");
     expect(response.status).toBe(404);

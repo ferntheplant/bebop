@@ -96,15 +96,27 @@ export function fakeLifecycleProviderLayer(options?: {
    * it — Bebop stores only its hash, exactly as it should.
    */
   readonly onProvision?: (provisioned: ProvisionedVm & { readonly swordfishToken: string }) => void;
+  readonly onProvisionAttempt?: () => void;
+  readonly failProvisionAttempts?: number;
+  readonly failProvisionAfterEffectAttempts?: number;
+  readonly failDestroyAttempts?: number;
 }): Layer.Layer<LifecycleProvider> {
   const sshHost = options?.sshHost ?? "127.0.0.1";
   const sshPort = options?.sshPort ?? 2222;
   const previewHost = options?.previewHost ?? "preview.bebop.invalid";
   const destroyed = new Set<string>();
+  let failProvisionAttempts = options?.failProvisionAttempts ?? 0;
+  let failProvisionAfterEffectAttempts = options?.failProvisionAfterEffectAttempts ?? 0;
+  let failDestroyAttempts = options?.failDestroyAttempts ?? 0;
 
   return Layer.sync(LifecycleProvider)(() => ({
     provision: ({ bountyId, swordfishToken }) =>
-      Effect.sync(() => {
+      Effect.suspend(() => {
+        options?.onProvisionAttempt?.();
+        if (failProvisionAttempts > 0) {
+          failProvisionAttempts -= 1;
+          return Effect.fail(new LifecycleError("provision", bountyId, "injected failure before side effect"));
+        }
         destroyed.delete(bountyId);
         const previewPort: Port = decodePort(3_000);
         const provisioned: ProvisionedVm = {
@@ -119,8 +131,19 @@ export function fakeLifecycleProviderLayer(options?: {
           ],
         };
         options?.onProvision?.({ ...provisioned, swordfishToken: RedactedModule.value(swordfishToken) });
-        return provisioned;
+        if (failProvisionAfterEffectAttempts > 0) {
+          failProvisionAfterEffectAttempts -= 1;
+          return Effect.fail(new LifecycleError("provision", bountyId, "injected failure after side effect"));
+        }
+        return Effect.succeed(provisioned);
       }),
-    destroy: ({ bountyId }) => Effect.sync(() => void destroyed.add(bountyId)),
+    destroy: ({ bountyId }) =>
+      Effect.suspend(() => {
+        if (failDestroyAttempts > 0) {
+          failDestroyAttempts -= 1;
+          return Effect.fail(new LifecycleError("destroy", bountyId, "injected failure"));
+        }
+        return Effect.sync(() => void destroyed.add(bountyId));
+      }),
   }));
 }

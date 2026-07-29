@@ -27,14 +27,14 @@ describe("bounty status derivation", () => {
       ["failed", "implementing", "failed"],
     ];
     for (const [lifecycle, stage, expected] of cases) {
-      expect(deriveBountyStatus(lifecycle, stage)).toBe(expected);
+      expect(deriveBountyStatus(lifecycle, stage, "connected")).toBe(expected);
     }
   });
 
   test("an active bounty whose Swordfish has never registered is still provisioning", () => {
     // SPEC section 10.1 does not consider a bounty created until its Swordfish connects, so a
     // VM with no supervisor on it is not yet something a user can work with.
-    expect(deriveBountyStatus("active", null)).toBe("provisioning");
+    expect(deriveBountyStatus("active", null, "never_connected")).toBe("provisioning");
   });
 
   test("an active bounty reports the stage its Swordfish is in", () => {
@@ -58,7 +58,15 @@ describe("bounty status derivation", () => {
       ["failed", "failed"],
     ];
     for (const [stage, expected] of cases) {
-      expect(deriveBountyStatus("active", stage)).toBe(expected);
+      expect(deriveBountyStatus("active", stage, "connected")).toBe(expected);
+    }
+  });
+
+  test("does not present stale or disconnected work as active or ready", () => {
+    for (const freshness of ["stale", "disconnected"] as const) {
+      expect(deriveBountyStatus("active", "implementing", freshness)).toBe("needs_attention");
+      expect(deriveBountyStatus("active", "ready", freshness)).toBe("needs_attention");
+      expect(deriveBountyStatus("active", "cancelled", freshness)).toBe("stopped");
     }
   });
 });

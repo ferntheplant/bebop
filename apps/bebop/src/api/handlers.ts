@@ -10,6 +10,7 @@ import type { BebopCommand, BountyId, IdempotencyKey } from "@bebop/contracts";
 import { BebopHttpApi } from "@bebop/contracts";
 import { Effect, Redacted, Stream } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { SqlClient } from "effect/unstable/sql";
 
 import {
   failBountyMutation,
@@ -132,16 +133,26 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
     )
 
     .handle("approveConfig", ({ params, payload }) =>
-      approveConfig({ bountyId: params.bountyId, candidateSha: payload.candidateSha }).pipe(
-        Effect.tap(() =>
-          enqueueCommand({
-            bountyId: params.bountyId,
-            command: { type: "approve_config", candidateSha: payload.candidateSha },
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const bounty = yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`SELECT pg_advisory_xact_lock(hashtext(${params.bountyId})::bigint)`;
+            const approved = yield* approveConfig({
+              bountyId: params.bountyId,
+              candidateSha: payload.candidateSha,
+            });
+            if (approved.recorded) {
+              yield* enqueueCommand({
+                bountyId: params.bountyId,
+                command: { type: "approve_config", candidateSha: payload.candidateSha },
+              });
+            }
+            return approved.bounty;
           }),
-        ),
-        Effect.flatMap(bountyDetail),
-        Effect.catch(failBountyMutation),
-      ),
+        );
+        return yield* bountyDetail(bounty);
+      }).pipe(Effect.catch(failBountyMutation)),
     )
 
     .handle("mergeBounty", ({ params }) =>
@@ -163,18 +174,27 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
     .handle("stopBounty", ({ params, payload }) =>
       Effect.gen(function* () {
         const identity = yield* Identity;
-        const bounty = yield* requireBounty(params.bountyId);
+        const sql = yield* SqlClient.SqlClient;
         const now = yield* identity.now;
-        yield* enqueueCommand({
-          bountyId: bounty.bountyId,
-          command: { type: "stop", ...(payload.reason === undefined ? {} : { reason: payload.reason }) },
-        });
-        const stopped = yield* transitionLifecycle({
-          bounty,
-          to: "stopping",
-          ...(payload.reason === undefined ? {} : { detail: payload.reason }),
-          at: now,
-        });
+        const stopped = yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`SELECT pg_advisory_xact_lock(hashtext(${params.bountyId})::bigint)`;
+            const bounty = yield* requireBounty(params.bountyId);
+            if (["stopping", "stopped", "destroying", "destroyed", "done"].includes(bounty.lifecycleState)) {
+              return bounty;
+            }
+            yield* enqueueCommand({
+              bountyId: bounty.bountyId,
+              command: { type: "stop", ...(payload.reason === undefined ? {} : { reason: payload.reason }) },
+            });
+            return yield* transitionLifecycle({
+              bountyId: bounty.bountyId,
+              to: "stopping",
+              ...(payload.reason === undefined ? {} : { detail: payload.reason }),
+              at: now,
+            });
+          }),
+        );
         return yield* bountyDetail(stopped);
       }).pipe(Effect.catch(failBountyMutation)),
     )
@@ -183,27 +203,26 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
       Effect.gen(function* () {
         const identity = yield* Identity;
         const jobs = yield* LifecycleJobRepository;
-        const bounty = yield* requireBounty(params.bountyId);
-        if (bounty.lifecycleState === "destroyed" || bounty.lifecycleState === "destroying") {
-          return yield* Effect.fail({
-            _tag: "IllegalTransition" as const,
-            bountyId: bounty.bountyId,
-            reason: "A destroyed bounty cannot be recovered.",
-          });
-        }
+        const sql = yield* SqlClient.SqlClient;
         const now = yield* identity.now;
-        const jobId = yield* identity.jobId;
-        // Recovery re-enqueues provisioning under the same dedupe key, so recovering twice
-        // cannot create a second VM (SPEC section 22.4).
-        yield* jobs.enqueue({
-          jobId,
-          dedupeKey: `provision:${bounty.bountyId}`,
-          bountyId: bounty.bountyId,
-          kind: "provision",
-          payload: { computeProfile: bounty.computeProfile },
-          at: now,
-        });
-        const recovering = yield* transitionLifecycle({ bounty, to: "provisioning", at: now });
+        const recovering = yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`SELECT pg_advisory_xact_lock(hashtext(${params.bountyId})::bigint)`;
+            const bounty = yield* requireBounty(params.bountyId);
+            if (bounty.lifecycleState === "destroyed" || bounty.lifecycleState === "destroying") {
+              return yield* Effect.fail({
+                _tag: "IllegalTransition" as const,
+                bountyId: bounty.bountyId,
+                reason: "A destroyed bounty cannot be recovered.",
+              });
+            }
+            const job = yield* jobs.requeue({ dedupeKey: `provision:${bounty.bountyId}`, at: now });
+            if (job === null) {
+              return yield* Effect.die(new Error(`Bounty ${bounty.bountyId} has no provisioning job`));
+            }
+            return yield* transitionLifecycle({ bountyId: bounty.bountyId, to: "provisioning", at: now });
+          }),
+        );
         return yield* bountyDetail(recovering);
       }).pipe(Effect.catch(failBountyMutation)),
     )
@@ -212,18 +231,27 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
       Effect.gen(function* () {
         const identity = yield* Identity;
         const jobs = yield* LifecycleJobRepository;
-        const bounty = yield* requireBounty(params.bountyId);
+        const sql = yield* SqlClient.SqlClient;
         const now = yield* identity.now;
-        const jobId = yield* identity.jobId;
-        yield* jobs.enqueue({
-          jobId,
-          dedupeKey: `destroy:${bounty.bountyId}`,
-          bountyId: bounty.bountyId,
-          kind: "destroy",
-          payload: {},
-          at: now,
-        });
-        yield* transitionLifecycle({ bounty, to: "destroying", at: now });
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`SELECT pg_advisory_xact_lock(hashtext(${params.bountyId})::bigint)`;
+            const bounty = yield* requireBounty(params.bountyId);
+            if (bounty.lifecycleState === "destroying" || bounty.lifecycleState === "destroyed") {
+              return;
+            }
+            const jobId = yield* identity.jobId;
+            yield* jobs.enqueue({
+              jobId,
+              dedupeKey: `destroy:${bounty.bountyId}`,
+              bountyId: bounty.bountyId,
+              kind: "destroy",
+              payload: {},
+              at: now,
+            });
+            yield* transitionLifecycle({ bountyId: bounty.bountyId, to: "destroying", at: now });
+          }),
+        );
       }).pipe(Effect.catch(failBountyMutation)),
     ),
 );
@@ -237,15 +265,22 @@ export const TokenHandlers = HttpApiBuilder.group(BebopHttpApi, "tokens", (handl
         const tokenId = yield* identity.apiTokenId;
         const secret = yield* identity.apiTokenSecret;
         const createdAt = yield* identity.now;
-        const token = yield* tokens
-          .create({ tokenId, name: payload.name, secret, createdAt })
-          .pipe(
-            Effect.catch(() =>
-              Effect.flatMap(unprocessable(`A token named ${payload.name} already exists.`), Effect.fail),
+        const result = yield* Effect.result(tokens.create({ tokenId, name: payload.name, secret, createdAt }));
+        if (result._tag === "Failure") {
+          const error = result.failure;
+          if (error.reason._tag === "UniqueViolation" && error.reason.constraint === "api_tokens_name_key") {
+            return yield* Effect.flatMap(unprocessable(`A token named ${payload.name} already exists.`), Effect.fail);
+          }
+          return yield* Effect.flatMap(internalError("The token could not be created."), (body) =>
+            Effect.logError("token creation failed", error).pipe(
+              Effect.annotateLogs("request_id", body.requestId),
+              Effect.andThen(Effect.fail(body)),
             ),
           );
+        }
+        const token = result.success;
         // The one moment the plaintext exists outside the client's own configuration.
-        return { token, secret: Redacted.make(secret) };
+        return { token, secret: Redacted.make(secret, { label: "api-token-secret" }) };
       }),
     )
 

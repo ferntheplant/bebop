@@ -97,7 +97,7 @@ export const bountyDetail = Effect.fnUntraced(function* (bounty: BountyRecord) {
     repository: bounty.repository,
     baseRef: bounty.baseRef,
     assignedBranch: bounty.assignedBranch,
-    status: deriveBountyStatus(bounty.lifecycleState, stage),
+    status: deriveBountyStatus(bounty.lifecycleState, stage, projection?.freshness.status ?? "never_connected"),
     ...(stage === null ? {} : { swordfishStage: stage }),
     swordfishFreshness: projection?.freshness.status ?? "never_connected",
     ...(projection?.candidate == null ? {} : { candidateSha: projection.candidate.commitSha }),
@@ -280,34 +280,42 @@ export const listBounties = Effect.fnUntraced(function* (options: { readonly cur
  * transitions it cannot observe.
  */
 export const transitionLifecycle = Effect.fnUntraced(function* (options: {
-  readonly bounty: BountyRecord;
+  readonly bountyId: BountyId;
   readonly to: BountyRecord["lifecycleState"];
   readonly detail?: string;
   readonly at: Timestamp;
 }) {
+  const sql = yield* SqlClient.SqlClient;
   const bounties = yield* BountyRepository;
   const events = yield* BountyEventRepository;
   const projections = yield* SwordfishProjectionRepository;
 
-  const projection = yield* projections.loadIfPresent(options.bounty.bountyId);
-  const stage = projection?.stage ?? null;
-  const before = deriveBountyStatus(options.bounty.lifecycleState, stage);
-  const after = deriveBountyStatus(options.to, stage);
+  return yield* sql.withTransaction(
+    Effect.gen(function* () {
+      yield* sql`SELECT pg_advisory_xact_lock(hashtext(${options.bountyId})::bigint)`;
+      const bounty = yield* requireBounty(options.bountyId);
+      const projection = yield* projections.loadIfPresent(options.bountyId);
+      const stage = projection?.stage ?? null;
+      const freshness = projection?.freshness.status ?? "never_connected";
+      const before = deriveBountyStatus(bounty.lifecycleState, stage, freshness);
+      const after = deriveBountyStatus(options.to, stage, freshness);
 
-  const updated = yield* bounties.setLifecycleState({
-    bountyId: options.bounty.bountyId,
-    lifecycleState: options.to,
-    ...(options.detail === undefined ? {} : { detail: options.detail }),
-    updatedAt: options.at,
-  });
-  if (updated !== null && before !== after) {
-    yield* events.append({
-      bountyId: options.bounty.bountyId,
-      occurredAt: options.at,
-      event: { type: "bounty_status_changed", status: after },
-    });
-  }
-  return updated ?? options.bounty;
+      const updated = yield* bounties.setLifecycleState({
+        bountyId: options.bountyId,
+        lifecycleState: options.to,
+        ...(options.detail === undefined ? {} : { detail: options.detail }),
+        updatedAt: options.at,
+      });
+      if (updated !== null && before !== after) {
+        yield* events.append({
+          bountyId: options.bountyId,
+          occurredAt: options.at,
+          event: { type: "bounty_status_changed", status: after },
+        });
+      }
+      return updated ?? bounty;
+    }),
+  );
 });
 
 /** Records an approval for one exact candidate SHA (SPEC section 13.3). */
@@ -319,12 +327,12 @@ export const approveConfig = Effect.fnUntraced(function* (options: {
   const bounties = yield* BountyRepository;
   const bounty = yield* requireBounty(options.bountyId);
   const now = yield* identity.now;
-  yield* bounties.recordConfigApproval({
+  const recorded = yield* bounties.recordConfigApproval({
     bountyId: bounty.bountyId,
     candidateSha: options.candidateSha,
     approvedAt: now,
   });
-  return bounty;
+  return { bounty, recorded };
 });
 
 export type BountyServiceRequirements =

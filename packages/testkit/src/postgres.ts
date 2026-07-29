@@ -66,7 +66,7 @@ export async function createDisposableDatabase(label: string): Promise<Disposabl
     drop: async () => {
       // `FORCE` because a connection left open by a leaked fiber would otherwise make the
       // drop fail and let the next run inherit the database.
-      await statement(admin, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`).catch(() => undefined);
+      await statement(admin, `DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
     },
   };
 }

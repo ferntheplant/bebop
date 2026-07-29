@@ -3,14 +3,14 @@
 // The public API and the Swordfish gateway share one HTTP server, which is how SPEC
 // section 24 deploys them: one container, one port behind Caddy.
 
-import { BebopHttpApi } from "@bebop/contracts";
+import { ApiTokenName, BebopHttpApi } from "@bebop/contracts";
 import type { PgClient } from "@effect/sql-pg";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Redacted, Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { BearerAuthenticationLayer } from "#src/api/authentication.ts";
 import { BountyHandlers, HealthHandlers, TokenHandlers } from "#src/api/handlers.ts";
-import type { BebopConfiguration } from "#src/config.ts";
+import { BebopConfiguration } from "#src/config.ts";
 import { Identity } from "#src/domain/identity.ts";
 import type { BountyRepository } from "#src/persistence/bounties.ts";
 import type { CommandRepository } from "#src/persistence/commands.ts";
@@ -18,7 +18,7 @@ import type { BountyEventRepository } from "#src/persistence/events.ts";
 import type { IdempotencyRepository } from "#src/persistence/idempotency.ts";
 import type { LifecycleJobRepository } from "#src/persistence/jobs.ts";
 import { SwordfishProjectionRepository } from "#src/persistence/swordfish.ts";
-import type { ApiTokenRepository } from "#src/persistence/tokens.ts";
+import { ApiTokenRepository } from "#src/persistence/tokens.ts";
 import { applyProjectionInput } from "#src/service/projection.ts";
 import { SwordfishGatewayRoute } from "#src/swordfish-gateway/gateway.ts";
 
@@ -43,6 +43,38 @@ export const BebopApiRoutes = Layer.mergeAll(
   SwordfishGatewayRoute,
 );
 
+const bootstrapTokenName = Schema.decodeUnknownSync(ApiTokenName)("bootstrap");
+
+export class MissingBootstrapTokenError extends Error {
+  readonly _tag = "MissingBootstrapTokenError";
+
+  constructor() {
+    super("BEBOP_BOOTSTRAP_API_TOKEN is required while the API token table is empty.");
+    this.name = "MissingBootstrapTokenError";
+  }
+}
+
+/** Makes a fresh database reachable without ever exposing an unauthenticated token route. */
+export const ensureApiTokenBootstrap = Effect.gen(function* () {
+  const config = yield* BebopConfiguration;
+  const identity = yield* Identity;
+  const tokens = yield* ApiTokenRepository;
+  if (yield* tokens.hasAny) {
+    return false;
+  }
+  if (config.bootstrapApiToken === undefined) {
+    return yield* Effect.fail(new MissingBootstrapTokenError());
+  }
+  const tokenId = yield* identity.apiTokenId;
+  const createdAt = yield* identity.now;
+  return yield* tokens.bootstrap({
+    tokenId,
+    name: bootstrapTokenName,
+    secret: Redacted.value(config.bootstrapApiToken),
+    createdAt,
+  });
+});
+
 /**
  * Reconciles connection freshness for a process that has just started.
  *
@@ -58,22 +90,29 @@ export const BebopApiRoutes = Layer.mergeAll(
 export const reconcileConnectionsOnStartup = Effect.gen(function* () {
   const identity = yield* Identity;
   const projections = yield* SwordfishProjectionRepository;
-  const stale = yield* projections.connectedProjections(1_000);
-  if (stale.length === 0) {
-    return;
-  }
-  const detectedAt = yield* identity.now;
-  for (const projection of stale) {
-    if (projection.connectionId === null) {
-      continue;
+  let reconciled = 0;
+  for (;;) {
+    const stale = yield* projections.connectedProjections(1_000);
+    if (stale.length === 0) {
+      break;
     }
-    yield* applyProjectionInput({
-      projection,
-      input: { type: "connection_lost", connectionId: projection.connectionId, detectedAt },
-      at: detectedAt,
-    });
+    const detectedAt = yield* identity.now;
+    for (const projection of stale) {
+      if (projection.connectionId === null) {
+        continue;
+      }
+      yield* applyProjectionInput({
+        bountyId: projection.bountyId,
+        vmId: projection.vmId,
+        input: { type: "connection_lost", connectionId: projection.connectionId, detectedAt },
+        at: detectedAt,
+      });
+      reconciled += 1;
+    }
   }
-  yield* Effect.logInfo("marked inherited swordfish connections disconnected").pipe(
-    Effect.annotateLogs("connections", String(stale.length)),
-  );
+  if (reconciled > 0) {
+    yield* Effect.logInfo("marked inherited swordfish connections disconnected").pipe(
+      Effect.annotateLogs("connections", String(reconciled)),
+    );
+  }
 });

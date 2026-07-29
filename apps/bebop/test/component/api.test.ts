@@ -54,6 +54,51 @@ suite("Bebop API over Postgres", () => {
     expect((await response.json()) as { bounties: ReadonlyArray<unknown> }).toHaveProperty("bounties");
   });
 
+  test("creates, lists, authenticates, and immediately revokes a named token", async () => {
+    expect((await harness.request("/api/tokens", { anonymous: true })).status).toBe(401);
+
+    const created = await harness.request("/api/tokens", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "component-client" }),
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { token: { tokenId: string; name: string }; secret: string };
+    expect(body.token.name).toBe("component-client");
+    expect(body.secret).toMatch(/^bebop_/);
+    const storedHash = await harness.storedApiTokenHash("component-client");
+    expect(storedHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(storedHash).not.toBe(body.secret);
+
+    const authenticated = await harness.request("/api/tokens", {
+      anonymous: true,
+      headers: { authorization: `Bearer ${body.secret}` },
+    });
+    expect(authenticated.status).toBe(200);
+    const listedText = await authenticated.text();
+    expect(listedText).toContain("component-client");
+    expect(listedText).not.toContain(body.secret);
+
+    const revoked = await harness.request(`/api/tokens/${body.token.tokenId}`, { method: "DELETE" });
+    expect(revoked.status).toBe(202);
+    expect(
+      (
+        await harness.request("/api/tokens", {
+          anonymous: true,
+          headers: { authorization: `Bearer ${body.secret}` },
+        })
+      ).status,
+    ).toBe(401);
+
+    const duplicate = await harness.request("/api/tokens", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "component-client" }),
+    });
+    expect(duplicate.status).toBe(422);
+    expect(((await duplicate.json()) as { code: string }).code).toBe("unprocessable_entity");
+  });
+
   test("creates a bounty and assigns it a bounty/* branch", async () => {
     const response = await create("create-1");
     expect(response.status).toBe(201);
@@ -86,18 +131,30 @@ suite("Bebop API over Postgres", () => {
   });
 
   test("rejects a create with no idempotency key at the boundary", async () => {
+    const before = (await (await harness.request("/api/bounties")).json()) as {
+      bounties: ReadonlyArray<unknown>;
+    };
     const response = await harness.request("/api/bounties", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(sampleCreateRequest),
     });
-    expect(response.status).toBeGreaterThanOrEqual(400);
-    expect(response.status).toBeLessThan(500);
+    expect(response.status).toBe(400);
+    const after = (await (await harness.request("/api/bounties")).json()) as {
+      bounties: ReadonlyArray<unknown>;
+    };
+    expect(after.bounties).toHaveLength(before.bounties.length);
   });
 
   test("rejects a payload that violates the contract before any handler runs", async () => {
+    const before = (await (await harness.request("/api/bounties")).json()) as {
+      bounties: ReadonlyArray<unknown>;
+    };
     const response = await create("bad-1", { ...sampleCreateRequest, computeProfile: "enormous" });
-    expect(response.status).toBeGreaterThanOrEqual(400);
-    expect(response.status).toBeLessThan(500);
+    expect(response.status).toBe(400);
+    const after = (await (await harness.request("/api/bounties")).json()) as {
+      bounties: ReadonlyArray<unknown>;
+    };
+    expect(after.bounties).toHaveLength(before.bounties.length);
   });
 });

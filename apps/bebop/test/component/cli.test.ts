@@ -105,7 +105,7 @@ suite("bebop CLI", () => {
     expect(second.bountyId).toBe(first.bountyId);
   });
 
-  test("tails the event stream and stops at the caller's signal", async () => {
+  test("reconnects the event tail after the server idle timeout", async () => {
     const created = await runCli(harness, [
       "bounty",
       "create",
@@ -122,13 +122,21 @@ suite("bebop CLI", () => {
       stderr: "pipe",
       env: { ...process.env, BEBOP_API_URL: harness.baseUrl, BEBOP_TOKEN: harness.token },
     });
-    // Long enough for replay to be written, short enough to keep the suite quick.
+    // The harness server drops an idle stream after two seconds. Produce the next event only
+    // after that deadline so this is observable solely if the CLI reconnects from its cursor.
+    await new Promise((resolve) => setTimeout(resolve, 2_700));
+    await harness.request(`/api/bounties/${bountyId}/stop`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "idle reconnect test" }),
+    });
     await new Promise((resolve) => setTimeout(resolve, 800));
     child.kill();
     const stdout = await new Response(child.stdout).text();
     await child.exited;
     expect(stdout).toContain("status provisioning");
-  });
+    expect(stdout).toContain("status stopped");
+  }, 10_000);
 
   test("fails with a nonzero status when the credential is missing", async () => {
     const outcome = await runCli(harness, ["bounty", "list"], { withoutToken: true });

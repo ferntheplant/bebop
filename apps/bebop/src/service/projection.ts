@@ -5,7 +5,7 @@
 // socket will ever announce. Putting the reduce-persist-publish sequence in one place is
 // what keeps "the projection changed" and "a client was told" from drifting apart.
 
-import type { BountyId, Timestamp } from "@bebop/contracts";
+import type { BountyId, Timestamp, VmId } from "@bebop/contracts";
 import { eventFingerprint } from "@bebop/workflow";
 import { Effect } from "effect";
 import type { SqlError } from "effect/unstable/sql";
@@ -40,7 +40,8 @@ export interface AppliedProjection {
  * error.
  */
 export const applyProjectionInput = Effect.fnUntraced(function* (options: {
-  readonly projection: BebopSwordfishProjection;
+  readonly bountyId: BountyId;
+  readonly vmId: VmId;
   readonly input: BebopProjectionInput;
   readonly at: Timestamp;
 }) {
@@ -49,19 +50,34 @@ export const applyProjectionInput = Effect.fnUntraced(function* (options: {
   const events = yield* BountyEventRepository;
   const bounties = yield* BountyRepository;
 
-  const before = options.projection;
-  const result = reduceBebopSwordfishProjection(before, options.input);
-  if (!result.ok) {
-    return { result, projection: before } satisfies AppliedProjection;
-  }
-  if (!result.applied && result.state === before) {
-    return { result, projection: before } satisfies AppliedProjection;
-  }
-
-  const after = result.state;
-
-  yield* sql.withTransaction(
+  return yield* sql.withTransaction(
     Effect.gen(function* () {
+      // The projection is a single aggregate. Lock before loading it so every reducer input
+      // observes the result of the previous one, including when the row does not exist yet.
+      yield* sql`SELECT pg_advisory_xact_lock(hashtext(${options.bountyId})::bigint)`;
+      const before = yield* projections.load({ bountyId: options.bountyId, vmId: options.vmId });
+      if (before.vmId !== options.vmId) {
+        return {
+          result: {
+            ok: false,
+            error: {
+              type: "identity_mismatch",
+              expectedBountyId: before.bountyId,
+              expectedVmId: before.vmId,
+            },
+          },
+          projection: before,
+        } satisfies AppliedProjection;
+      }
+      const result = reduceBebopSwordfishProjection(before, options.input);
+      if (!result.ok) {
+        return { result, projection: before } satisfies AppliedProjection;
+      }
+      if (!result.applied && result.state === before) {
+        return { result, projection: before } satisfies AppliedProjection;
+      }
+
+      const after = result.state;
       if (result.applied && options.input.type === "event_received") {
         yield* projections.recordEvent({
           bountyId: after.bountyId,
@@ -71,23 +87,23 @@ export const applyProjectionInput = Effect.fnUntraced(function* (options: {
         });
       }
       yield* projections.save({ projection: after, at: options.at });
-      yield* publishVisibleChanges({ before, after, input: options.input, at: options.at });
+      yield* publishVisibleChanges({ before, after, input: options.input, result, at: options.at });
+      return { result, projection: after } satisfies AppliedProjection;
     }),
   );
-
-  return { result, projection: after } satisfies AppliedProjection;
 
   function publishVisibleChanges(change: {
     readonly before: BebopSwordfishProjection;
     readonly after: BebopSwordfishProjection;
     readonly input: BebopProjectionInput;
+    readonly result: BebopProjectionResult;
     readonly at: Timestamp;
   }) {
     return Effect.gen(function* () {
       const bountyId: BountyId = change.after.bountyId;
 
       // The Swordfish event itself, exactly once, only when it actually applied.
-      if (result.ok && result.applied && change.input.type === "event_received") {
+      if (change.result.ok && change.result.applied && change.input.type === "event_received") {
         yield* events.append({
           bountyId,
           occurredAt: change.input.message.occurredAt,
@@ -103,11 +119,18 @@ export const applyProjectionInput = Effect.fnUntraced(function* (options: {
         });
       }
 
-      if (change.before.stage !== change.after.stage) {
+      if (
+        change.before.stage !== change.after.stage ||
+        change.before.freshness.status !== change.after.freshness.status
+      ) {
         const bounty = yield* bounties.get(bountyId);
         if (bounty !== null) {
-          const previous = deriveBountyStatus(bounty.lifecycleState, change.before.stage);
-          const next = deriveBountyStatus(bounty.lifecycleState, change.after.stage);
+          const previous = deriveBountyStatus(
+            bounty.lifecycleState,
+            change.before.stage,
+            change.before.freshness.status,
+          );
+          const next = deriveBountyStatus(bounty.lifecycleState, change.after.stage, change.after.freshness.status);
           if (previous !== next) {
             yield* events.append({
               bountyId,

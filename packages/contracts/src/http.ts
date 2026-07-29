@@ -124,7 +124,11 @@ export const InternalServerError = errorSchema("internal_error", "InternalServer
 
 export class BearerAuthentication extends HttpApiMiddleware.Service<BearerAuthentication>()("BearerAuthentication", {
   security: { bearer: HttpApiSecurity.bearer },
-  error: UnauthorizedError,
+  // A transient database failure while checking a credential is not the caller's fault and
+  // must not be reported as `unauthorized`: a valid client that received a 401 would discard a
+  // working token. `InternalServerError` is already in every authenticated endpoint's error
+  // set via `commonErrors`, so declaring it here is honest and adds no drift.
+  error: [UnauthorizedError, InternalServerError],
 }) {}
 
 const commonErrors = [BadRequestError, UnauthorizedError, InternalServerError] as const;

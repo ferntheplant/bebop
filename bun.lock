@@ -11,6 +11,7 @@
         "typescript": "catalog:",
         "vite": "catalog:",
         "vite-plus": "catalog:",
+        "vitest": "catalog:",
       },
     },
     "apps/bebop": {
@@ -22,9 +23,12 @@
       "dependencies": {
         "@bebop/contracts": "workspace:*",
         "@bebop/workflow": "workspace:*",
+        "@effect/platform-bun": "catalog:",
+        "@effect/sql-pg": "catalog:",
         "effect": "catalog:",
       },
       "devDependencies": {
+        "@bebop/testkit": "workspace:*",
         "typescript": "catalog:",
         "vite-plus": "catalog:",
       },
@@ -68,6 +72,12 @@
     "packages/testkit": {
       "name": "@bebop/testkit",
       "version": "0.0.0",
+      "dependencies": {
+        "@bebop/contracts": "workspace:*",
+        "@effect/platform-bun": "catalog:",
+        "@effect/sql-pg": "catalog:",
+        "effect": "catalog:",
+      },
       "devDependencies": {
         "typescript": "catalog:",
         "vite-plus": "catalog:",
@@ -142,6 +152,7 @@
     "typescript": "7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
     "vite-plus": "0.2.6",
+    "vitest": "4.1.10",
   },
   "packages": {
     "@ai-sdk/provider": ["@ai-sdk/provider@3.0.8", "", { "dependencies": { "json-schema": "^0.4.0" } }, "sha512-oGMAgGoQdBXbZqNG0Ze56CHjDZ1IDYOwGYxYjO5KLSlz5HiNQ9udIXsPZ61VWaHGZ5XW/jyjmr6t2xz2jGVwbQ=="],

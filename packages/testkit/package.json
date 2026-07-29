@@ -16,6 +16,12 @@
   "scripts": {
     "build": "vp pack"
   },
+  "dependencies": {
+    "@bebop/contracts": "workspace:*",
+    "@effect/platform-bun": "catalog:",
+    "@effect/sql-pg": "catalog:",
+    "effect": "catalog:"
+  },
   "devDependencies": {
     "typescript": "catalog:",
     "vite-plus": "catalog:"

@@ -52,6 +52,38 @@ Run the complete local readiness check:
 vp run ready
 ```
 
+### Postgres for component tests
+
+Bebop's component tests run against a **real disposable Postgres** — the behaviour they cover is behaviour a
+fake would paper over: transactional idempotency, `FOR UPDATE SKIP LOCKED`, advisory locks, and the `jsonb` and
+`bigint` encodings recorded in `spikes/persistence`. Each suite creates its own database and drops it afterwards.
+
+```bash
+docker compose up -d --wait postgres
+export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
+vp run ready
+```
+
+Without `BEBOP_TEST_DATABASE_URL` those suites skip, so `vp run ready` still passes on a machine with no Docker.
+CI always provides the service, and that is where the requirement is enforced.
+
+### Why the test tasks launch Vitest with Bun
+
+One test runner, one runtime. The `test`, `test:integration`, and `test:e2e` tasks run
+`bun node_modules/vitest/vitest.mjs` rather than `vp test`, because Vite+ manages a Node runtime and launches
+Vitest with it — which would put every test on a runtime the code under test never runs on. The API serves on
+`BunHttpServer`; a Node-hosted worker cannot start one at all, and a unit test that passes on Node proves less
+than one that passes on Bun.
+
+Launched by Bun, Vitest's workers are Bun workers: `Bun` globals resolve, `BunHttpServer` starts, and the
+component suites are ordinary Vitest tests alongside everything else.
+
+`vitest` is therefore a direct devDependency pinned in the catalog to the same version Vite+ vendors. Keep the
+two in step when upgrading Vite+ — a mismatch is the one way this arrangement can drift.
+
+`vp test` still works for an ad-hoc run of the pure tests, and forwards its options to Vitest as usual. It runs
+on Node, so it cannot start the component suites.
+
 Tasks declare their own prerequisites with Vite+ `dependsOn` in `vite.config.ts` rather than being chained with
 shell `&&`, so every task is correct when run on its own from a clean checkout — `vp run smoke` builds what it
 needs before it runs. `ready` is an aggregator whose gate is its dependencies.
@@ -59,9 +91,12 @@ needs before it runs. `ready` is an aggregator whose gate is its dependencies.
 Two constraints shaped that wiring:
 
 - `check` and the test tasks resolve `@bebop/contracts` through its built `dist`, so they depend on `build`;
-- Vite+ resolves a bare `./dist/*.mjs` command as a binary at _plan_ time, before any task runs, so the
-  executable smoke tasks invoke their artifacts as `sh -c './dist/cli.mjs'`. Without that, planning fails on a
-  clean checkout where `dist` does not exist yet, no matter how the dependencies are declared.
+- Vite+ resolves a bare `./dist/*.mjs` command as a binary at _plan_ time, before any task runs, so no task
+  names a built artifact directly. The artifact smokes run through a script instead
+  (`apps/bebop/scripts/smoke.ts`), which also lets them assert something worth asserting: that each packed
+  bundle **loads and reaches its own code**, proved by the servers reporting a configuration error and the CLI
+  printing its usage. A missing dependency or a dynamic import that did not survive bundling fails there, and
+  none of those are visible from a type check.
 
 Run individual checks:
 
@@ -71,11 +106,24 @@ vp test --run
 vp run build
 ```
 
-Start the Bebop API scaffold:
+Run the Bebop API locally:
 
 ```bash
+docker compose up -d --wait postgres
+BEBOP_HOST=127.0.0.1 \
+BEBOP_PORT=8080 \
+BEBOP_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop \
+BEBOP_PUBLIC_BASE_URL=https://bebop.local.invalid/ \
+BEBOP_ARTIFACT_ROOT=/tmp/bebop-artifacts \
+BEBOP_HEARTBEAT_INTERVAL='5 seconds' \
+BEBOP_SWORDFISH_STALE_AFTER='20 seconds' \
+BEBOP_MAX_PROTOCOL_MESSAGE_BYTES=262144 \
+BEBOP_SHUTDOWN_TIMEOUT='15 seconds' \
 vp run dev
 ```
+
+`bebop-worker` takes the same configuration and runs the durable lifecycle jobs and the connection freshness
+sweep. Both processes apply migrations at startup, so either one may be started first.
 
 All commits must follow Conventional Commits. Vite+ installs the pre-commit and commit-message hooks through the
 root `prepare` script.

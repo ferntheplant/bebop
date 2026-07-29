@@ -78,6 +78,27 @@ function throughPushedCandidate(): TestState {
 }
 
 describe("workflow core", () => {
+  test("accepts a first interactive announcement from a projection that has heard nothing", () => {
+    // Bebop's projection starts at `null` because it has not met this Swordfish yet, and the
+    // first thing a Swordfish says about itself is that it is interactive. Rejecting that as
+    // an illegal transition would leave `bounty status` reporting `provisioning` for a bounty
+    // whose crew is already talking to the user.
+    const fresh: WorkflowCoreState = { ...initialWorkflowCoreState(), stage: null };
+    const result = applyWorkflowEvent(fresh, message(1, { type: "stage_changed", stage: "interactive" }));
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.applied && result.state.stage).toBe("interactive");
+  });
+
+  test("still refuses a redundant interactive announcement once a stage is known", () => {
+    // Swordfish itself starts at `interactive`, so this branch must not become a general
+    // licence to jump back to the beginning from anywhere.
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    const result = applyWorkflowEvent(state, message(2, { type: "stage_changed", stage: "interactive" }));
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error.type).toBe("illegal_transition");
+  });
+
   test("records an attention reason arriving via stage_changed", () => {
     // The drift that made this package necessary: Swordfish recorded this reason and
     // Bebop's projection did not, so a needs_attention bounty showed the CLI a blank

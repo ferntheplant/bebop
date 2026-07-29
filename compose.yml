@@ -1,0 +1,29 @@
+# Stateful local dependencies only (PLAN section 2).
+#
+# Bebop itself runs from `vp run dev` or a packed artifact; this file exists so component
+# tests have a real Postgres to talk to without one being installed on the machine.
+#
+#   docker compose up -d postgres
+#   export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
+#   vp run test:integration
+#
+# Port 5433 rather than 5432 so this cannot collide with a Postgres the developer already
+# runs for something else.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bebop
+      POSTGRES_PASSWORD: bebop
+      POSTGRES_DB: bebop
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bebop -d bebop"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Tests create and drop databases constantly and nothing here needs to outlive a run.
+    tmpfs:
+      - /var/lib/postgresql/data

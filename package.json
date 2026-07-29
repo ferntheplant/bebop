@@ -19,7 +19,8 @@
     "@types/bun": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "catalog:"
   },
   "overrides": {
     "vite": "catalog:"
@@ -47,6 +48,7 @@
     "effect": "4.0.0-beta.101",
     "typescript": "7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6",
-    "vite-plus": "0.2.6"
+    "vite-plus": "0.2.6",
+    "vitest": "4.1.10"
   }
 }

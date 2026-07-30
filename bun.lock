@@ -52,9 +52,12 @@
       "dependencies": {
         "@bebop/contracts": "workspace:*",
         "@bebop/workflow": "workspace:*",
+        "@effect/platform-bun": "catalog:",
+        "@effect/sql-sqlite-bun": "catalog:",
         "effect": "catalog:",
       },
       "devDependencies": {
+        "@bebop/testkit": "workspace:*",
         "typescript": "catalog:",
         "vite-plus": "catalog:",
       },

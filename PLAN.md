@@ -25,6 +25,7 @@ Progress through 2026-07-26:
 Progress through 2026-07-29:
 
 - **Milestone 3 is complete and validated:** the local Bebop server exists as two real processes over a real Postgres. `bebop-api` serves the whole `BebopHttpApi` — bounty create, list, status, attachments, evidence, approve-config, stop, recover, destroy, the token routes, and the cursor-replay SSE stream — and accepts Swordfish connections on the same port. `bebop-worker` shares the image and repositories and runs durable lifecycle jobs plus the connection freshness sweep. The `bebop` CLI is a thin client over the generated client. 39 component tests run against a real disposable Postgres, and a clean clone passes `vp install --frozen-lockfile` and `vp run ready`. Eleven implementation decisions and three new findings are recorded under Milestone 3 below; the two that change other people's work are that `sql.json` cannot encode a JSON array for a `jsonb` column, and that a graceful `server.stop()` waits forever on a WebSocket close in flight.
+- **Milestone 4 is complete and validated:** Swordfish is a real supervised daemon over SQLite, an outbound Bebop WebSocket, and a permission-restricted Unix control socket. Workflow events, reducer snapshots, entity histories, command results, reconciliation records, and the Bebop outbox commit through one durable authority. `sf` implements status, stop, takeover, handback, extend, retry, and approve-config without SQLite access. Nine SQLite/socket/WebSocket component tests and a packed-process SIGKILL/restart test cover replay, reconnect, acknowledgement, command deduplication, correlation conflicts, socket safety, and startup reconciliation. `vp run ready` passes.
 
 ## 2. Repository Decisions
 
@@ -317,7 +318,7 @@ README carries the evidence.
 
 **Status:** Complete and validated (2026-07-29)
 
-**Current checkpoint:** Exit criteria satisfied; Milestone 4 is next.
+**Current checkpoint:** Exit criteria satisfied; Milestone 5 is next.
 
 **Work**
 
@@ -400,6 +401,8 @@ Do not integrate exe.dev or GitHub in this milestone. The fake lifecycle provide
 
 ### Milestone 4: Implement Swordfish Core and `sf`
 
+**Status:** Complete and validated (2026-07-29)
+
 **Work**
 
 - Add SQLite migrations, WAL configuration, busy handling, and integrity checks.
@@ -414,10 +417,21 @@ Do not integrate exe.dev or GitHub in this milestone. The fake lifecycle provide
 
 **Exit criteria**
 
-- Killing Swordfish after committing an event but before acknowledgement causes a safe replay after restart.
-- Repeating a Bebop command ID does not repeat its side effect.
-- `sf` cannot operate when the daemon is absent, the socket permissions are unsafe, or the response fails schema validation.
-- The daemon never exposes direct SQLite mutation through the CLI.
+- ~~Killing Swordfish after committing an event but before acknowledgement causes a safe replay after restart.~~ **Met.** A packed-process SIGKILL test proves the same sequence remains in the outbox across restart; the real-WebSocket component test disconnects before acknowledgement, observes the identical sequence on reconnect, and then acknowledges it.
+- ~~Repeating a Bebop command ID does not repeat its side effect.~~ **Met.** Command claim, workflow events, normalized state, and terminal result share one SQLite transaction. Repeated delivery returns the stored result; conflicting payload reuse fails closed. The WebSocket test redelivers one extension command across a reconnect and observes one ledger mutation.
+- ~~`sf` cannot operate when the daemon is absent, the socket permissions are unsafe, or the response fails schema validation.~~ **Met.** Process and real Unix-socket tests cover an absent daemon, wrong file type, mode other than `0600`, malformed response, wrong correlation/command, and an active second-daemon attempt.
+- ~~The daemon never exposes direct SQLite mutation through the CLI.~~ **Met.** `sf` imports only the control client and shared schemas; every mutation is decoded and applied by the daemon's transactional workflow service.
+
+**Implementation decisions and findings**
+
+- **The control socket is also the single-daemon lock.** Swordfish creates or verifies its owner-only `0700` parent, removes only an inactive stale socket, binds and changes the socket to `0600`, and only then migrates or reconciles SQLite. A second daemon fails before it can mutate connection state and cannot unlink the active daemon's socket.
+- **SQLite authority is identity-bound.** The singleton metadata stores the bounty ID, VM ID, repository slug, and assigned branch. Startup refuses to reuse a database under different configuration, because its durable outbox still names the original authority.
+- **The first event is an `interactive` announcement.** Swordfish begins in `interactive`, while Bebop's projection begins at `null`. The shared reducer accepts sequence 1 announcing `interactive` from either starting point, so one durable event is valid in both authorities rather than bypassing Swordfish's reducer.
+- **At-least-once does not mean resend-everything-on-every-heartbeat.** Each connection pages at most 64 pending events behind a local send cursor. Reconnect resets that cursor to Bebop's durable acknowledgement and is the replay boundary; heartbeats drain newly committed local events without loading or repeatedly transmitting the whole backlog.
+- **Command deduplication includes the result.** Swordfish stores a hash of the command payload and the schema-encoded terminal result under `command_id`. Identical redelivery returns that result, while a different payload under the same ID is a protocol error. Local correlations derive stable command IDs and return `correlation_conflict` on conflicting reuse.
+- **Repository and branch are process configuration.** `SfStatusSnapshot` requires both values even before repository configuration parsing exists, so `SWORDFISH_REPOSITORY` and `SWORDFISH_ASSIGNED_BRANCH` join the bootstrap environment. `.bebop/config.yml` remains Milestone 6 work.
+- **Packed migration loading uses a static record.** Like Bebop, Swordfish uses `Migrator.fromRecord`; the artifact smoke starts the packed daemon against a fresh temporary database, exercises the bundled migration and control socket, calls packed `sf status`, and stops it through packed `sf stop`.
+- **Startup fails closed around uncertain local resources.** `integrity_check`, `foreign_key_check`, outbox completeness, child PIDs, and recorded worktree paths are inspected before work resumes. Surviving or vanished resources remain `needs_attention` or `unknown`; this milestone never guesses that an interrupted external operation completed.
 
 ### Milestone 5: Bebop-Swordfish End-to-End Protocol
 

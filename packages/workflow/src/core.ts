@@ -265,13 +265,13 @@ function changesFor(
       if (isSuspended(state.stage) && state.suspendedStage === event.stage) {
         return { ok: true, changes: { stage: event.stage, suspendedStage: null, attentionReason: null } };
       }
-      // A Swordfish announcing `interactive` to a projection that has not heard from it
-      // before. Swordfish itself starts at `interactive` (SPEC section 12.1) and so never
-      // takes this branch; Bebop's projection starts at `null`, and without this the first
-      // thing a freshly connected bounty says about itself would be rejected as an illegal
-      // transition — leaving `bounty status` reporting `provisioning` for a bounty whose
-      // crew is already talking to the user.
-      if (event.stage === "interactive" && state.stage === null) {
+      // The first event is Swordfish announcing its initial state. Swordfish starts at
+      // `interactive`, while Bebop's projection starts at null; accepting the announcement
+      // in both states lets the same durable event pass through both reducers.
+      if (
+        event.stage === "interactive" &&
+        (state.stage === null || (state.stage === "interactive" && state.lastAppliedSequence === 0))
+      ) {
         return { ok: true, changes: { stage: "interactive" } };
       }
       if (event.stage === "pushed_candidate") {

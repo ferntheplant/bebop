@@ -7,7 +7,10 @@
 // notices.
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { adminDatabaseUrl, createDisposableDatabase } from "@bebop/testkit";
 import { describe, expect, test } from "vite-plus/test";
@@ -101,6 +104,20 @@ function availablePort(): Promise<number> {
   });
 }
 
+async function waitForSocket(path: string, replacedInode?: number): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    try {
+      const stats = await lstat(path);
+      if (stats.isSocket() && (replacedInode === undefined || stats.ino !== replacedInode)) return;
+    } catch {
+      // The daemon is still starting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Unix socket did not appear at ${path}`);
+}
+
 async function waitForResponse(
   url: string,
   init?: RequestInit,
@@ -182,18 +199,89 @@ describe("process entrypoints", () => {
     expect(outcome.exitCode).not.toBe(0);
   });
 
-  test("the Swordfish entrypoints still start", async () => {
-    // Milestone 4 builds these; today they are placeholders, and this asserts only that the
-    // workspace's other two programs are runnable.
-    for (const [entrypoint, expected] of [
-      ["apps/swordfish/src/daemon.ts", "swordfish"],
-      ["apps/swordfish/src/cli.ts", "sf"],
-    ] as const) {
-      const outcome = await run(entrypoint, []);
-      expect(outcome.exitCode).toBe(0);
-      expect(outcome.stdout).toBe(`${expected}\n`);
-    }
+  test("the sf CLI prints usage and refuses an absent daemon", async () => {
+    const help = await run("apps/swordfish/src/cli.ts", ["--help"]);
+    expect(help.exitCode).toBe(0);
+    expect(`${help.stdout}${help.stderr}`).toContain("USAGE");
+
+    const absent = await run("apps/swordfish/src/cli.ts", ["status", "--socket", "/tmp/swordfish-absent.sock"]);
+    expect(absent.exitCode).not.toBe(0);
+    expect(absent.stderr).toContain("Swordfish daemon is unavailable");
+
+    const trailing = await run("apps/swordfish/src/cli.ts", ["stop", "typo", "--socket", "/tmp/swordfish-absent.sock"]);
+    expect(trailing.exitCode).not.toBe(0);
+    expect(`${trailing.stdout}${trailing.stderr}`).toContain("Unexpected argument");
   });
+
+  test("the Swordfish daemon refuses to start without configuration", async () => {
+    const outcome = await run("apps/swordfish/src/daemon.ts", [], {
+      env: { SWORDFISH_BOUNTY_ID: "", SWORDFISH_DATABASE_PATH: "" },
+      timeoutMs: 15_000,
+    });
+    expect(outcome.exitCode).not.toBe(0);
+  });
+
+  test("a SIGKILL before acknowledgement preserves the durable event for replay after restart", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bebop-swordfish-process-"));
+    const socketPath = join(root, "run", "control.sock");
+    const databasePath = join(root, "state", "swordfish.sqlite");
+    await Promise.all([
+      mkdir(join(root, "run"), { recursive: true }),
+      mkdir(join(root, "state"), { recursive: true }),
+      mkdir(join(root, "repository"), { recursive: true }),
+      mkdir(join(root, "artifacts"), { recursive: true }),
+    ]);
+    const env = {
+      SWORDFISH_BOUNTY_ID: "bty-process",
+      SWORDFISH_VM_ID: "vm-process",
+      SWORDFISH_REPOSITORY: "withco/bebop",
+      SWORDFISH_ASSIGNED_BRANCH: "bounty/bty-process",
+      SWORDFISH_BEBOP_WEB_SOCKET_URL: "ws://127.0.0.1:1/swordfish",
+      SWORDFISH_BEBOP_TOKEN: "process-token",
+      SWORDFISH_DATABASE_PATH: databasePath,
+      SWORDFISH_CONTROL_SOCKET_PATH: socketPath,
+      SWORDFISH_REPOSITORY_PATH: join(root, "repository"),
+      SWORDFISH_ARTIFACT_ROOT: join(root, "artifacts"),
+      SWORDFISH_OPEN_CODE_BASE_URL: "http://127.0.0.1:4096/",
+      SWORDFISH_HEARTBEAT_INTERVAL: "50 millis",
+      SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
+      SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
+      SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
+    } as const;
+    let daemon: RunningProcess | undefined;
+    try {
+      daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
+      await waitForSocket(socketPath);
+      const firstSocketInode = (await lstat(socketPath)).ino;
+      const before = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", socketPath, "--json"]);
+      expect(before.exitCode).toBe(0);
+      expect(JSON.parse(before.stdout)).toMatchObject({
+        stage: "interactive",
+        bebopConnection: { acknowledgedThrough: 0, pendingEventCount: 1 },
+        recentEvents: [{ sequence: 1 }],
+      });
+
+      daemon.child.kill("SIGKILL");
+      await new Promise<void>((resolve) => daemon?.child.once("close", () => resolve()));
+      daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
+      await waitForSocket(socketPath, firstSocketInode);
+      const after = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", socketPath, "--json"]);
+      expect(after.exitCode).toBe(0);
+      expect(JSON.parse(after.stdout)).toMatchObject({
+        stage: "interactive",
+        bebopConnection: { acknowledgedThrough: 0, pendingEventCount: 1 },
+        recentEvents: [{ sequence: 1 }],
+      });
+
+      const stopped = await run("apps/swordfish/dist/cli.mjs", ["stop", "--socket", socketPath]);
+      expect(stopped.exitCode).toBe(0);
+    } finally {
+      if (daemon !== undefined && daemon.child.exitCode === null && daemon.child.signalCode === null) {
+        await daemon.stop();
+      }
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   const postgresTest = adminDatabaseUrl() === null ? test.skip : test;
 

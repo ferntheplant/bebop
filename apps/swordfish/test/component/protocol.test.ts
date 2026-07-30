@@ -1,11 +1,16 @@
 import type { RegisterMessage, SwordfishToBebopMessage } from "@bebop/contracts";
-import { SwordfishToBebopMessage as SwordfishToBebopMessageSchema } from "@bebop/contracts";
-import { Effect, Fiber, Schema } from "effect";
-import { SqlClient } from "effect/unstable/sql";
+import {
+  SwordfishEvent as SwordfishEventSchema,
+  SwordfishToBebopMessage as SwordfishToBebopMessageSchema,
+} from "@bebop/contracts";
+import { Duration, Effect, Fiber, Schema } from "effect";
+import { SqlClient, SqlError } from "effect/unstable/sql";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
+import { SwordfishConfiguration } from "#src/config.ts";
 import { SwordfishStore } from "#src/persistence/store.ts";
 import { runBebopClient } from "#src/protocol/client.ts";
+import { WorkflowService } from "#src/workflow/service.ts";
 import type { SwordfishHarness } from "#test/component/support/harness.ts";
 import { startSwordfishHarness } from "#test/component/support/harness.ts";
 
@@ -112,6 +117,121 @@ function registeredMessage(registrations: number, acknowledgedThrough = 0): stri
 }
 
 describe("Swordfish outbound protocol", () => {
+  test.each([
+    {
+      label: "typed failures",
+      marker: "heartbeat typed failure",
+      failure: Effect.fail(
+        new SqlError.SqlError({
+          reason: new SqlError.UnknownError({
+            cause: "heartbeat typed failure",
+            message: "heartbeat typed failure",
+          }),
+        }),
+      ),
+    },
+    {
+      label: "defects",
+      marker: "heartbeat defect",
+      failure: Effect.die("heartbeat defect"),
+    },
+  ])("propagates heartbeat delivery $label to the client fiber", async ({ failure, marker }) => {
+    const peer = startFakePeer({
+      onRegister(socket, _message, { state }) {
+        socket.send(registeredMessage(state.registrations));
+      },
+    });
+    harness = await startSwordfishHarness(`heartbeat-${marker.replaceAll(" ", "-")}`, {
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
+    });
+    const realStore = await harness.run(SwordfishStore);
+    let deliveryReads = 0;
+    const fiber = harness.fork(
+      runBebopClient.pipe(
+        Effect.provideService(SwordfishStore, {
+          ...realStore,
+          deliveryState: Effect.suspend(() => {
+            deliveryReads += 1;
+            return deliveryReads === 1 ? realStore.deliveryState : failure;
+          }),
+        }),
+      ),
+    );
+    try {
+      const exit = await Effect.runPromise(Fiber.await(fiber).pipe(Effect.timeout("2 seconds")));
+      expect(exit._tag).toBe("Failure");
+      if (exit._tag === "Failure") expect(String(exit.cause)).toContain(marker);
+      expect(deliveryReads).toBeGreaterThanOrEqual(2);
+      expect(peer.state.connections).toBe(1);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      peer.stop();
+    }
+  });
+
+  test("drains preexisting events across every outbox page and persists the final acknowledgement", async () => {
+    const eventCount = 130;
+    const peer = startFakePeer({
+      onRegister(socket, _message, { state }) {
+        socket.send(registeredMessage(state.registrations));
+      },
+      onMessage(socket, message) {
+        if (message.type === "event" && message.sequence === eventCount) {
+          socket.send(
+            JSON.stringify({
+              type: "event_acknowledged",
+              protocolVersion: 1,
+              bountyId: "bty-component",
+              vmId: "vm-component",
+              acknowledgedThrough: message.sequence,
+            }),
+          );
+        }
+      },
+    });
+    harness = await startSwordfishHarness("multi-page-drain", {
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
+    });
+    await harness.run(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowService;
+        for (let sequence = 2; sequence <= eventCount; sequence += 1) {
+          yield* workflow.append(
+            Schema.decodeUnknownSync(SwordfishEventSchema)({
+              type: "attention_required",
+              reason: `preexisting event ${sequence}`,
+            }),
+          );
+        }
+      }),
+    );
+    const fiber = harness.fork(
+      runBebopClient.pipe(
+        Effect.provideService(SwordfishConfiguration, {
+          ...harness.config,
+          heartbeatInterval: Duration.seconds(10),
+        }),
+      ),
+    );
+    try {
+      await waitFor(
+        async () =>
+          (await harness?.run(Effect.flatMap(SwordfishStore, (store) => store.deliveryState)))?.acknowledgedThrough ===
+          eventCount,
+        "the final multi-page acknowledgement",
+      );
+
+      const sequences = peer.received.filter((message) => message.type === "event").map((event) => event.sequence);
+      expect(sequences).toEqual(Array.from({ length: eventCount }, (_, index) => index + 1));
+      expect(
+        (await harness.run(Effect.flatMap(SwordfishStore, (store) => store.deliveryState))).acknowledgedThrough,
+      ).toBe(eventCount);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      peer.stop();
+    }
+  }, 20_000);
+
   test("registers, replays, reconnects, heartbeats, acknowledges, and deduplicates commands", async () => {
     let firstConnection: FakePeerSocket | undefined;
     const peer = startFakePeer({

@@ -6,7 +6,7 @@ import {
   toEventSequence,
 } from "@bebop/contracts";
 import * as BunSocket from "@effect/platform-bun/BunSocket";
-import { Data, Duration, Effect, Fiber, Queue, Redacted, Schedule, Schema } from "effect";
+import { Data, Duration, Effect, Fiber, Queue, Redacted, Schedule, Schema, Semaphore } from "effect";
 import { Socket } from "effect/unstable/socket";
 import type { SqlError } from "effect/unstable/sql";
 
@@ -120,14 +120,22 @@ const session = (onRegistered: Effect.Effect<void>) =>
     );
 
     let sentThrough = first.acknowledgedThrough;
-    const drain = Effect.gen(function* () {
-      const events = yield* store.eventsAfter(sentThrough);
-      for (const event of events) {
-        yield* send(event);
-        sentThrough = toEventSequence(event.sequence);
-      }
-    });
-    yield* drain;
+    const drainLock = yield* Semaphore.make(1);
+    const drain = (producedThrough: typeof delivery.lastProduced) =>
+      drainLock.withPermit(
+        Effect.gen(function* () {
+          while (sentThrough < producedThrough) {
+            const events = yield* store.eventsAfter(sentThrough);
+            if (events.length === 0) return;
+            for (const event of events) {
+              if (event.sequence > producedThrough) return;
+              yield* send(event);
+              sentThrough = toEventSequence(event.sequence);
+            }
+          }
+        }),
+      );
+    yield* drain(delivery.lastProduced);
 
     const heartbeat = Effect.gen(function* () {
       const current = yield* store.deliveryState;
@@ -144,9 +152,9 @@ const session = (onRegistered: Effect.Effect<void>) =>
       // Local workflow progress is allowed while Bebop is unavailable. The per-connection
       // send cursor drains each new event once; reconnect resets it to Bebop's durable cursor
       // and is the retry boundary for unacknowledged events.
-      yield* drain;
+      yield* drain(current.lastProduced);
     }).pipe(Effect.repeat(Schedule.spaced(config.heartbeatInterval)));
-    yield* Effect.forkScoped(heartbeat);
+    const heartbeatFiber = yield* Effect.forkScoped(heartbeat);
 
     const handleRegistered = (_message: RegisteredMessage) =>
       Effect.fail(new BebopSessionError({ reason: "Bebop repeated registration on an active connection." }));
@@ -175,7 +183,8 @@ const session = (onRegistered: Effect.Effect<void>) =>
           case "event_acknowledged": {
             const at = yield* identity.now;
             yield* store.acknowledge(message.acknowledgedThrough, at);
-            yield* drain;
+            const current = yield* store.deliveryState;
+            yield* drain(current.lastProduced);
             return;
           }
           case "command": {
@@ -196,8 +205,11 @@ const session = (onRegistered: Effect.Effect<void>) =>
     // Every session end is a typed failure: a clean close is a BebopSessionError, so the
     // reconnect loop never has to distinguish success-with-retry from failure-with-retry.
     yield* Effect.raceFirst(
-      Effect.forever(Queue.take(inbound).pipe(Effect.flatMap(decodeFrame), Effect.flatMap(handle))),
-      socketEnded,
+      Effect.raceFirst(
+        Effect.forever(Queue.take(inbound).pipe(Effect.flatMap(decodeFrame), Effect.flatMap(handle))),
+        socketEnded,
+      ),
+      Fiber.join(heartbeatFiber),
     );
   }).pipe(
     Effect.catchTags({

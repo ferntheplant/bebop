@@ -52,6 +52,18 @@ function extendCommand(commandId = "cmd-extend"): CommandMessage {
   });
 }
 
+function takeoverCommand(commandId = "cmd-takeover"): CommandMessage {
+  return Schema.decodeUnknownSync(CommandMessageSchema)({
+    type: "command",
+    protocolVersion: 1,
+    bountyId: "bty-component",
+    vmId: "vm-component",
+    commandId,
+    issuedAt: "2026-07-29T00:00:01.000Z",
+    command: { type: "takeover", seat: "ein", force: false },
+  });
+}
+
 describe("Swordfish SQLite authority", () => {
   test("opens in WAL mode, applies migrations, and survives restart with an unacknowledged outbox", async () => {
     harness = await startSwordfishHarness("durability");
@@ -138,6 +150,219 @@ describe("Swordfish SQLite authority", () => {
     if (exit._tag === "Failure") {
       expect(String(exit.cause)).toContain(CommandConflictError.name);
     }
+  });
+
+  test("rolls back a workflow append when the outbox insert aborts, then retries it once", async () => {
+    harness = await startSwordfishHarness("append-atomicity");
+    const event = decodeEvent({ type: "lease_changed", seat: "ein", seatId: "seat-ein", owner: "swordfish" });
+    const inspect = Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* SwordfishStore;
+      const events = yield* sql`
+        SELECT count(*) AS count, coalesce(max(sequence), 0) AS max_sequence FROM workflow_events
+      `;
+      const outbox = yield* sql`
+        SELECT count(*) AS count, coalesce(max(sequence), 0) AS max_sequence FROM bebop_outbox
+      `;
+      const seats = yield* sql`SELECT seat_id, lease_owner FROM seats WHERE role = 'ein'`;
+      const stateRows = yield* sql`SELECT state_revision, snapshot FROM workflow_state WHERE singleton = 1`;
+      const workflow = yield* store.loadWorkflow;
+      return {
+        eventCount: events[0]?.["count"],
+        eventMaxSequence: events[0]?.["max_sequence"],
+        outboxCount: outbox[0]?.["count"],
+        outboxMaxSequence: outbox[0]?.["max_sequence"],
+        seats: seats.map((row) => ({ seatId: row["seat_id"], owner: row["lease_owner"] })),
+        stateRevision: stateRows[0]?.["state_revision"],
+        snapshot: stateRows[0]?.["snapshot"],
+        lastSequence: workflow.state.lastAppliedSequence,
+      };
+    });
+    const baseline = await harness.run(inspect);
+
+    const failure = await harness.run(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const workflow = yield* WorkflowService;
+        yield* sql`
+          CREATE TEMP TRIGGER abort_test_outbox_insert
+          BEFORE INSERT ON bebop_outbox
+          BEGIN
+            SELECT RAISE(ABORT, 'test abort bebop_outbox insert');
+          END
+        `;
+        const exit = yield* Effect.exit(workflow.append(event));
+        yield* sql`DROP TRIGGER abort_test_outbox_insert`;
+        return exit;
+      }),
+    );
+    expect(failure._tag).toBe("Failure");
+    if (failure._tag === "Failure") expect(String(failure.cause)).toContain("test abort bebop_outbox insert");
+    expect(await harness.run(inspect)).toEqual(baseline);
+
+    const retried = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.append(event)));
+    const afterRetry = await harness.run(inspect);
+    expect(retried.sequence).toBe(Number(baseline.lastSequence) + 1);
+    expect(afterRetry).toMatchObject({
+      eventCount: Number(baseline.eventCount) + 1,
+      eventMaxSequence: Number(baseline.eventMaxSequence) + 1,
+      outboxCount: Number(baseline.outboxCount) + 1,
+      outboxMaxSequence: Number(baseline.outboxMaxSequence) + 1,
+      stateRevision: Number(baseline.stateRevision) + 1,
+      lastSequence: Number(baseline.lastSequence) + 1,
+      seats: [{ seatId: "seat-ein", owner: "swordfish" }],
+    });
+    expect(afterRetry.snapshot).not.toBe(baseline.snapshot);
+  });
+
+  test("rolls back a mutating command when recording its result aborts, then retries it once", async () => {
+    harness = await startSwordfishHarness("command-atomicity");
+    await harness.run(
+      Effect.flatMap(WorkflowService, (workflow) =>
+        workflow.append(decodeEvent({ type: "lease_changed", seat: "ein", seatId: "seat-ein", owner: "swordfish" })),
+      ),
+    );
+    const command = takeoverCommand("cmd-takeover-atomicity");
+    const inspect = Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* SwordfishStore;
+      const events = yield* sql`
+        SELECT count(*) AS count, coalesce(max(sequence), 0) AS max_sequence FROM workflow_events
+      `;
+      const outbox = yield* sql`SELECT count(*) AS count FROM bebop_outbox`;
+      const stateRows = yield* sql`SELECT state_revision, snapshot FROM workflow_state WHERE singleton = 1`;
+      const seats = yield* sql`SELECT seat_id, lease_owner, updated_at FROM seats WHERE role = 'ein'`;
+      const constraints = yield* sql`
+        SELECT consumed, limit_value, extensions_granted, updated_at
+        FROM constraint_ledger WHERE constraint_key = 'primary_turns'
+      `;
+      const commands = yield* sql`SELECT count(*) AS count FROM applied_commands`;
+      const commandResults = yield* sql`
+        SELECT result_payload FROM applied_commands WHERE command_id = ${command.commandId}
+      `;
+      const metadata = yield* sql`SELECT last_applied_command_id FROM daemon_metadata WHERE singleton = 1`;
+      const workflow = yield* store.loadWorkflow;
+      return {
+        eventCount: events[0]?.["count"],
+        eventMaxSequence: events[0]?.["max_sequence"],
+        outboxCount: outbox[0]?.["count"],
+        stateRevision: stateRows[0]?.["state_revision"],
+        snapshot: stateRows[0]?.["snapshot"],
+        seats: seats.map((row) => ({
+          seatId: row["seat_id"],
+          owner: row["lease_owner"],
+          updatedAt: row["updated_at"],
+        })),
+        constraints: constraints.map((row) => ({
+          consumed: row["consumed"],
+          limit: row["limit_value"],
+          extensionsGranted: row["extensions_granted"],
+          updatedAt: row["updated_at"],
+        })),
+        commandCount: commands[0]?.["count"],
+        commandResults: commandResults.map((row) => row["result_payload"]),
+        lastAppliedCommandId: metadata[0]?.["last_applied_command_id"],
+        lastSequence: workflow.state.lastAppliedSequence,
+        stage: workflow.state.stage,
+        leaseOwner: workflow.state.leases.ein?.owner,
+      };
+    });
+    const baseline = await harness.run(inspect);
+
+    const failure = await harness.run(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const workflow = yield* WorkflowService;
+        yield* sql`
+          CREATE TEMP TRIGGER abort_test_applied_command_insert
+          BEFORE INSERT ON applied_commands
+          BEGIN
+            SELECT RAISE(ABORT, 'test abort applied_commands insert');
+          END
+        `;
+        const exit = yield* Effect.exit(workflow.applyCommand(command));
+        yield* sql`DROP TRIGGER abort_test_applied_command_insert`;
+        return exit;
+      }),
+    );
+    expect(failure._tag).toBe("Failure");
+    if (failure._tag === "Failure") expect(String(failure.cause)).toContain("test abort applied_commands insert");
+    expect(await harness.run(inspect)).toEqual(baseline);
+
+    const result = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.applyCommand(command)));
+    const afterRetry = await harness.run(inspect);
+    expect(result.status).toBe("completed");
+    expect(afterRetry).toMatchObject({
+      eventCount: Number(baseline.eventCount) + 2,
+      eventMaxSequence: Number(baseline.eventMaxSequence) + 2,
+      outboxCount: Number(baseline.outboxCount) + 2,
+      stateRevision: Number(baseline.stateRevision) + 2,
+      commandCount: Number(baseline.commandCount) + 1,
+      lastAppliedCommandId: command.commandId,
+      lastSequence: Number(baseline.lastSequence) + 2,
+      stage: "human_controlled",
+      leaseOwner: "human",
+    });
+    expect(afterRetry.snapshot).not.toBe(baseline.snapshot);
+    expect(afterRetry.seats).toEqual([{ seatId: "seat-ein", owner: "human", updatedAt: expect.any(String) }]);
+    expect(afterRetry.constraints).toEqual(baseline.constraints);
+    expect(afterRetry.commandResults).toHaveLength(1);
+    expect(JSON.parse(String(afterRetry.commandResults[0]))).toMatchObject({
+      commandId: command.commandId,
+      status: "completed",
+    });
+  });
+
+  test("rolls back a constraint extension when recording its command result aborts", async () => {
+    harness = await startSwordfishHarness("constraint-command-atomicity");
+    const command = extendCommand("cmd-extend-atomicity");
+    const inspect = Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const constraints = yield* sql`
+        SELECT limit_value, extensions_granted, updated_at
+        FROM constraint_ledger WHERE constraint_key = 'primary_turns'
+      `;
+      const commands = yield* sql`SELECT count(*) AS count FROM applied_commands`;
+      const metadata = yield* sql`SELECT last_applied_command_id FROM daemon_metadata WHERE singleton = 1`;
+      return {
+        constraint: constraints[0],
+        commandCount: commands[0]?.["count"],
+        lastAppliedCommandId: metadata[0]?.["last_applied_command_id"],
+      };
+    });
+    const baseline = await harness.run(inspect);
+
+    const failure = await harness.run(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const workflow = yield* WorkflowService;
+        yield* sql`
+          CREATE TEMP TRIGGER abort_test_constraint_command_result
+          BEFORE INSERT ON applied_commands
+          BEGIN
+            SELECT RAISE(ABORT, 'test abort constraint command result');
+          END
+        `;
+        const exit = yield* Effect.exit(workflow.applyCommand(command));
+        yield* sql`DROP TRIGGER abort_test_constraint_command_result`;
+        return exit;
+      }),
+    );
+    expect(failure._tag).toBe("Failure");
+    if (failure._tag === "Failure") expect(String(failure.cause)).toContain("test abort constraint command result");
+    expect(await harness.run(inspect)).toEqual(baseline);
+
+    const result = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.applyCommand(command)));
+    expect(result.status).toBe("completed");
+    expect(await harness.run(inspect)).toMatchObject({
+      constraint: {
+        limit_value: Number(baseline.constraint?.["limit_value"]) + 1,
+        extensions_granted: 1,
+        updated_at: expect.any(String),
+      },
+      commandCount: Number(baseline.commandCount) + 1,
+      lastAppliedCommandId: command.commandId,
+    });
   });
 
   test("marks surviving and vanished child and worktree records for operator reconciliation", async () => {

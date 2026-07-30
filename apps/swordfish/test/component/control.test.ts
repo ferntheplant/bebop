@@ -1,6 +1,6 @@
-import { chmod, lstat, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type { SfControlCommand, SfControlResponse } from "@bebop/contracts";
 import {
@@ -291,22 +291,43 @@ describe("Swordfish local control", () => {
     }
   });
 
-  test("refuses a second runtime over the same SQLite authority", async () => {
+  test("refuses aliased paths to the same SQLite authority", async () => {
     harness = await startSwordfishHarness("authority-owner");
-    await expect(
-      startSwordfishHarness("authority-competitor", { databasePath: harness.config.databasePath }),
-    ).rejects.toThrow("Could not use Swordfish control socket");
-
-    // The surviving owner is untouched and still serves its control socket.
     const fiber = harness.fork(runControlSocket);
     try {
       await waitForSocket(harness.config.controlSocketPath);
+      const databaseAlias = join(harness.root, "state-alias");
+      await symlink(dirname(harness.config.databasePath), databaseAlias, "dir");
+      await expect(
+        startSwordfishHarness("authority-competitor", {
+          databasePath: join(databaseAlias, basename(harness.config.databasePath)),
+        }),
+      ).rejects.toThrow("Could not use Swordfish control socket");
+      // The competing startup cannot disturb the owner or its control listener.
       const response = await Effect.runPromise(
         requestControl(harness.config.controlSocketPath, controlRequest("sf-owner", { type: "status" })).pipe(
           Effect.scoped,
         ),
       );
       expect(response.type).toBe("success");
+
+      const caseAlias = join(dirname(harness.config.databasePath), basename(harness.config.databasePath).toUpperCase());
+      const [databaseStats, caseAliasStats] = await Promise.all([
+        lstat(harness.config.databasePath),
+        lstat(caseAlias).catch(() => null),
+      ]);
+      if (caseAliasStats?.dev === databaseStats.dev && caseAliasStats.ino === databaseStats.ino) {
+        await expect(startSwordfishHarness("authority-case-competitor", { databasePath: caseAlias })).rejects.toThrow(
+          "Could not use Swordfish control socket",
+        );
+      }
+
+      const databaseHardLink = join(harness.root, "state-hardlink.sqlite");
+      await link(harness.config.databasePath, databaseHardLink);
+      await expect(
+        startSwordfishHarness("authority-hardlink-competitor", { databasePath: databaseHardLink }),
+      ).rejects.toThrow("Could not use Swordfish control socket");
+      await rm(databaseHardLink);
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
     }

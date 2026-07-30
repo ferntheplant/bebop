@@ -1,23 +1,64 @@
 #!/usr/bin/env bun
 
 import * as BunRuntime from "@effect/platform-bun/BunRuntime";
-import { Duration, Effect, Fiber, Scope } from "effect";
+import type { Exit } from "effect";
+import { Data, Duration, Effect, Fiber, Layer, Scope } from "effect";
 import { SocketServer } from "effect/unstable/socket";
 
-import { SwordfishConfiguration } from "#src/config.ts";
+import { loadSwordfishConfig, SwordfishConfiguration, swordfishConfigurationLayerFrom } from "#src/config.ts";
 import { makeAuthorityLock, makeControlSocket, runControlServer } from "#src/control/server.ts";
 import { ShutdownSignal } from "#src/daemon/shutdown.ts";
 import { structuredLoggingLayer, withSwordfishComponent } from "#src/observability/logging.ts";
 import { initializeDatabase } from "#src/persistence/database.ts";
 import { runBebopClient } from "#src/protocol/client.ts";
-import { SwordfishRuntimeLayer } from "#src/runtime/layers.ts";
+import { swordfishRuntimeLayer } from "#src/runtime/layers.ts";
 import { WorkflowService } from "#src/workflow/service.ts";
 
 export const swordfishDaemonName = "swordfish";
 
+export class ShutdownTimeoutError extends Data.TaggedError("ShutdownTimeoutError")<{
+  readonly timeoutMillis: number;
+}> {}
+
+export const closeScopeWithin = Effect.fnUntraced(function* (
+  scope: Scope.Scope,
+  exit: Exit.Exit<unknown, unknown>,
+  timeout: Duration.Duration,
+) {
+  const closing = yield* Effect.forkDetach(Scope.close(scope, exit));
+  const timedOut = yield* Effect.raceFirst(
+    Fiber.join(closing).pipe(Effect.as(false)),
+    Effect.sleep(timeout).pipe(
+      Effect.andThen(
+        Effect.logWarning("Swordfish shutdown timed out; abandoning remaining finalizers").pipe(
+          Effect.annotateLogs("shutdown_timeout_ms", String(Duration.toMillis(timeout))),
+        ),
+      ),
+      Effect.as(true),
+    ),
+  );
+  if (timedOut) {
+    return yield* Effect.fail(new ShutdownTimeoutError({ timeoutMillis: Duration.toMillis(timeout) }));
+  }
+});
+
 export const runSwordfishDaemon = Effect.gen(function* () {
-  const config = yield* SwordfishConfiguration;
+  const config = yield* loadSwordfishConfig();
   const scope = yield* Scope.make();
+  const authority = yield* Effect.exit(
+    makeAuthorityLock.pipe(Scope.provide(scope), Effect.provideService(SwordfishConfiguration, config), Effect.asVoid),
+  );
+  if (authority._tag === "Failure") {
+    yield* Effect.uninterruptible(closeScopeWithin(scope, authority, config.shutdownTimeout));
+    return yield* Effect.failCause(authority.cause);
+  }
+  const runtime = yield* Effect.exit(
+    Layer.buildWithScope(swordfishRuntimeLayer({ configuration: swordfishConfigurationLayerFrom(config) }), scope),
+  );
+  if (runtime._tag === "Failure") {
+    yield* Effect.uninterruptible(closeScopeWithin(scope, runtime, config.shutdownTimeout));
+    return yield* Effect.failCause(runtime.cause);
+  }
 
   // The durable identity annotates every log in the daemon, including the forked
   // transport fibers, which inherit this fiber's context at fork time.
@@ -27,7 +68,6 @@ export const runSwordfishDaemon = Effect.gen(function* () {
 
     // The database-derived listener owns the SQLite authority even when operators configure
     // different control sockets. Acquire both listeners before reconciliation mutates state.
-    yield* makeAuthorityLock;
     const controlServer = yield* makeControlSocket;
     yield* initializeDatabase;
     yield* workflow.bootstrap;
@@ -40,31 +80,18 @@ export const runSwordfishDaemon = Effect.gen(function* () {
     // this race and fails the process instead of leaving a detached half-daemon alive.
     yield* Effect.raceFirst(shutdown.await, Effect.raceFirst(Fiber.join(control), Fiber.join(protocol)));
     yield* Effect.logInfo("Swordfish daemon stopping");
-  }).pipe(Scope.provide(scope), Effect.annotateLogs({ bounty_id: config.bountyId, vm_id: config.vmId }));
+  }).pipe(
+    Scope.provide(scope),
+    Effect.provide(runtime.value),
+    Effect.annotateLogs({ bounty_id: config.bountyId, vm_id: config.vmId }),
+  );
 
   const exit = yield* Effect.exit(daemon);
-  // Scope finalizers are unbounded by default, so a stuck socket or server finalizer could
-  // outlive the supervisor's grace period. Close in a detached daemon fiber and give up on
-  // it after the configured shutdown timeout; `runMain` exits once this fiber completes.
-  // Interrupting `Fiber.join` detaches from the close instead of interrupting it, while a
-  // plain race would wait for the close to acknowledge interruption and hang with it.
-  yield* Effect.uninterruptible(
-    Effect.gen(function* () {
-      const closing = yield* Effect.forkDetach(Scope.close(scope, exit));
-      yield* Effect.raceFirst(
-        Fiber.join(closing),
-        Effect.sleep(config.shutdownTimeout).pipe(
-          Effect.andThen(
-            Effect.logWarning("Swordfish shutdown timed out; abandoning remaining finalizers").pipe(
-              Effect.annotateLogs("shutdown_timeout_ms", String(Duration.toMillis(config.shutdownTimeout))),
-            ),
-          ),
-        ),
-      );
-    }),
-  );
+  // The runtime layer and transport fibers share this scope. If finalization misses the
+  // deadline, fail the main effect so BunRuntime forces process exit despite retained handles.
+  yield* Effect.uninterruptible(closeScopeWithin(scope, exit, config.shutdownTimeout));
   if (exit._tag === "Failure") return yield* Effect.failCause(exit.cause);
-}).pipe(Effect.provide(SwordfishRuntimeLayer), Effect.provide(structuredLoggingLayer));
+}).pipe(Effect.provide(structuredLoggingLayer));
 
 if (import.meta.main) {
   BunRuntime.runMain(withSwordfishComponent(runSwordfishDaemon));

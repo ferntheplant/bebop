@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, rm } from "node:fs/promises";
+import { chmod, lstat, mkdir, realpath, rm } from "node:fs/promises";
 import { createConnection } from "node:net";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import type {
   BebopCommand,
@@ -106,6 +106,46 @@ export function authorityLockPath(databasePath: string): string {
   const identity = createHash("sha256").update(databasePath).digest("hex").slice(0, 16);
   return join(dirname(databasePath), `.swordfish-${identity}.lock.sock`);
 }
+
+const resolveAuthorityDatabasePath = Effect.fnUntraced(function* (databasePath: string) {
+  const parent = dirname(databasePath);
+  yield* Effect.tryPromise({
+    try: () => mkdir(parent, { recursive: true }),
+    catch: (cause) => new ControlSocketSetupError({ path: parent, cause }),
+  });
+  const databaseStats = yield* Effect.tryPromise({
+    try: async () => {
+      try {
+        return await lstat(databasePath);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+        throw cause;
+      }
+    },
+    catch: (cause) => new ControlSocketSetupError({ path: databasePath, cause }),
+  });
+  if (databaseStats?.isSymbolicLink()) {
+    return yield* Effect.fail(
+      new ControlSocketSetupError({ path: databasePath, cause: new Error("Database path must not be a symlink") }),
+    );
+  }
+  if (databaseStats !== null && databaseStats.nlink > 1) {
+    return yield* Effect.fail(
+      new ControlSocketSetupError({ path: databasePath, cause: new Error("Database file must not have hard links") }),
+    );
+  }
+  if (databaseStats !== null) {
+    return yield* Effect.tryPromise({
+      try: () => realpath(databasePath),
+      catch: (cause) => new ControlSocketSetupError({ path: databasePath, cause }),
+    });
+  }
+  const resolvedParent = yield* Effect.tryPromise({
+    try: () => realpath(parent),
+    catch: (cause) => new ControlSocketSetupError({ path: parent, cause }),
+  });
+  return join(resolvedParent, basename(databasePath));
+});
 
 function localCommandId(request: SfControlRequest): CommandId {
   const digest = createHash("sha256").update(request.correlationId).digest("hex").slice(0, 32);
@@ -311,7 +351,8 @@ export const makeControlSocket = Effect.gen(function* () {
 
 export const makeAuthorityLock = Effect.gen(function* () {
   const config = yield* SwordfishConfiguration;
-  const path = authorityLockPath(config.databasePath);
+  const databasePath = yield* resolveAuthorityDatabasePath(config.databasePath);
+  const path = authorityLockPath(databasePath);
   yield* prepareControlSocket(path);
   const server = yield* BunSocketServer.make({ path });
   yield* Effect.tryPromise({

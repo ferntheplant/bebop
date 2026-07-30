@@ -14,6 +14,7 @@ import {
   currentProtocolVersion,
   EventMessage as EventMessageSchema,
   ProducedEventSequence,
+  SwordfishEvent as SwordfishEventSchema,
   Timestamp as TimestampSchema,
 } from "@bebop/contracts";
 import { Context, Data, Effect, Layer, Schema } from "effect";
@@ -49,6 +50,7 @@ export class WorkflowService extends Context.Service<WorkflowService, WorkflowSe
 
 const decodeEventMessage = Schema.decodeUnknownSync(EventMessageSchema);
 const decodeCommandResult = Schema.decodeUnknownSync(CommandResultMessageSchema);
+const encodeSwordfishEvent = Schema.encodeUnknownSync(SwordfishEventSchema);
 const encodeTimestamp = Schema.encodeSync(TimestampSchema);
 
 export const WorkflowServiceLayer: Layer.Layer<
@@ -73,7 +75,7 @@ export const WorkflowServiceLayer: Layer.Layer<
           vmId: config.vmId,
           sequence,
           occurredAt: encodeTimestamp(at),
-          event,
+          event: encodeSwordfishEvent(event),
         });
         const reduced = reduceSwordfishWorkflow(current.state, message);
         if (!reduced.ok) return yield* Effect.fail(new WorkflowTransitionError({ error: reduced.error }));
@@ -91,11 +93,24 @@ export const WorkflowServiceLayer: Layer.Layer<
     const bootstrap = Effect.gen(function* () {
       const at = yield* identity.now;
       yield* store.initialize(at);
-      yield* store.reconcileLocalState(at);
-      const workflow = yield* store.loadWorkflow;
-      if (workflow.state.lastAppliedSequence === 0) {
-        yield* sql.withTransaction(appendUnsafe({ type: "stage_changed", stage: "interactive" }, at));
-      }
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const reconciliation = yield* store.reconcileLocalState(at);
+          const workflow = yield* store.loadWorkflow;
+          if (workflow.state.lastAppliedSequence === 0) {
+            yield* appendUnsafe({ type: "stage_changed", stage: "interactive" }, at);
+          }
+          if (reconciliation.uncertainRecords > 0) {
+            yield* appendUnsafe(
+              {
+                type: "attention_required",
+                reason: `Startup reconciliation found ${reconciliation.uncertainRecords} local operation(s) with unknown completion.`,
+              },
+              at,
+            );
+          }
+        }),
+      );
     });
 
     const result = (message: CommandMessage, status: CommandResultMessage["status"], at: Timestamp, error?: string) =>

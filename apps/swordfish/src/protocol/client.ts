@@ -104,11 +104,6 @@ const session = (onRegistered: Effect.Effect<void>) =>
       return yield* Effect.fail(new BebopSessionError({ reason: "Bebop did not register this Swordfish connection." }));
     }
     verifyIdentity(first, config);
-    if (first.acknowledgedThrough < delivery.acknowledgedThrough) {
-      return yield* Effect.fail(
-        new BebopSessionError({ reason: "Bebop's acknowledgement cursor regressed behind durable local state." }),
-      );
-    }
     if (first.acknowledgedThrough > delivery.lastProduced) {
       return yield* Effect.fail(
         new BebopSessionError({ reason: "Bebop acknowledged an event Swordfish has not produced." }),
@@ -126,8 +121,8 @@ const session = (onRegistered: Effect.Effect<void>) =>
 
     let sentThrough = first.acknowledgedThrough;
     const drain = Effect.gen(function* () {
-      const pending = yield* store.pendingEvents(sentThrough);
-      for (const event of pending) {
+      const events = yield* store.eventsAfter(sentThrough);
+      for (const event of events) {
         yield* send(event);
         sentThrough = toEventSequence(event.sequence);
       }
@@ -229,7 +224,7 @@ export const runBebopClient = Effect.gen(function* () {
   const maximum = Duration.toMillis(config.reconnectMaximumDelay);
 
   for (;;) {
-    const outcome = yield* Effect.exit(
+    const outcome = yield* Effect.result(
       session(Effect.sync(() => (delay = Duration.toMillis(config.reconnectMinimumDelay)))).pipe(
         Effect.provide(
           BunSocket.layerWebSocket(config.bebopWebSocketUrl.href, {
@@ -239,13 +234,23 @@ export const runBebopClient = Effect.gen(function* () {
         ),
       ),
     );
+    if (
+      outcome._tag === "Failure" &&
+      outcome.failure._tag !== "BebopSessionError" &&
+      outcome.failure._tag !== "SocketError"
+    ) {
+      return yield* Effect.fail(outcome.failure);
+    }
     const disconnectedAt = yield* identity.now;
-    yield* store
-      .setConnected(false, disconnectedAt)
-      .pipe(Effect.catchCause((cause) => Effect.logError("could not record Bebop disconnect", cause)));
+    yield* store.setConnected(false, disconnectedAt);
     yield* Effect.logWarning("Bebop connection ended; reconnecting").pipe(
       Effect.annotateLogs("retry_delay_ms", String(delay)),
-      Effect.annotateLogs("outcome", outcome._tag),
+      Effect.annotateLogs(
+        "reason",
+        outcome._tag === "Failure" && outcome.failure._tag === "BebopSessionError"
+          ? outcome.failure.reason
+          : "socket closed",
+      ),
     );
     yield* Effect.sleep(Duration.millis(delay));
     delay = Math.min(maximum, delay * 2);

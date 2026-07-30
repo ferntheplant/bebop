@@ -6,6 +6,7 @@ import type {
   CommandId,
   CommandResultMessage,
   ConstraintKey,
+  EvidenceBundleManifest,
   EventMessage,
   EventSequence,
   SfStatusSnapshot,
@@ -15,8 +16,11 @@ import {
   CommandResultMessage as CommandResultMessageSchema,
   constraintKeys,
   defaultConstraintProfile,
+  EvidenceBundleManifest as EvidenceBundleManifestSchema,
   EventMessage as EventMessageSchema,
+  PrivatePreviewAttachments,
   SfStatusSnapshot as SfStatusSnapshotSchema,
+  SwordfishEvent as SwordfishEventSchema,
 } from "@bebop/contracts";
 import { eventFingerprint } from "@bebop/workflow";
 import { Context, Data, Effect, Layer, Schema } from "effect";
@@ -66,6 +70,23 @@ export interface DeliveryState {
   readonly lastAppliedCommandId?: CommandId;
 }
 
+export type ReconciliationResource =
+  | {
+      readonly recordId: string;
+      readonly kind: "child_process";
+      readonly pid: number;
+      readonly path?: string;
+    }
+  | {
+      readonly recordId: string;
+      readonly kind: "worktree";
+      readonly path: string;
+    };
+
+export interface ReconciliationSummary {
+  readonly uncertainRecords: number;
+}
+
 export interface SwordfishStoreService {
   readonly initialize: (at: Timestamp) => Effect.Effect<void, SqlError.SqlError | AuthorityIdentityError>;
   readonly loadWorkflow: Effect.Effect<StoredWorkflow, SqlError.SqlError>;
@@ -73,7 +94,7 @@ export interface SwordfishStoreService {
     message: EventMessage,
     state: SwordfishWorkflowState,
   ) => Effect.Effect<void, SqlError.SqlError>;
-  readonly pendingEvents: (
+  readonly eventsAfter: (
     after: EventSequence,
     limit?: number,
   ) => Effect.Effect<ReadonlyArray<EventMessage>, SqlError.SqlError>;
@@ -91,8 +112,19 @@ export interface SwordfishStoreService {
     readonly result: CommandResultMessage;
     readonly at: Timestamp;
   }) => Effect.Effect<void, SqlError.SqlError>;
+  readonly recordLocalArtifact: (manifest: EvidenceBundleManifest) => Effect.Effect<void, SqlError.SqlError>;
+  readonly startReconciliation: (
+    resource: ReconciliationResource,
+    at: Timestamp,
+  ) => Effect.Effect<void, SqlError.SqlError>;
+  readonly completeReconciliation: (
+    recordId: string,
+    detail: string | undefined,
+    at: Timestamp,
+  ) => Effect.Effect<void, SqlError.SqlError>;
+  readonly consumeConstraint: (constraint: ConstraintKey, at: Timestamp) => Effect.Effect<boolean, SqlError.SqlError>;
   readonly extendConstraint: (constraint: ConstraintKey, at: Timestamp) => Effect.Effect<boolean, SqlError.SqlError>;
-  readonly reconcileLocalState: (at: Timestamp) => Effect.Effect<void, SqlError.SqlError>;
+  readonly reconcileLocalState: (at: Timestamp) => Effect.Effect<ReconciliationSummary, SqlError.SqlError>;
 }
 
 export class SwordfishStore extends Context.Service<SwordfishStore, SwordfishStoreService>()("SwordfishStore") {}
@@ -101,6 +133,9 @@ const decodeEvent = Schema.decodeUnknownSync(EventMessageSchema);
 const encodeEvent = Schema.encodeUnknownSync(EventMessageSchema);
 const decodeCommandResult = Schema.decodeUnknownSync(CommandResultMessageSchema);
 const encodeCommandResult = Schema.encodeUnknownSync(CommandResultMessageSchema);
+const encodeEvidenceManifest = Schema.encodeUnknownSync(EvidenceBundleManifestSchema);
+const encodePreviews = Schema.encodeUnknownSync(PrivatePreviewAttachments);
+const encodeSwordfishEvent = Schema.encodeUnknownSync(SwordfishEventSchema);
 const decodeStatus = Schema.decodeUnknownSync(SfStatusSnapshotSchema);
 
 function number(row: Row, key: string): number {
@@ -276,10 +311,10 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
         });
       };
 
-      const pendingEvents = (after: EventSequence, limit = 64) =>
+      const eventsAfter = (after: EventSequence, limit = 64) =>
         sql`
         SELECT payload FROM bebop_outbox
-        WHERE acknowledged = 0 AND sequence > ${after}
+        WHERE sequence > ${after}
         ORDER BY sequence
         LIMIT ${limit}
       `.pipe(Effect.map((rows) => rows.map((row) => decodeEvent(JSON.parse(text(row as Row, "payload")) as unknown))));
@@ -408,10 +443,14 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
                 acknowledgedThrough: number(metadata, "acknowledged_through"),
                 pendingEventCount: number(pending[0] as Row, "count"),
               },
-              previews: workflow.state.previews,
+              previews: encodePreviews(workflow.state.previews),
               recentEvents: eventRows.toReversed().map((row) => {
                 const event = decodeEvent(JSON.parse(text(row as Row, "payload")) as unknown);
-                return { sequence: event.sequence, occurredAt: timestampToIso(event.occurredAt), event: event.event };
+                return {
+                  sequence: event.sequence,
+                  occurredAt: timestampToIso(event.occurredAt),
+                  event: encodeSwordfishEvent(event.event),
+                };
               }),
             });
           }),
@@ -450,6 +489,53 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
         `;
         });
 
+      const recordLocalArtifact = (manifest: EvidenceBundleManifest) =>
+        sql`
+          INSERT INTO local_artifacts (artifact_id, candidate_sha, manifest, created_at)
+          VALUES (
+            ${manifest.bundleId}, ${manifest.candidateSha},
+            ${JSON.stringify(encodeEvidenceManifest(manifest))}, ${timestampToIso(manifest.createdAt)}
+          )
+        `.pipe(Effect.asVoid);
+
+      const startReconciliation = (resource: ReconciliationResource, at: Timestamp) =>
+        sql`
+          INSERT INTO reconciliation_records (record_id, kind, path, pid, status, detail, updated_at)
+          VALUES (
+            ${resource.recordId}, ${resource.kind}, ${resource.path ?? null},
+            ${resource.kind === "child_process" ? resource.pid : null}, 'running', NULL, ${timestampToIso(at)}
+          )
+          ON CONFLICT (record_id) DO UPDATE SET
+            kind = excluded.kind,
+            path = excluded.path,
+            pid = excluded.pid,
+            status = 'running',
+            detail = NULL,
+            updated_at = excluded.updated_at
+        `.pipe(Effect.asVoid);
+
+      const completeReconciliation = (recordId: string, detail: string | undefined, at: Timestamp) =>
+        sql`
+          UPDATE reconciliation_records
+          SET status = 'completed', detail = ${detail ?? null}, updated_at = ${timestampToIso(at)}
+          WHERE record_id = ${recordId}
+        `.pipe(Effect.asVoid);
+
+      const consumeConstraint = (constraint: ConstraintKey, at: Timestamp) =>
+        sql.withTransaction(
+          Effect.gen(function* () {
+            const updated = yield* sql`
+              UPDATE constraint_ledger
+              SET consumed = consumed + 1, updated_at = ${timestampToIso(at)}
+              WHERE constraint_key = ${constraint} AND consumed < limit_value
+              RETURNING constraint_key
+            `;
+            if (updated.length === 0) return false;
+            yield* bumpRevision(at);
+            return true;
+          }),
+        );
+
       const extendConstraint = (constraint: ConstraintKey, at: Timestamp) =>
         sql.withTransaction(
           Effect.gen(function* () {
@@ -484,7 +570,8 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
 
           const records = yield* sql`
           SELECT record_id, kind, path, pid FROM reconciliation_records WHERE status = 'running'
-        `;
+          `;
+          let uncertainRecords = 0;
           for (const record of records) {
             const row = record as Row;
             const kind = text(row, "kind");
@@ -520,20 +607,26 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
                 updated_at = ${timestampToIso(at)}
             WHERE record_id = ${text(row, "record_id")}
           `;
+            uncertainRecords += 1;
           }
+          return { uncertainRecords };
         });
 
       return {
         initialize,
         loadWorkflow,
         appendEvent,
-        pendingEvents,
+        eventsAfter,
         deliveryState,
         acknowledge,
         setConnected,
         status,
         command,
         recordCommand,
+        recordLocalArtifact,
+        startReconciliation,
+        completeReconciliation,
+        consumeConstraint,
         extendConstraint,
         reconcileLocalState,
       };

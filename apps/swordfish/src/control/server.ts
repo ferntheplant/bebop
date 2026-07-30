@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmod, lstat, mkdir, rm } from "node:fs/promises";
 import { createConnection } from "node:net";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 import type {
   BebopCommand,
@@ -101,6 +101,11 @@ export const prepareControlSocket = Effect.fnUntraced(function* (path: string) {
     catch: (cause) => new ControlSocketSetupError({ path, cause }),
   });
 });
+
+export function authorityLockPath(databasePath: string): string {
+  const identity = createHash("sha256").update(databasePath).digest("hex").slice(0, 16);
+  return join(dirname(databasePath), `.swordfish-${identity}.lock.sock`);
+}
 
 function localCommandId(request: SfControlRequest): CommandId {
   const digest = createHash("sha256").update(request.correlationId).digest("hex").slice(0, 32);
@@ -281,6 +286,18 @@ export const makeControlSocket = Effect.gen(function* () {
   yield* Effect.tryPromise({
     try: () => chmod(config.controlSocketPath, 0o600),
     catch: (cause) => new ControlSocketSetupError({ path: config.controlSocketPath, cause }),
+  });
+  return server;
+});
+
+export const makeAuthorityLock = Effect.gen(function* () {
+  const config = yield* SwordfishConfiguration;
+  const path = authorityLockPath(config.databasePath);
+  yield* prepareControlSocket(path);
+  const server = yield* BunSocketServer.make({ path });
+  yield* Effect.tryPromise({
+    try: () => chmod(path, 0o600),
+    catch: (cause) => new ControlSocketSetupError({ path, cause }),
   });
   return server;
 });

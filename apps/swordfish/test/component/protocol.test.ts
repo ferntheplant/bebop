@@ -184,4 +184,121 @@ describe("Swordfish outbound protocol", () => {
       void server.stop(true);
     }
   }, 10_000);
+
+  test("replays retained events when Bebop's durable cursor regresses", async () => {
+    const eventSequences: Array<number> = [];
+    let registrations = 0;
+    let firstConnection: Bun.ServerWebSocket<unknown> | undefined;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request, bunServer) {
+        const protocol = request.headers.get("sec-websocket-protocol");
+        const upgraded = bunServer.upgrade(request, {
+          headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
+        });
+        return upgraded ? undefined : new Response("upgrade required", { status: 426 });
+      },
+      websocket: {
+        open(socket) {
+          if (firstConnection === undefined) firstConnection = socket;
+        },
+        message(socket, data) {
+          const message = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)) as Record<
+            string,
+            unknown
+          >;
+          if (message["type"] === "register") {
+            registrations += 1;
+            socket.send(
+              JSON.stringify({
+                type: "registered",
+                protocolVersion: 1,
+                connectionId: `conn-regression-${registrations}`,
+                bountyId: "bty-component",
+                vmId: "vm-component",
+                serverTime: "2026-07-29T00:00:00.000Z",
+                acknowledgedThrough: 0,
+              }),
+            );
+          } else if (message["type"] === "event" && typeof message["sequence"] === "number") {
+            eventSequences.push(message["sequence"]);
+            if (registrations === 1) {
+              socket.send(
+                JSON.stringify({
+                  type: "event_acknowledged",
+                  protocolVersion: 1,
+                  bountyId: "bty-component",
+                  vmId: "vm-component",
+                  acknowledgedThrough: message["sequence"],
+                }),
+              );
+            }
+          }
+        },
+      },
+    });
+    harness = await startSwordfishHarness("cursor-regression", {
+      bebopWebSocketUrl: `ws://127.0.0.1:${server.port}/swordfish`,
+    });
+    const fiber = harness.fork(runBebopClient);
+    try {
+      await waitFor(
+        async () =>
+          (await harness?.run(Effect.flatMap(SwordfishStore, (store) => store.deliveryState)))?.acknowledgedThrough ===
+          1,
+        "the first durable acknowledgement",
+      );
+      firstConnection?.close(1012, "reconnect with regressed cursor");
+      await waitFor(() => registrations >= 2 && eventSequences.length >= 2, "the retained event replay");
+      expect(eventSequences).toEqual([1, 1]);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      void server.stop(true);
+    }
+  }, 10_000);
+
+  test("does not retry defects from durable disconnect bookkeeping", async () => {
+    let connections = 0;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request, bunServer) {
+        const protocol = request.headers.get("sec-websocket-protocol");
+        const upgraded = bunServer.upgrade(request, {
+          headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
+        });
+        return upgraded ? undefined : new Response("upgrade required", { status: 426 });
+      },
+      websocket: {
+        open(socket) {
+          connections += 1;
+          socket.close(1012, "trigger disconnect bookkeeping");
+        },
+        message() {},
+      },
+    });
+    harness = await startSwordfishHarness("durable-defect", {
+      bebopWebSocketUrl: `ws://127.0.0.1:${server.port}/swordfish`,
+    });
+    const realStore = await harness.run(SwordfishStore);
+    const fiber = harness.fork(
+      runBebopClient.pipe(
+        Effect.provideService(SwordfishStore, {
+          ...realStore,
+          setConnected: () => Effect.die("durable disconnect defect"),
+        }),
+      ),
+    );
+    try {
+      const exit = await Effect.runPromise(Fiber.await(fiber));
+      expect(exit._tag).toBe("Failure");
+      if (exit._tag === "Failure") expect(String(exit.cause)).toContain("durable disconnect defect");
+      await Bun.sleep(100);
+      expect(connections).toBe(1);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      void server.stop(true);
+    }
+  }, 10_000);
 });

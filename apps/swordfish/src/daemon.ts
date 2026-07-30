@@ -5,7 +5,7 @@ import { Effect, Fiber } from "effect";
 import { SocketServer } from "effect/unstable/socket";
 
 import { SwordfishConfiguration } from "#src/config.ts";
-import { makeControlSocket, runControlServer } from "#src/control/server.ts";
+import { makeAuthorityLock, makeControlSocket, runControlServer } from "#src/control/server.ts";
 import { ShutdownSignal } from "#src/daemon/shutdown.ts";
 import { structuredLoggingLayer, withSwordfishComponent } from "#src/observability/logging.ts";
 import { initializeDatabase } from "#src/persistence/database.ts";
@@ -20,8 +20,9 @@ export const runSwordfishDaemon = Effect.gen(function* () {
   const shutdown = yield* ShutdownSignal;
   const workflow = yield* WorkflowService;
 
-  // The listener is the single-daemon lock. Acquire it before reconciliation can mutate
-  // connection state, so a second process cannot touch the same SQLite authority.
+  // The database-derived listener owns the SQLite authority even when operators configure
+  // different control sockets. Acquire both listeners before reconciliation mutates state.
+  yield* makeAuthorityLock;
   const controlServer = yield* makeControlSocket;
   yield* initializeDatabase;
   yield* workflow.bootstrap;

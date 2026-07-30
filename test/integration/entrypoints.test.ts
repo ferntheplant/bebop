@@ -120,6 +120,26 @@ async function waitForControlStatus(path: string, daemon: RunningProcess): Promi
   );
 }
 
+async function waitForCondition(condition: () => boolean | Promise<boolean>, description: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (await condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for ${description}`);
+}
+
+function waitForProcessExit(process: RunningProcess): Promise<number | null> {
+  if (process.child.exitCode !== null) return Promise.resolve(process.child.exitCode);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`process did not exit:\n${process.output()}`)), 5_000);
+    process.child.once("close", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+}
+
 async function waitForResponse(
   url: string,
   init?: RequestInit,
@@ -233,12 +253,61 @@ describe("process entrypoints", () => {
       mkdir(join(root, "repository"), { recursive: true }),
       mkdir(join(root, "artifacts"), { recursive: true }),
     ]);
+    const eventSequences: Array<number> = [];
+    let registrations = 0;
+    let acknowledgeEvents = false;
+    const peer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request, server) {
+        const protocol = request.headers.get("sec-websocket-protocol");
+        const upgraded = server.upgrade(request, {
+          headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
+        });
+        return upgraded ? undefined : new Response("upgrade required", { status: 426 });
+      },
+      websocket: {
+        message(socket, data) {
+          const message = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)) as Record<
+            string,
+            unknown
+          >;
+          if (message["type"] === "register") {
+            registrations += 1;
+            socket.send(
+              JSON.stringify({
+                type: "registered",
+                protocolVersion: 1,
+                connectionId: `conn-process-${registrations}`,
+                bountyId: "bty-process",
+                vmId: "vm-process",
+                serverTime: "2026-07-29T00:00:00.000Z",
+                acknowledgedThrough: 0,
+              }),
+            );
+          } else if (message["type"] === "event" && typeof message["sequence"] === "number") {
+            eventSequences.push(message["sequence"]);
+            if (acknowledgeEvents) {
+              socket.send(
+                JSON.stringify({
+                  type: "event_acknowledged",
+                  protocolVersion: 1,
+                  bountyId: "bty-process",
+                  vmId: "vm-process",
+                  acknowledgedThrough: message["sequence"],
+                }),
+              );
+            }
+          }
+        },
+      },
+    });
     const env = {
       SWORDFISH_BOUNTY_ID: "bty-process",
       SWORDFISH_VM_ID: "vm-process",
       SWORDFISH_REPOSITORY: "withco/bebop",
       SWORDFISH_ASSIGNED_BRANCH: "bounty/bty-process",
-      SWORDFISH_BEBOP_WEB_SOCKET_URL: "ws://127.0.0.1:1/swordfish",
+      SWORDFISH_BEBOP_WEB_SOCKET_URL: `ws://127.0.0.1:${peer.port}/swordfish`,
       SWORDFISH_BEBOP_TOKEN: "process-token",
       SWORDFISH_DATABASE_PATH: databasePath,
       SWORDFISH_CONTROL_SOCKET_PATH: socketPath,
@@ -251,6 +320,7 @@ describe("process entrypoints", () => {
       SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
     } as const;
     let daemon: RunningProcess | undefined;
+    let competingDaemon: RunningProcess | undefined;
     try {
       daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
       const before = await waitForControlStatus(socketPath, daemon);
@@ -259,23 +329,47 @@ describe("process entrypoints", () => {
         bebopConnection: { acknowledgedThrough: 0, pendingEventCount: 1 },
         recentEvents: [{ sequence: 1 }],
       });
+      await waitForCondition(() => eventSequences.length >= 1, "the first process delivery");
+
+      competingDaemon = startProcess("apps/swordfish/dist/daemon.mjs", {
+        ...env,
+        SWORDFISH_CONTROL_SOCKET_PATH: join(root, "run", "other-control.sock"),
+      });
+      expect(await waitForProcessExit(competingDaemon)).not.toBe(0);
+      expect(competingDaemon.output()).toContain("Could not use Swordfish control socket");
 
       daemon.child.kill("SIGKILL");
       await new Promise<void>((resolve) => daemon?.child.once("close", () => resolve()));
+      acknowledgeEvents = true;
       daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
-      const after = await waitForControlStatus(socketPath, daemon);
-      expect(JSON.parse(after.stdout)).toMatchObject({
-        stage: "interactive",
-        bebopConnection: { acknowledgedThrough: 0, pendingEventCount: 1 },
-        recentEvents: [{ sequence: 1 }],
-      });
+      await waitForControlStatus(socketPath, daemon);
+      await waitForCondition(() => eventSequences.length >= 2, "the restarted process replay");
+      await waitForCondition(async () => {
+        const outcome = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", socketPath, "--json"], {
+          timeoutMs: 1_000,
+        });
+        if (outcome.exitCode !== 0) return false;
+        const status = JSON.parse(outcome.stdout) as {
+          bebopConnection?: { acknowledgedThrough?: unknown; pendingEventCount?: unknown };
+        };
+        return status.bebopConnection?.acknowledgedThrough === 1 && status.bebopConnection.pendingEventCount === 0;
+      }, "the restarted process acknowledgement");
+      expect(eventSequences).toEqual([1, 1]);
 
       const stopped = await run("apps/swordfish/dist/cli.mjs", ["stop", "--socket", socketPath]);
       expect(stopped.exitCode).toBe(0);
     } finally {
+      if (
+        competingDaemon !== undefined &&
+        competingDaemon.child.exitCode === null &&
+        competingDaemon.child.signalCode === null
+      ) {
+        await competingDaemon.stop();
+      }
       if (daemon !== undefined && daemon.child.exitCode === null && daemon.child.signalCode === null) {
         await daemon.stop();
       }
+      void peer.stop(true);
       await rm(root, { recursive: true, force: true });
     }
   }, 30_000);

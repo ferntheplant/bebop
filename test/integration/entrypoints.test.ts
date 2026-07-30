@@ -7,7 +7,7 @@
 // notices.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -104,18 +104,20 @@ function availablePort(): Promise<number> {
   });
 }
 
-async function waitForSocket(path: string, replacedInode?: number): Promise<void> {
+async function waitForControlStatus(path: string, daemon: RunningProcess): Promise<Outcome> {
   const deadline = Date.now() + 10_000;
+  let lastOutcome: Outcome | undefined;
   while (Date.now() < deadline) {
-    try {
-      const stats = await lstat(path);
-      if (stats.isSocket() && (replacedInode === undefined || stats.ino !== replacedInode)) return;
-    } catch {
-      // The daemon is still starting.
-    }
+    lastOutcome = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", path, "--json"], {
+      timeoutMs: 1_000,
+    });
+    if (lastOutcome.exitCode === 0) return lastOutcome;
+    if (daemon.child.exitCode !== null || daemon.child.signalCode !== null) break;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw new Error(`Unix socket did not appear at ${path}`);
+  throw new Error(
+    `Swordfish control socket did not become ready at ${path}:\n${lastOutcome?.stderr ?? ""}${daemon.output()}`,
+  );
 }
 
 async function waitForResponse(
@@ -251,10 +253,7 @@ describe("process entrypoints", () => {
     let daemon: RunningProcess | undefined;
     try {
       daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
-      await waitForSocket(socketPath);
-      const firstSocketInode = (await lstat(socketPath)).ino;
-      const before = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", socketPath, "--json"]);
-      expect(before.exitCode).toBe(0);
+      const before = await waitForControlStatus(socketPath, daemon);
       expect(JSON.parse(before.stdout)).toMatchObject({
         stage: "interactive",
         bebopConnection: { acknowledgedThrough: 0, pendingEventCount: 1 },
@@ -264,9 +263,7 @@ describe("process entrypoints", () => {
       daemon.child.kill("SIGKILL");
       await new Promise<void>((resolve) => daemon?.child.once("close", () => resolve()));
       daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
-      await waitForSocket(socketPath, firstSocketInode);
-      const after = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", socketPath, "--json"]);
-      expect(after.exitCode).toBe(0);
+      const after = await waitForControlStatus(socketPath, daemon);
       expect(JSON.parse(after.stdout)).toMatchObject({
         stage: "interactive",
         bebopConnection: { acknowledgedThrough: 0, pendingEventCount: 1 },

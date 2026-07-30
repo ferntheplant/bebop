@@ -23,13 +23,14 @@ async function waitForSocket(path: string): Promise<void> {
   const deadline = Date.now() + 3_000;
   while (Date.now() < deadline) {
     try {
-      if ((await lstat(path)).isSocket()) return;
+      const stats = await lstat(path);
+      if (stats.isSocket() && (stats.mode & 0o777) === 0o600) return;
     } catch {
       // The server has not bound yet.
     }
     await Bun.sleep(10);
   }
-  throw new Error(`control socket ${path} did not appear`);
+  throw new Error(`control socket ${path} did not become ready`);
 }
 
 describe("Swordfish local control", () => {

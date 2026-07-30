@@ -15,6 +15,7 @@ function provider(overrides: Readonly<Record<string, string>> = {}): ConfigProvi
       BEBOP_SWORDFISH_STALE_AFTER: "20 seconds",
       BEBOP_MAX_PROTOCOL_MESSAGE_BYTES: "1048576",
       BEBOP_SHUTDOWN_TIMEOUT: "30 seconds",
+      BEBOP_SWORDFISH_CREDENTIAL_KEY: "test-swordfish-credential-key-at-least-32-bytes",
       ...overrides,
     },
   }).pipe(ConfigProvider.constantCase);
@@ -28,6 +29,7 @@ describe("Bebop process configuration", () => {
     expect(Duration.toSeconds(config.heartbeatInterval)).toBe(5);
     expect(Redacted.isRedacted(config.databaseUrl)).toBe(true);
     expect(Redacted.value(config.databaseUrl).protocol).toBe("postgresql:");
+    expect(Redacted.isRedacted(config.swordfishCredentialKey)).toBe(true);
   });
 
   test("rejects stale thresholds that cannot detect missed heartbeats", () => {
@@ -40,5 +42,6 @@ describe("Bebop process configuration", () => {
       Effect.runSync(loadBebopConfig(provider({ BEBOP_PUBLIC_BASE_URL: "http://bebop.example.private/" }))),
     ).toThrow();
     expect(() => Effect.runSync(loadBebopConfig(provider({ BEBOP_MAX_PROTOCOL_MESSAGE_BYTES: "0" })))).toThrow();
+    expect(() => Effect.runSync(loadBebopConfig(provider({ BEBOP_SWORDFISH_CREDENTIAL_KEY: "too-short" })))).toThrow();
   });
 });

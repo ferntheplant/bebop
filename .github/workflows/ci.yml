@@ -12,6 +12,30 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+
+    # A real Postgres, because the component tests exercise the things a fake would paper
+    # over: transactional idempotency, `FOR UPDATE SKIP LOCKED`, advisory locks, and the
+    # `jsonb`/`bigint` encodings `spikes/persistence` pinned down. Those suites skip without
+    # one, so this service is what makes PLAN Milestone 3's first exit criterion actually
+    # enforced rather than merely intended.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bebop
+          POSTGRES_PASSWORD: bebop
+          POSTGRES_DB: bebop
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bebop -d bebop"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      BEBOP_TEST_DATABASE_URL: postgres://bebop:bebop@127.0.0.1:5432/bebop
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4

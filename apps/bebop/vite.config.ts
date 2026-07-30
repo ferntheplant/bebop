@@ -8,10 +8,11 @@ export default defineConfig({
   },
   run: {
     tasks: {
-      // `sh -c` keeps the executable artifact out of plan-time binary resolution,
-      // which runs before `build` has produced `dist`.
+      // The artifacts are real programs now — two of them want a database and stay up — so
+      // the smoke asserts that each packed bundle loads and reaches its own code rather than
+      // that it prints its name. See `scripts/smoke.ts`.
       smoke: {
-        command: ["bun dist/api.mjs", "bun dist/worker.mjs", "sh -c './dist/cli.mjs'"],
+        command: "bun scripts/smoke.ts",
         dependsOn: ["build", { task: "build", from: ["dependencies", "devDependencies"] }],
       },
     },

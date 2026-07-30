@@ -23,6 +23,7 @@ import {
   type WorkflowError,
   type WorkflowSkipReason,
 } from "@bebop/workflow";
+import { DateTime } from "effect";
 
 export type { GateState, GateStates, ReadinessClaim, SeatLeaseState } from "@bebop/workflow";
 
@@ -66,7 +67,12 @@ export type BebopProjectionInput =
       readonly observedAt: Timestamp;
     }
   | { readonly type: "connection_lost"; readonly connectionId: ConnectionId; readonly detectedAt: Timestamp }
-  | { readonly type: "freshness_expired"; readonly connectionId: ConnectionId; readonly detectedAt: Timestamp };
+  | {
+      readonly type: "freshness_expired";
+      readonly connectionId: ConnectionId;
+      readonly staleBefore: Timestamp;
+      readonly detectedAt: Timestamp;
+    };
 
 export type BebopProjectionError =
   | WorkflowError
@@ -79,7 +85,7 @@ export type BebopProjectionError =
  * acknowledge on `wrong_connection`: acknowledging an input Bebop discarded makes Swordfish
  * drop it from its outbox, and it is then lost for good.
  */
-export type BebopProjectionSkipReason = WorkflowSkipReason | "wrong_connection" | "already_stale";
+export type BebopProjectionSkipReason = WorkflowSkipReason | "wrong_connection" | "already_stale" | "recently_observed";
 
 export type BebopProjectionResult =
   | { readonly ok: true; readonly applied: true; readonly state: BebopSwordfishProjection }
@@ -154,6 +160,13 @@ export function reduceBebopSwordfishProjection(
     }
     if (input.type === "freshness_expired" && state.freshness.status !== "connected") {
       return skip(state, "already_stale");
+    }
+    if (
+      input.type === "freshness_expired" &&
+      state.freshness.status === "connected" &&
+      DateTime.toEpochMillis(state.freshness.lastObservedAt) >= DateTime.toEpochMillis(input.staleBefore)
+    ) {
+      return skip(state, "recently_observed");
     }
     const lastObservedAt =
       state.freshness.status === "never_connected" ? input.detectedAt : state.freshness.lastObservedAt;

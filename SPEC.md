@@ -1173,6 +1173,11 @@ Two layers:
 1. the API is reachable only through the exe.dev **private URL** (exe.dev auth is layer one);
 2. bebop-issued **named bearer tokens** (e.g. `fern-cli`, later `linear-bot`), stored hashed in Postgres, checked on every request, individually revocable.
 
+A fresh database is bootstrapped with one named token from `BEBOP_BOOTSTRAP_API_TOKEN`. The API consumes this
+value only while `api_tokens` is empty; once any token row exists, startup never recreates or un-revokes a token
+from environment configuration. Operators create durable client tokens through the authenticated token API and
+may then remove the bootstrap value from the deployment environment.
+
 The CLI stores its token in local config. Public exposure is a deferred decision made when an integration actually needs inbound traffic (e.g. GitHub webhooks, Linear).
 
 ### 17.5 Status vocabulary
@@ -1220,6 +1225,12 @@ The channel carries:
 - a bounty-scoped token minted by bebop and injected at VM bootstrap;
 - bound to the expected VM identity (bounty ID ↔ VM ID);
 - presented on the WebSocket upgrade, and valid for the life of the bounty.
+
+The plaintext token is derived at provisioning time as HMAC-SHA-256 over the bounty ID using the redacted
+deployment key `BEBOP_SWORDFISH_CREDENTIAL_KEY`. Postgres stores only the resulting token hash. Derivation makes
+an interrupted idempotent provisioning retry hand the provider the same credential without storing recoverable
+plaintext. The deployment key must remain stable while any bounty is live; rotation requires draining or
+explicitly reprovisioning those bounties.
 
 Rotation and expiry were specified here and never built, which left Milestone 5's "an invalid token is rejected" scenario with no contract to test the token half against. Both are struck rather than implemented.
 

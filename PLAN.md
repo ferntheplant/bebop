@@ -22,6 +22,10 @@ Progress through 2026-07-26:
 - **Correction (2026-07-26):** Milestone 1's exit criterion "a clean clone can run `vp install --frozen-lockfile` and `vp run ready`" was **not** actually met when it was marked complete. `ready` passed only on a machine that already had `dist` from an earlier build, and CI had been failing on `main` since `6cba85f` for this reason. Two ordering faults: Vite+ resolves a bare `./dist/*.mjs` command as a binary at plan time, before `build` runs; and `vp check` type-checks apps against `@bebop/contracts`, which resolves through its built `dist`. Fixed by invoking executable artifacts as `sh -c './dist/cli.mjs'`, and by replacing the shell `&&` chains with Vite+ `dependsOn` task dependencies so each task builds its own prerequisites. Verified by a fresh clone plus frozen install.
 - **Milestone 2 is complete and validated:** shared wire and domain schemas, bidirectional Bebop-Swordfish and local `sf` protocols, typed process configuration, authenticated Bebop HTTP/SSE contracts with generated OpenAPI, pure workflow/projection reducers, and golden replay/idempotency coverage are implemented. Frozen install and `vp run ready` pass.
 
+Progress through 2026-07-29:
+
+- **Milestone 3 is complete and validated:** the local Bebop server exists as two real processes over a real Postgres. `bebop-api` serves the whole `BebopHttpApi` — bounty create, list, status, attachments, evidence, approve-config, stop, recover, destroy, the token routes, and the cursor-replay SSE stream — and accepts Swordfish connections on the same port. `bebop-worker` shares the image and repositories and runs durable lifecycle jobs plus the connection freshness sweep. The `bebop` CLI is a thin client over the generated client. 39 component tests run against a real disposable Postgres, and a clean clone passes `vp install --frozen-lockfile` and `vp run ready`. Eleven implementation decisions and three new findings are recorded under Milestone 3 below; the two that change other people's work are that `sql.json` cannot encode a JSON array for a `jsonb` column, and that a graceful `server.stop()` waits forever on a WebSocket close in flight.
+
 ## 2. Repository Decisions
 
 The repository uses:
@@ -31,7 +35,8 @@ The repository uses:
 - Oxlint and Oxfmt through Vite+;
 - commitlint with the conventional-commits configuration;
 - Effect and Effect Schema for services, errors, configuration, and contracts;
-- Vitest through Vite+ for unit, integration, and process-level tests;
+- Vitest for unit, component, integration, and process-level tests, **launched by Bun rather than by the Node
+  runtime Vite+ manages**, so every test runs on the runtime the code under test targets;
 - Docker Compose only for stateful local dependencies such as Postgres;
 - conventional commits on every branch.
 
@@ -44,10 +49,15 @@ apps/
       api/
       cli/
       domain/
+      lifecycle/
+      observability/
       persistence/
+      runtime/
+      service/
       swordfish-gateway/
       worker/
     test/
+      component/
   swordfish/
     src/
       cli/
@@ -158,6 +168,12 @@ vp run smoke
 vp run ready
 ```
 
+The test tasks invoke `bun node_modules/vitest/vitest.mjs` rather than `vp test`. Vite+ launches Vitest with the
+Node runtime it manages, and the code under test targets Bun — the API serves on `BunHttpServer`, which a
+Node-hosted worker cannot start. Launched by Bun, Vitest's workers are Bun workers and one runner covers
+everything. The Postgres-backed suites skip without `BEBOP_TEST_DATABASE_URL`, so `ready` is runnable without
+Docker; CI always supplies the service.
+
 `ready` runs formatting verification, linting, type checking, unit tests, integration tests that do not require external credentials, and artifact smokes. Credentialed exe.dev and GitHub smoke tests remain separate commands.
 
 These are Vite+ tasks declared in `vite.config.ts`, not shell chains. Each declares its prerequisites with `dependsOn`, so any of them can be run alone on a clean checkout and will build what it needs first. `ready` is an aggregator: its gate is its dependency set.
@@ -256,8 +272,6 @@ README carries the evidence.
 
 **Status:** Complete and validated (2026-07-26)
 
-**Current checkpoint:** Exit criteria satisfied; Milestone 3 is next.
-
 **Work**
 
 - Encode IDs, timestamps, SHAs, sequence numbers, and protocol versions as schemas.
@@ -301,6 +315,10 @@ README carries the evidence.
 
 ### Milestone 3: Implement a Local Bebop Server
 
+**Status:** Complete and validated (2026-07-29)
+
+**Current checkpoint:** Exit criteria satisfied; Milestone 4 is next.
+
 **Work**
 
 - Add Effect configuration, structured logging, startup health, and graceful shutdown.
@@ -316,11 +334,69 @@ Do not integrate exe.dev or GitHub in this milestone. The fake lifecycle provide
 
 **Exit criteria**
 
-- API component tests run against a real disposable Postgres database.
-- Creating the same bounty request with one idempotency key cannot create duplicate lifecycle work.
-- SSE replay delivers each stored event once in sequence before switching to live delivery.
-- Restarting the API and worker preserves bounties, commands, tokens, and projections.
-- The CLI has no behavior unavailable through the HTTP API.
+- ~~API component tests run against a real disposable Postgres database.~~ **Met.** Each suite creates and drops
+  its own database; `compose.yml` supplies one locally and CI runs a `postgres:17-alpine` service.
+- ~~Creating the same bounty request with one idempotency key cannot create duplicate lifecycle work.~~ **Met.**
+  The bounty row, its idempotency key, its provisioning job, and its first event are one transaction, and four
+  concurrent creates sharing a key produce one bounty and one provision.
+- ~~SSE replay delivers each stored event once in sequence before switching to live delivery.~~ **Met.** Replay
+  and live are the same paged read behind one cursor, concatenated rather than merged.
+- ~~Restarting the API and worker preserves bounties, commands, tokens, and projections.~~ **Met**, with the
+  deliberate exception of connection freshness: a restarted API marks inherited connections `disconnected`,
+  because it has no sockets and `SPEC.md` §9.3 forbids presenting a disconnected Swordfish as working.
+- ~~The CLI has no behavior unavailable through the HTTP API.~~ **Met.** Every command is a call on the client
+  generated from `BebopHttpApi`, and `--json` prints the response re-encoded through its own schema.
+
+**Implementation decisions and findings**
+
+- **Vitest is launched by Bun, not by the Node runtime Vite+ manages.** `vp test` runs Vitest on managed Node,
+  where `BunHttpServer` cannot start — so the component tests were briefly written for Bun's own runner instead.
+  Launching Vitest with `bun node_modules/vitest/vitest.mjs` makes its workers Bun workers, and one runner then
+  covers unit, component, integration, and process-level tests. This is worth more than consistency: it means no
+  test passes on a runtime production never uses. `vitest` is a direct devDependency pinned to the version
+  Vite+ vendors, and the two must be upgraded together.
+- **`@effect/platform-bun` is imported by submodule, never through its barrel**, which re-exports `BunRedis` and
+  therefore imports the `bun` module at load time — unloadable anywhere Bun is not the runtime. `node:crypto`
+  is used for hashing for the same reason: it works under both, and hashing is not where a Bun-specific API
+  earns its keep.
+- **`sql.json` mis-encodes a JSON array** (new). The driver encodes a JavaScript array as a Postgres array
+  literal, and Postgres rejects it for a `jsonb` column with `invalid input syntax for type json`. Objects
+  survive, which is what makes it easy to ship — `primary_context` and the preview list are arrays and nothing
+  else would have noticed. Every `jsonb` write goes through `jsonbParameter` and an explicit `::jsonb` cast.
+- **Migrations are a static record, not a directory.** `Migrator.fromRecord` keeps the schema inside the packed
+  bundle, closing the `vp pack` gap `spikes/persistence` finding 6 raised for Swordfish; the same reasoning
+  applies to `bebop-api`, which is packed the same way.
+- **Bun's ten-second idle timeout would drop every event-stream subscriber.** `httpIdleTimeout` defaults to
+  Bun's maximum of 255 seconds rather than being disabled: an unbounded idle connection is a resource a
+  half-dead client can hold forever, and the stream is resumable by construction — a dropped subscriber
+  reconnects with `Last-Event-ID` and misses nothing.
+- **A graceful `server.stop()` can wait forever**, which would hang `SPEC.md` §24's blue/green drain. A
+  WebSocket whose close handshake is in flight when the server stops accepting reproduces it every time.
+  `shutdownTimeout` now bounds it (`withBoundedShutdown`), which is what that configuration field always
+  promised.
+- **The bounty-scoped Swordfish token is minted at provisioning, not at creation**, because `SPEC.md` §18.2
+  injects it at VM bootstrap: a bounty with no computer has nothing to authenticate. Bebop stores only its hash
+  and hands the plaintext to the lifecycle provider, which is the component that puts it on the VM.
+- **Provisioning retries derive the same Swordfish token from a deployment HMAC key.** A random in-memory token
+  can be lost after the provider succeeds but before its hash commits, leaving an idempotently returned VM with
+  a credential Bebop no longer recognises. HMAC derivation keeps plaintext out of Postgres while making retries
+  stable; the deployment key cannot rotate while bounties are live.
+- **The first API token is a one-shot environment seed.** Every token route remains authenticated. On an empty
+  token table the API requires `BEBOP_BOOTSTRAP_API_TOKEN` and inserts it once; after any token exists, startup
+  never recreates a token from environment configuration.
+- **Registration must be recorded before the `registered` reply is written.** Swordfish sends its first event
+  the instant it sees that reply, and a session assigned afterwards leaves a window in which that event reaches
+  a gateway that believes nothing has registered.
+- **The compact bounty status is derived, never stored.** A stored status would have to be rewritten on every
+  projection update, and the first update that forgot would leave `bounty list` disagreeing with
+  `bounty status` permanently.
+- **`packages/workflow` gained one transition:** `stage_changed → interactive` is legal when the current stage
+  is `null`. Swordfish starts at `interactive` and never takes that branch; Bebop's projection starts at `null`,
+  and without it the first thing a freshly connected bounty says about itself was rejected as illegal — leaving
+  `bounty status` reporting `provisioning` for a bounty whose crew was already talking to the user.
+- **`merge` refuses rather than pretending.** Merge authority needs GitHub, which this milestone deliberately
+  does not have; answering anything but a refusal would claim an external side effect that never happened. The
+  evidence route reports an empty bundle list for the same reason.
 
 ### Milestone 4: Implement Swordfish Core and `sf`
 

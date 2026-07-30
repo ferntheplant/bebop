@@ -8,10 +8,8 @@ export default defineConfig({
   },
   run: {
     tasks: {
-      // `sh -c` keeps the executable artifact out of plan-time binary resolution,
-      // which runs before `build` has produced `dist`.
       smoke: {
-        command: ["sh -c './dist/cli.mjs'", "sh -c './dist/daemon.mjs'"],
+        command: "bun scripts/smoke.ts",
         dependsOn: ["build", { task: "build", from: ["dependencies", "devDependencies"] }],
       },
     },

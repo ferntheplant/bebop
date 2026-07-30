@@ -1,5 +1,5 @@
-import { BountyId, VmId } from "@bebop/contracts";
-import { Config, ConfigProvider, Duration, Schema } from "effect";
+import { BountyId, GitRef, RepositorySlug, VmId } from "@bebop/contracts";
+import { Config, ConfigProvider, Context, Duration, Layer, Schema } from "effect";
 
 const PositiveDuration = Schema.DurationFromString.pipe(
   Schema.check(
@@ -33,6 +33,8 @@ const WebSocketUrl = Schema.URL.pipe(
 const SwordfishConfigBase = Schema.Struct({
   bountyId: BountyId,
   vmId: VmId,
+  repository: RepositorySlug,
+  assignedBranch: GitRef,
   bebopWebSocketUrl: WebSocketUrl,
   bebopToken: Schema.Redacted(Schema.NonEmptyString, { label: "bebop-token", disallowJsonEncode: true }),
   databasePath: AbsolutePath,
@@ -74,4 +76,14 @@ function environmentProvider(): ConfigProvider.ConfigProvider {
 
 export function loadSwordfishConfig(provider: ConfigProvider.ConfigProvider = environmentProvider()) {
   return SwordfishConfig.parse(provider);
+}
+
+export class SwordfishConfiguration extends Context.Service<SwordfishConfiguration, SwordfishConfig>()(
+  "SwordfishConfiguration",
+) {}
+
+export const SwordfishConfigurationLayer = Layer.effect(SwordfishConfiguration)(loadSwordfishConfig());
+
+export function swordfishConfigurationLayerFrom(config: SwordfishConfig): Layer.Layer<SwordfishConfiguration> {
+  return Layer.succeed(SwordfishConfiguration)(config);
 }

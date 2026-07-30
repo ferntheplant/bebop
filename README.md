@@ -135,5 +135,30 @@ for VMs provisioned under the previous key.
 `bebop-worker` takes the same configuration and runs the durable lifecycle jobs and the connection freshness
 sweep. Both processes apply migrations at startup, so either one may be started first.
 
+Run Swordfish under Vite+'s development supervisor:
+
+```bash
+SWORDFISH_BOUNTY_ID=bty-local \
+SWORDFISH_VM_ID=vm-local \
+SWORDFISH_REPOSITORY=withco/bebop \
+SWORDFISH_ASSIGNED_BRANCH=bounty/bty-local \
+SWORDFISH_BEBOP_WEB_SOCKET_URL=ws://127.0.0.1:8080/swordfish \
+SWORDFISH_BEBOP_TOKEN=replace-with-the-bounty-token \
+SWORDFISH_DATABASE_PATH=/tmp/swordfish/state/swordfish.sqlite \
+SWORDFISH_CONTROL_SOCKET_PATH=/tmp/swordfish/run/control.sock \
+SWORDFISH_REPOSITORY_PATH=/tmp/swordfish/repository \
+SWORDFISH_ARTIFACT_ROOT=/tmp/swordfish/artifacts \
+SWORDFISH_OPEN_CODE_BASE_URL=http://127.0.0.1:4096/ \
+SWORDFISH_HEARTBEAT_INTERVAL='5 seconds' \
+SWORDFISH_RECONNECT_MINIMUM_DELAY='100 millis' \
+SWORDFISH_RECONNECT_MAXIMUM_DELAY='10 seconds' \
+SWORDFISH_SHUTDOWN_TIMEOUT='15 seconds' \
+vp run @bebop/swordfish#dev
+```
+
+The daemon owns SQLite and exposes only the mode-`0600` Unix control socket. Point `sf` at that socket with
+`SWORDFISH_CONTROL_SOCKET_PATH` or `--socket`; commands never read or mutate the database directly. Run
+`sf --help` for status, takeover, handback, constraint extension, retry, approval, and stop commands.
+
 All commits must follow Conventional Commits. Vite+ installs the pre-commit and commit-message hooks through the
 root `prepare` script.

@@ -69,6 +69,16 @@ function throughPushedCandidate(): SwordfishWorkflowState {
 }
 
 describe("Swordfish workflow reducer", () => {
+  test("records the initial interactive announcement", () => {
+    const result = reduceSwordfishWorkflow(
+      makeInitialSwordfishWorkflowState(),
+      message(1, { type: "stage_changed", stage: "interactive" }),
+    );
+
+    expect(result.ok && result.applied).toBe(true);
+    if (result.ok) expect(result.state.lastAppliedSequence).toBe(1);
+  });
+
   test("replays the committed workflow transcript idempotently", () => {
     let state = makeInitialSwordfishWorkflowState();
     for (const [index, event] of goldenReplay.entries()) {

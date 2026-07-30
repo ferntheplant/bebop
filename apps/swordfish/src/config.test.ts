@@ -8,6 +8,8 @@ function provider(overrides: Readonly<Record<string, string>> = {}): ConfigProvi
     env: {
       SWORDFISH_BOUNTY_ID: "bty-01jz8j3d9f4x",
       SWORDFISH_VM_ID: "vm_01JZ8J3D9F4X",
+      SWORDFISH_REPOSITORY: "withco/bebop",
+      SWORDFISH_ASSIGNED_BRANCH: "bounty/bty-01jz8j3d9f4x",
       SWORDFISH_BEBOP_WEB_SOCKET_URL: "wss://bebop.example.private/api/swordfish",
       SWORDFISH_BEBOP_TOKEN: "bounty-token",
       SWORDFISH_DATABASE_PATH: "/var/lib/swordfish/state.sqlite",
@@ -29,6 +31,7 @@ describe("Swordfish process configuration", () => {
     const config = Effect.runSync(loadSwordfishConfig(provider()));
 
     expect(config.bountyId).toBe("bty-01jz8j3d9f4x");
+    expect(config.repository).toBe("withco/bebop");
     expect(Duration.toMillis(config.reconnectMinimumDelay)).toBe(100);
     expect(Redacted.isRedacted(config.bebopToken)).toBe(true);
     expect(Redacted.value(config.bebopToken)).toBe("bounty-token");

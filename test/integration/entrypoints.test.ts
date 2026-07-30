@@ -6,8 +6,12 @@
 // every CLI invocation fails at startup including `--help`, and only running the binary
 // notices.
 
+import { Database } from "bun:sqlite";
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 
 import { adminDatabaseUrl, createDisposableDatabase } from "@bebop/testkit";
 import { describe, expect, test } from "vite-plus/test";
@@ -101,6 +105,42 @@ function availablePort(): Promise<number> {
   });
 }
 
+async function waitForControlStatus(path: string, daemon: RunningProcess): Promise<Outcome> {
+  const deadline = Date.now() + 10_000;
+  let lastOutcome: Outcome | undefined;
+  while (Date.now() < deadline) {
+    lastOutcome = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", path, "--json"], {
+      timeoutMs: 1_000,
+    });
+    if (lastOutcome.exitCode === 0) return lastOutcome;
+    if (daemon.child.exitCode !== null || daemon.child.signalCode !== null) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(
+    `Swordfish control socket did not become ready at ${path}:\n${lastOutcome?.stderr ?? ""}${daemon.output()}`,
+  );
+}
+
+async function waitForCondition(condition: () => boolean | Promise<boolean>, description: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (await condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`timed out waiting for ${description}`);
+}
+
+function waitForProcessExit(process: RunningProcess): Promise<number | null> {
+  if (process.child.exitCode !== null) return Promise.resolve(process.child.exitCode);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`process did not exit:\n${process.output()}`)), 5_000);
+    process.child.once("close", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+}
+
 async function waitForResponse(
   url: string,
   init?: RequestInit,
@@ -182,18 +222,292 @@ describe("process entrypoints", () => {
     expect(outcome.exitCode).not.toBe(0);
   });
 
-  test("the Swordfish entrypoints still start", async () => {
-    // Milestone 4 builds these; today they are placeholders, and this asserts only that the
-    // workspace's other two programs are runnable.
-    for (const [entrypoint, expected] of [
-      ["apps/swordfish/src/daemon.ts", "swordfish"],
-      ["apps/swordfish/src/cli.ts", "sf"],
-    ] as const) {
-      const outcome = await run(entrypoint, []);
-      expect(outcome.exitCode).toBe(0);
-      expect(outcome.stdout).toBe(`${expected}\n`);
-    }
+  test("the sf CLI prints usage and refuses an absent daemon", async () => {
+    const help = await run("apps/swordfish/src/cli.ts", ["--help"]);
+    expect(help.exitCode).toBe(0);
+    expect(`${help.stdout}${help.stderr}`).toContain("USAGE");
+
+    const absent = await run("apps/swordfish/src/cli.ts", ["status", "--socket", "/tmp/swordfish-absent.sock"]);
+    expect(absent.exitCode).not.toBe(0);
+    expect(absent.stderr).toContain("Swordfish daemon is unavailable");
+
+    const trailing = await run("apps/swordfish/src/cli.ts", ["stop", "typo", "--socket", "/tmp/swordfish-absent.sock"]);
+    expect(trailing.exitCode).not.toBe(0);
+    expect(`${trailing.stdout}${trailing.stderr}`).toContain("Unexpected argument");
   });
+
+  test("the Swordfish daemon refuses to start without configuration", async () => {
+    const outcome = await run("apps/swordfish/src/daemon.ts", [], {
+      env: { SWORDFISH_BOUNTY_ID: "", SWORDFISH_DATABASE_PATH: "" },
+      timeoutMs: 15_000,
+    });
+    expect(outcome.exitCode).not.toBe(0);
+  });
+
+  test("a shutdown deadline forces process exit when a finalizer never completes", async () => {
+    const startedAt = Date.now();
+    const outcome = await run("apps/swordfish/test/shutdown-timeout-fixture.ts", [], { timeoutMs: 2_000 });
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(outcome.exitCode).not.toBe(0);
+    expect(`${outcome.stdout}${outcome.stderr}`).toContain("Swordfish shutdown timed out");
+    expect(`${outcome.stdout}${outcome.stderr}`).toContain("ShutdownTimeoutError");
+  });
+
+  test("startup reconciliation commits attention before the first Bebop registration", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bebop-swordfish-reconcile-process-"));
+    const socketPath = join(root, "run", "control.sock");
+    const databasePath = join(root, "state", "swordfish.sqlite");
+    await Promise.all([
+      mkdir(join(root, "run"), { recursive: true }),
+      mkdir(join(root, "state"), { recursive: true }),
+      mkdir(join(root, "repository"), { recursive: true }),
+      mkdir(join(root, "artifacts"), { recursive: true }),
+    ]);
+    const baseEnv = {
+      SWORDFISH_BOUNTY_ID: "bty-reconcile-process",
+      SWORDFISH_VM_ID: "vm-reconcile-process",
+      SWORDFISH_REPOSITORY: "withco/bebop",
+      SWORDFISH_ASSIGNED_BRANCH: "bounty/bty-reconcile-process",
+      SWORDFISH_BEBOP_TOKEN: "reconcile-process-token",
+      SWORDFISH_DATABASE_PATH: databasePath,
+      SWORDFISH_CONTROL_SOCKET_PATH: socketPath,
+      SWORDFISH_REPOSITORY_PATH: join(root, "repository"),
+      SWORDFISH_ARTIFACT_ROOT: join(root, "artifacts"),
+      SWORDFISH_OPEN_CODE_BASE_URL: "http://127.0.0.1:4096/",
+      SWORDFISH_HEARTBEAT_INTERVAL: "50 millis",
+      SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
+      SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
+      SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
+    } as const;
+    let daemon: RunningProcess | undefined;
+    let peer: ReturnType<typeof Bun.serve> | undefined;
+    try {
+      daemon = startProcess("apps/swordfish/dist/daemon.mjs", {
+        ...baseEnv,
+        SWORDFISH_BEBOP_WEB_SOCKET_URL: "ws://127.0.0.1:1/swordfish",
+      });
+      await waitForControlStatus(socketPath, daemon);
+      await daemon.stop();
+      daemon = undefined;
+
+      const database = new Database(databasePath);
+      try {
+        database.run(
+          `INSERT INTO reconciliation_records
+            (record_id, kind, path, pid, status, detail, updated_at)
+           VALUES (?, 'worktree', ?, NULL, 'running', NULL, ?)`,
+          ["worktree-interrupted", join(root, "missing-worktree"), "2026-07-29T00:00:00.000Z"],
+        );
+      } finally {
+        database.close();
+      }
+
+      const registrationCursors: Array<number> = [];
+      const receivedEvents: Array<{ readonly sequence: number; readonly type: string }> = [];
+      peer = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request, server) {
+          const protocol = request.headers.get("sec-websocket-protocol");
+          const upgraded = server.upgrade(request, {
+            headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
+            data: undefined,
+          });
+          return upgraded ? undefined : new Response("upgrade required", { status: 426 });
+        },
+        websocket: {
+          message(socket, data) {
+            const message = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)) as Record<
+              string,
+              unknown
+            >;
+            if (message["type"] === "register" && typeof message["lastProducedEventSequence"] === "number") {
+              registrationCursors.push(message["lastProducedEventSequence"]);
+              socket.send(
+                JSON.stringify({
+                  type: "registered",
+                  protocolVersion: 1,
+                  connectionId: `conn-reconcile-${registrationCursors.length}`,
+                  bountyId: "bty-reconcile-process",
+                  vmId: "vm-reconcile-process",
+                  serverTime: "2026-07-29T00:00:00.000Z",
+                  acknowledgedThrough: 0,
+                }),
+              );
+            } else if (message["type"] === "event" && typeof message["sequence"] === "number") {
+              const event = message["event"] as Record<string, unknown> | undefined;
+              receivedEvents.push({ sequence: message["sequence"], type: String(event?.["type"]) });
+            }
+          },
+        },
+      });
+
+      daemon = startProcess("apps/swordfish/dist/daemon.mjs", {
+        ...baseEnv,
+        SWORDFISH_BEBOP_WEB_SOCKET_URL: `ws://127.0.0.1:${peer.port}/swordfish`,
+      });
+      const status = await waitForControlStatus(socketPath, daemon);
+      await waitForCondition(
+        () => registrationCursors.length >= 1 && receivedEvents.some((event) => event.type === "attention_required"),
+        "reconciled registration and attention event",
+      );
+
+      expect(registrationCursors[0]).toBe(2);
+      expect(receivedEvents).toEqual([
+        { sequence: 1, type: "stage_changed" },
+        { sequence: 2, type: "attention_required" },
+      ]);
+      expect(JSON.parse(status.stdout)).toMatchObject({
+        stage: "needs_attention",
+        recentEvents: [{ sequence: 1 }, { sequence: 2, event: { type: "attention_required" } }],
+      });
+
+      const stopped = await run("apps/swordfish/dist/cli.mjs", ["stop", "--socket", socketPath]);
+      expect(stopped.exitCode).toBe(0);
+      expect(await waitForProcessExit(daemon)).toBe(0);
+      daemon = undefined;
+    } finally {
+      if (daemon !== undefined && daemon.child.exitCode === null && daemon.child.signalCode === null) {
+        await daemon.stop();
+      }
+      void peer?.stop(true);
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("a SIGKILL before acknowledgement preserves the durable event for replay after restart", async () => {
+    const root = await mkdtemp(join(tmpdir(), "bebop-swordfish-process-"));
+    const socketPath = join(root, "run", "control.sock");
+    const databasePath = join(root, "state", "swordfish.sqlite");
+    await Promise.all([
+      mkdir(join(root, "run"), { recursive: true }),
+      mkdir(join(root, "state"), { recursive: true }),
+      mkdir(join(root, "repository"), { recursive: true }),
+      mkdir(join(root, "artifacts"), { recursive: true }),
+    ]);
+    const eventSequences: Array<number> = [];
+    let registrations = 0;
+    let acknowledgeEvents = false;
+    const peer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request, server) {
+        const protocol = request.headers.get("sec-websocket-protocol");
+        const upgraded = server.upgrade(request, {
+          headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
+        });
+        return upgraded ? undefined : new Response("upgrade required", { status: 426 });
+      },
+      websocket: {
+        message(socket, data) {
+          const message = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)) as Record<
+            string,
+            unknown
+          >;
+          if (message["type"] === "register") {
+            registrations += 1;
+            socket.send(
+              JSON.stringify({
+                type: "registered",
+                protocolVersion: 1,
+                connectionId: `conn-process-${registrations}`,
+                bountyId: "bty-process",
+                vmId: "vm-process",
+                serverTime: "2026-07-29T00:00:00.000Z",
+                acknowledgedThrough: 0,
+              }),
+            );
+          } else if (message["type"] === "event" && typeof message["sequence"] === "number") {
+            eventSequences.push(message["sequence"]);
+            if (acknowledgeEvents) {
+              socket.send(
+                JSON.stringify({
+                  type: "event_acknowledged",
+                  protocolVersion: 1,
+                  bountyId: "bty-process",
+                  vmId: "vm-process",
+                  acknowledgedThrough: message["sequence"],
+                }),
+              );
+            }
+          }
+        },
+      },
+    });
+    const env = {
+      SWORDFISH_BOUNTY_ID: "bty-process",
+      SWORDFISH_VM_ID: "vm-process",
+      SWORDFISH_REPOSITORY: "withco/bebop",
+      SWORDFISH_ASSIGNED_BRANCH: "bounty/bty-process",
+      SWORDFISH_BEBOP_WEB_SOCKET_URL: `ws://127.0.0.1:${peer.port}/swordfish`,
+      SWORDFISH_BEBOP_TOKEN: "process-token",
+      SWORDFISH_DATABASE_PATH: databasePath,
+      SWORDFISH_CONTROL_SOCKET_PATH: socketPath,
+      SWORDFISH_REPOSITORY_PATH: join(root, "repository"),
+      SWORDFISH_ARTIFACT_ROOT: join(root, "artifacts"),
+      SWORDFISH_OPEN_CODE_BASE_URL: "http://127.0.0.1:4096/",
+      SWORDFISH_HEARTBEAT_INTERVAL: "50 millis",
+      SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
+      SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
+      SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
+    } as const;
+    let daemon: RunningProcess | undefined;
+    let competingDaemon: RunningProcess | undefined;
+    try {
+      daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
+      const before = await waitForControlStatus(socketPath, daemon);
+      expect(JSON.parse(before.stdout)).toMatchObject({
+        stage: "interactive",
+        bebopConnection: { acknowledgedThrough: 0, pendingEventCount: 1 },
+        recentEvents: [{ sequence: 1 }],
+      });
+      await waitForCondition(() => eventSequences.length >= 1, "the first process delivery");
+
+      const databaseAlias = join(root, "state-alias");
+      await symlink(join(root, "state"), databaseAlias, "dir");
+      competingDaemon = startProcess("apps/swordfish/dist/daemon.mjs", {
+        ...env,
+        SWORDFISH_DATABASE_PATH: join(databaseAlias, basename(databasePath)),
+        SWORDFISH_CONTROL_SOCKET_PATH: join(root, "run", "other-control.sock"),
+      });
+      expect(await waitForProcessExit(competingDaemon)).not.toBe(0);
+      expect(competingDaemon.output()).toContain("Could not use Swordfish control socket");
+
+      daemon.child.kill("SIGKILL");
+      await new Promise<void>((resolve) => daemon?.child.once("close", () => resolve()));
+      acknowledgeEvents = true;
+      daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
+      await waitForControlStatus(socketPath, daemon);
+      await waitForCondition(() => eventSequences.length >= 2, "the restarted process replay");
+      await waitForCondition(async () => {
+        const outcome = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", socketPath, "--json"], {
+          timeoutMs: 1_000,
+        });
+        if (outcome.exitCode !== 0) return false;
+        const status = JSON.parse(outcome.stdout) as {
+          bebopConnection?: { acknowledgedThrough?: unknown; pendingEventCount?: unknown };
+        };
+        return status.bebopConnection?.acknowledgedThrough === 1 && status.bebopConnection.pendingEventCount === 0;
+      }, "the restarted process acknowledgement");
+      expect(eventSequences).toEqual([1, 1]);
+
+      const stopped = await run("apps/swordfish/dist/cli.mjs", ["stop", "--socket", socketPath]);
+      expect(stopped.exitCode).toBe(0);
+    } finally {
+      if (
+        competingDaemon !== undefined &&
+        competingDaemon.child.exitCode === null &&
+        competingDaemon.child.signalCode === null
+      ) {
+        await competingDaemon.stop();
+      }
+      if (daemon !== undefined && daemon.child.exitCode === null && daemon.child.signalCode === null) {
+        await daemon.stop();
+      }
+      void peer.stop(true);
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   const postgresTest = adminDatabaseUrl() === null ? test.skip : test;
 

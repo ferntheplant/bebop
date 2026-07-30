@@ -1,328 +1,328 @@
-# Milestone 3 Implementation Review
+# Milestone 4 PR Review
 
-Reviewed `origin/main...770d6ea` against `SPEC.md`, `PLAN.md` Milestone 3, the pinned Effect 4 beta APIs, and the tests added by this PR.
+Reviewed `origin/main...HEAD` at `b42dd9f` against `PLAN.md` Milestone 4 and the relevant persistence,
+recovery, protocol, control, and implementation requirements in `SPEC.md`.
 
-## Resolution Status
+## Verdict
 
-All critical, high, and medium findings below have been addressed in the current worktree. The two architecture
-decisions were made explicitly: fresh installations use a one-shot environment bootstrap token, and provisioning
-retries derive a stable bounty credential from a deployment HMAC key. `SPEC.md`, `PLAN.md`, and `README.md` now
-record both invariants.
+The initial review found seven high-severity issues and concluded that Milestone 4 should not be marked complete yet.
+All seven high-severity findings are resolved in the current working tree. All five medium-severity findings and the
+single low-severity finding are also resolved in this remediation pass.
 
-The repaired suite now exercises ordered concurrent frames, stale-sweep fencing, reclaimable worker leases,
-uncertain command delivery, VM-bound registration, credential revocation, recovery, token lifecycle, provider
-failure before and after side effects, retry exhaustion, stop/provision races, SSE pagination and live handoff,
-CLI idle reconnect, protocol failure boundaries, bounded shutdown, and packed API/worker restart over one real
-Postgres.
+The PR establishes a substantial core: real SQLite persistence, transactional event/outbox writes, a real outbound
+WebSocket client, a permission-checked Unix control socket, a socket-only `sf` CLI, packed artifacts, and tests over
+real SQLite/socket/process boundaries. `vp run ready` passes.
 
-The original implementation had a solid contract-first shape, useful pure reducers, real Postgres component tests, and several strong targeted tests. In particular, concurrent create idempotency, authorised middleware execution, duplicate event projection, replaced-connection fencing in the sequential case, and CLI process execution were tested at meaningful boundaries. However, that suite passed while several durability and authentication guarantees were false. The findings below are retained as the record of what was found and repaired.
+The remediation pass closed every open finding. Control requests now produce a correlated `internal_error` response on
+expected typed failures instead of closing the connection silently. Shutdown is bounded by `SWORDFISH_SHUTDOWN_TIMEOUT`.
+The test harness acquires the database-derived authority lock before migrating SQLite, reconciliation coverage uses a
+real child process and worktree, the fake WebSocket peer contract-decodes every outbound frame, behavioral control
+coverage exercises takeover through approve-config, and the Effect package stack is coherently pinned to one beta.
+Transport logs carry the durable identity and the reconnect warning reports the typed session failure. The protocol
+error model was tightened: malformed and oversized peer traffic is a typed session failure (not a defect), every session
+end is a typed failure, and inbound-queue saturation uses a WebSocket close code Bun actually transmits.
 
-## Critical Findings
+## Findings
 
-### [x] C1. Projection updates can overwrite already-acknowledged events
+### High Severity
 
-**Resolution:** Projection application now reloads under a per-bounty transaction lock and rechecks freshness against the sweep cutoff.
+#### 1. [Resolved] Startup reconciliation records uncertainty but resumes the old workflow anyway
 
-**Where:** `apps/bebop/src/service/projection.ts:42-78`, `apps/bebop/src/persistence/swordfish.ts:119-157`, `apps/bebop/src/worker/jobs.ts:173-186`
+Resolution: reconciliation row updates and a durable `attention_required` event now commit in one startup transaction.
+The daemon enters `needs_attention` before starting transports, and the component test asserts the workflow status and
+event as well as the reconciliation row.
 
-`applyProjectionInput` receives a snapshot loaded by its caller, reduces that snapshot before opening a transaction, and then unconditionally replaces the projection row. The transaction protects the writes derived from that snapshot, but not the read/reduce decision. There is no row lock, version predicate, sequence predicate, or retry.
+References: `apps/swordfish/src/persistence/store.ts:471-523`, `apps/swordfish/src/workflow/service.ts:91-99`,
+`apps/swordfish/src/daemon.ts:25-38`, `PLAN.md:412,434`, `SPEC.md:1475-1487`.
 
-A concrete data-loss race is:
+`reconcileLocalState` changes auxiliary reconciliation rows to `needs_attention` or `unknown`, but it emits no workflow
+event, does not move the workflow to `needs_attention`, and does not return a result that can stop startup. The daemon
+then starts both transports and reports the previous stage to Bebop. `SfStatusSnapshot` exposes none of the
+reconciliation rows, so the operator cannot see the uncertainty through `sf status` either.
 
-1. The worker loads sequence 5 as a stale candidate.
-2. The gateway applies sequence 6, commits it, publishes it, and acknowledges sequence 6 to Swordfish.
-3. The worker saves its old sequence-5 snapshot with `freshness = stale`.
-4. Swordfish has discarded sequence 6, while Bebop now rejects sequence 7 as a gap.
+This violates the restart rule that Swordfish "resumes only after it can prove the current stage." A surviving child,
+vanished worktree, or operation with unknown completion must block normal resumption or durably move the workflow to
+`needs_attention` before reconnecting.
 
-The same lost-update problem exists between heartbeats, events, reconnects, and disconnect reconciliation. This violates `SPEC.md` sections 9.3, 18.3, and 22.4 and defeats the connection fencing that the reducer itself implements.
+The component test at `apps/swordfish/test/component/persistence.test.ts:117-134` reinforces the gap: it checks only
+that one injected row changes status, not that workflow execution is blocked or that status surfaces the condition.
 
-Load and lock the current projection inside the same transaction that reduces and saves it. A per-bounty advisory lock, `SELECT ... FOR UPDATE` with an explicit absent-row strategy, or optimistic version/sequence compare-and-retry would all make the decision atomic. Add deterministic barrier-based tests for stale-sweep versus heartbeat and old-connection event versus replacement registration.
+#### 2. [Resolved] The reconnect loop converts defects into endless transport retries
 
-### [x] C2. WebSocket frames are processed concurrently even though the gateway requires strict ordering
+Resolution: the loop uses `Effect.result`, retries only `BebopSessionError` and `SocketError`, and propagates defects,
+SQL failures, and failed disconnect bookkeeping to process supervision. A component test proves a durable bookkeeping
+defect terminates after one connection rather than reconnecting.
 
-**Resolution:** Frames enter a bounded queue and one scoped consumer processes them in arrival order.
+References: `apps/swordfish/src/protocol/client.ts:224-252`, especially `:232-245`; `PLAN.md:186,416`.
 
-**Where:** `apps/bebop/src/swordfish-gateway/gateway.ts:99-100`, `apps/bebop/src/swordfish-gateway/gateway.ts:137-228`, `apps/bebop/src/swordfish-gateway/gateway.ts:283-313`
+`Effect.exit(session(...))` captures the complete cause, including defects and interruption, and the loop then ignores
+the cause, marks the connection disconnected, sleeps, and retries. The follow-up `catchCause` also suppresses every
+failure while recording the disconnect. A decoder defect, invariant failure, or SQLite defect therefore leaves a
+half-healthy daemon reconnecting forever instead of failing for its external supervisor.
 
-The pinned Bun HTTP adapter implements `Socket.runString` by starting each frame handler in a `FiberSet`. Frames therefore execute concurrently. The gateway assumes the opposite: it mutates `session`, loads/replaces one projection, acknowledges ordered events, and drains commands without any serialization.
+This is the principal non-idiomatic Effect v4 use in the PR. The pinned v4 source documents that `Effect.exit` captures
+typed failures, defects, and interruption, while `Effect.retry` retries typed failures and deliberately does not retry
+defects or interruption. The reconnect policy should retry only the expected transport/session error channel and let
+defects and durable-authority failures terminate the daemon.
 
-Back-to-back sequence 1 and sequence 2 frames can both load sequence 0, causing a false gap or a later stale save. A heartbeat can overwrite an event snapshot. Concurrent registrations can race on `session`. A fast peer can also create an unbounded number of active SQL-backed handler fibers.
+The current warning log records only `outcome._tag`, which is always `Failure` for all of these cases, so the swallowed
+cause is not even observable.
 
-Feed decoded frames into a bounded `Queue` with one scoped consumer, or serialize the complete frame operation with a one-permit semaphore and close/backpressure on overflow. The queue bound should implement the bounded-message behavior required by the protocol design. Add a test that sends consecutive events without waiting for each acknowledgement and asserts ordered application under repeated runs.
+#### 3. [Resolved] The single-daemon lock is not bound to the SQLite authority
 
-### [x] C3. A worker crash permanently strands a claimed lifecycle job
+Resolution: Swordfish acquires a deterministic private Unix lock socket beside the configured database before acquiring
+the independently configurable control socket. The packed-process test starts a competing daemon against the same
+database with another control path and proves it exits without displacing the owner.
 
-**Resolution:** Job claims are renewable, expiring leases fenced by worker and attempt identity.
+References: `apps/swordfish/src/config.ts:40-43,57-64`, `apps/swordfish/src/control/server.ts:277-285`,
+`apps/swordfish/src/daemon.ts:23-27`, `PLAN.md:427-428`.
 
-**Where:** `apps/bebop/src/persistence/jobs.ts:116-132`, `apps/bebop/src/worker/jobs.ts:114-159`, `apps/bebop/src/worker.ts:25-48`
+The control socket is described as the single-daemon lock, but `databasePath` and `controlSocketPath` are independent
+configuration values. Two daemons can use the same database and identity with different socket paths; both acquire
+their socket, pass metadata validation, migrate/reconcile the same SQLite authority, accept local commands, and open a
+Bebop connection.
 
-Claiming commits `status = 'running'`, but subsequent claims select only `pending` rows. `locked_at` is written and never used as a lease. A process exit, interruption, defect, or machine restart after claim and before `complete`/`fail` leaves the job in `running` forever.
+The lock must be deterministically associated with the database authority, or SQLite needs an independent authority
+lock. The current component test at `apps/swordfish/test/component/control.test.ts:63-68` proves only that two servers
+cannot bind the same socket path.
 
-This directly contradicts `SPEC.md` section 22.4, which requires Bebop to resume provisioning and cleanup after restart. It also makes the comment in `jobs.ts:3-7` false: durable intent exists, but no process can resume it.
+#### 4. [Resolved] Swordfish cannot replay from a regressed Bebop cursor
 
-Make claims expiring leases and reclaim stale `running` rows, preferably with a fencing attempt/lease identity so a late first worker cannot complete work reclaimed by a second. Test real worker termination after claim and after the provider side effect, then restart the worker and assert one VM, one completed job, and a terminal bounty state.
+Resolution: registration accepts any peer cursor not beyond `lastProduced`, and delivery pages retained events after the
+peer cursor regardless of their local acknowledgement flag. A real-WebSocket component test acknowledges sequence 1,
+reconnects with cursor 0, and observes sequence 1 replayed.
 
-### [x] C4. A command can be lost after the socket write and before Swordfish durably receives it
+References: `apps/swordfish/src/protocol/client.ts:107-115,127-135`,
+`apps/swordfish/src/persistence/store.ts:279-285,303-326`, `SPEC.md:1239-1245`, `PLAN.md:430`.
 
-**Resolution:** Commands remain deliverable until Swordfish reports `accepted` or a terminal result.
+The registration exchange fails whenever Bebop's cursor is behind local `acknowledgedThrough`. That turns a Bebop
+restore or cursor rollback into an infinite reconnect loop. Even if the check were removed, `pendingEvents` filters on
+`acknowledged = 0`, so retained acknowledged rows cannot be replayed from the peer's durable cursor.
 
-**Where:** `apps/bebop/src/swordfish-gateway/gateway.ts:101-125`, `apps/bebop/src/persistence/commands.ts:117-131`, `apps/bebop/test/component/gateway.test.ts:240-273`
+`SPEC.md` says that after reconnecting Swordfish replays from Bebop's acknowledged cursor. The local outbox retains the
+payloads, so the implementation should page events after the peer cursor regardless of the local acknowledgement flag,
+while still rejecting cursors beyond `lastProduced`.
 
-The gateway marks a command delivered immediately after a local WebSocket write, and future drains select only `delivered_at IS NULL`. A successful write means bytes entered the local socket path; it is not a peer acknowledgement. If the connection drops before Swordfish stores the command, reconnect excludes it forever.
+No test covers cursor regression. The protocol component always registers with `acknowledgedThrough: 0` while local
+acknowledgement is also zero.
 
-This violates the at-least-once and offline behavior in `SPEC.md` sections 18.3-18.4. It also contradicts the repository comment that uncertain disconnects are safe to redeliver.
+#### 5. [Resolved] Required durable state has schema but no production persistence path
 
-Continue delivering until Swordfish reports at least `accepted` or a terminal result. Keep `delivered_at` as observational metadata rather than the exclusion predicate, and rely on `commandId` for duplicate suppression. The current test sends `completed` before reconnect and therefore proves only that a completed command is not resent; add a disconnect immediately after write and require the same `commandId` on reconnect.
+Resolution: the store now exposes production operations for local artifact manifests, reconciliation start/completion,
+and constraint consumption. The working-state restart test persists and reloads each surface through those operations.
 
-## High Findings
+References: `apps/swordfish/src/persistence/migrations.ts:90-115`,
+`apps/swordfish/src/persistence/store.ts:69-96,471-523`, `PLAN.md:409,412`, `SPEC.md:1460-1473`.
 
-### [x] H1. The bounty credential is not bound to the provisioned VM
+`local_artifacts` has no store operation at all. `reconciliation_records` can be read and updated during startup but
+cannot be created by production code; its only writer in the repository is direct SQL in a component test. Constraint
+rows can be initialized and extended but have no consumption operation. As a result, production code cannot establish
+some of the durable facts that Milestone 4 claims to persist and reconcile.
 
-**Resolution:** Gateway authentication resolves a live bounty/VM mapping and registration must match both identities.
+Tables alone do not satisfy the persistence requirement. Add production operations that commit these records with the
+workflow operation they describe, then exercise their restart behavior.
 
-**Where:** `apps/bebop/src/swordfish-gateway/gateway.ts:78-87`, `apps/bebop/src/swordfish-gateway/gateway.ts:137-165`, `apps/bebop/src/persistence/swordfish.ts:127-130`, `apps/bebop/src/persistence/bounties.ts:208-212`
+#### 6. [Resolved] The SIGKILL test does not prove replay after a process restart
 
-Authentication resolves only a bounty ID. Registration never reads `vm_mappings`; on the first connection, `projections.load` creates an initial projection from the client-supplied `vmId`. Even an existing sequence-zero projection can be rebound because the mismatch check is conditional on `lastAppliedSequence > 0` and line 163 overwrites the VM ID.
+Resolution: the packed daemon now connects to a real fake WebSocket peer in the process test. The peer observes sequence
+1, the test sends SIGKILL before acknowledgement, the restarted process replays sequence 1, and the peer acknowledges it
+before packed `sf status` verifies the durable cursor and empty pending count.
 
-A leaked bounty token can therefore register `vm-attacker` before the legitimate VM emits an event and be accepted as the authority. This violates the explicit bounty-to-VM binding in `SPEC.md` section 18.2.
+References: `test/integration/entrypoints.test.ts:226-281`, especially `:241,255-271`; compare
+`apps/swordfish/test/component/protocol.test.ts:101-149`; `PLAN.md:418-421`.
 
-Load the live VM mapping at registration and require an exact bounty/token/VM match before assigning `session` or mutating the projection. Add tests for an attacker VM both before any legitimate registration and after a legitimate sequence-zero registration.
+The packed daemon process is pointed at `127.0.0.1:1`, so no peer receives an event before or after restart. The test
+asserts only that the pending SQLite row remains visible through `sf status`. The WebSocket component test separately
+proves replay after reconnect, but it calls `runBebopClient` directly and never restarts the daemon/runtime.
 
-### [x] H2. `recover` does not enqueue work, and repeated terminal operations regress state
+A regression where the restarted daemon never starts the protocol client would pass both tests. The exit criterion is
+the composition: commit an event, kill the process before acknowledgement, restart the packed daemon, observe the same
+sequence at a real fake peer, acknowledge it, and verify the durable cursor/outbox.
 
-**Resolution:** Recovery re-arms terminal provision jobs, while repeated stop, destroy, recovery, and approval calls are idempotent.
+#### 7. [Resolved] Nontrivial Swordfish authority is not tested across restart
 
-**Where:** `apps/bebop/src/api/handlers.ts:182-227`, `apps/bebop/src/persistence/jobs.ts:104-114`, `apps/bebop/test/component/events.test.ts:54-74`
+Resolution: a component test now persists and restores a lease, effective spec, candidate, failed validator outcome and
+feedback, constraint consumption and extension, local artifact manifest, completed reconciliation record, and command
+result. The fixture also exposed and closed two nested Schema encoding defects in event append and status projection.
 
-Every bounty already owns `provision:<bountyId>`. `enqueue` turns a dedupe conflict into a no-op regardless of whether the old row is `succeeded` or `failed`. `recover` then changes the bounty to `provisioning`, but no runnable job exists. The same pattern lets a repeated destroy move a destroyed bounty back to `destroying` while its succeeded destroy job remains inert.
+References: `apps/swordfish/test/component/persistence.test.ts:35-75`,
+`test/integration/entrypoints.test.ts:255-271`, `apps/swordfish/src/persistence/workflow-snapshot.ts:26-89`,
+`PLAN.md:408-410`, `SPEC.md:1460-1485`.
 
-Define legal lifecycle transitions and an explicit re-arm/new-attempt operation. Recovery needs an attempt-specific job identity while provider idempotency remains bounty-scoped. Terminal repeated operations should be idempotent and must not regress lifecycle state.
+Every restart assertion covers only the bootstrap `interactive` event and snapshot. There is no restart round trip for
+seat identities and leases, an effective spec, a candidate, gate outcomes and findings, a changed constraint ledger,
+local artifacts, or a stored command result. The snapshot codec itself has no direct round-trip test.
 
-The only current recovery exercise invokes the endpoint to generate an SSE event and never runs jobs or asserts recovery. Add a test that loses/stops a provisioned VM, calls recover, runs or restarts the worker, and proves that the bounty leaves `provisioning` without creating a duplicate VM.
+The current tests can stay green if bootstrap restoration works but real in-progress workflow authority is corrupted,
+omitted, or reconstructed inconsistently. A useful durability fixture should persist a representative nontrivial state,
+close and rebuild the layer or process, and assert both normalized status and relevant history rows.
 
-### [x] H3. Deprovisioning leaves the Swordfish credential usable
+### Medium Severity
 
-**Resolution:** Destruction revokes the stored hash transactionally and authentication requires a live VM mapping.
+#### 8. [Resolved] Valid control requests can terminate without a protocol response
 
-**Where:** `apps/bebop/src/worker/jobs.ts:91-105`, `apps/bebop/src/persistence/bounties.ts:232-249`, `apps/bebop/src/swordfish-gateway/gateway.ts:78-87`, `apps/bebop/test/component/lifecycle.test.ts:104-116`
+Resolution: once a request is decoded, `connectionHandler` translates `SqlError` and `WorkflowTransitionError` into a
+schema-valid `internal_error` response on the request's correlation id. `CommandConflictError` continues to map to
+`correlation_conflict`. Defects still escape to supervision. A real-socket component test sends a `stop` command against
+a fake workflow service that fails `applyCommand` and asserts the correlated `internal_error` response.
 
-Destroy marks the VM mapping and lifecycle state, but leaves `swordfish_token_hash` intact. Gateway authentication checks neither the bounty lifecycle nor `destroyed_at`. A caller retaining the old credential can reconnect after destruction and continue mutating the projection.
+References: `apps/swordfish/src/control/server.ts:115-135,255-275`, `apps/swordfish/test/component/control.test.ts`.
 
-`SPEC.md` section 18.2 explicitly says the token is bounded by the bounty lifetime and revoked at deprovisioning. Clear the hash atomically with destruction and reject gateway upgrades unless the mapped VM is live. Extend the destroy test to reconnect with the captured old token and require rejection with no projection mutation.
+Only `CommandConflictError` is translated at the connection boundary. SQL failures, workflow transition failures, and
+other typed failures escape `connectionHandler`; the server closes the connection and `sf` reports a transport error.
+The contract includes `internal_error`, but the server never emits it.
 
-### [x] H4. A fresh deployment has no supported way to create its first API token
+Once a request is decoded and has a correlation ID, expected internal failures should produce a schema-valid,
+correlated error response. Defects may still terminate the handler/process according to the supervision policy.
 
-**Resolution:** An empty token table requires a one-shot redacted bootstrap token that is never reapplied later.
+#### 9. [Resolved] `SWORDFISH_SHUTDOWN_TIMEOUT` is parsed but never used
 
-**Where:** `apps/bebop/src/api/server.ts:38-43`, `apps/bebop/src/api/handlers.ts:231-275`, `apps/bebop/src/persistence/migrations.ts:58-67`, `apps/bebop/test/component/support/harness.ts:152-163`
+Resolution: the daemon now manages its scope manually. After the main effect exits (success, failure, or interruption),
+scope finalizers run in a detached daemon fiber raced against `config.shutdownTimeout`. If finalization exceeds the
+timeout, the daemon logs a warning and abandons the remaining finalizers; `BunRuntime.runMain` exits once the main fiber
+completes.
 
-Every token route is bearer-authenticated, migrations create an empty token table, and there is no startup bootstrap credential or administrative command. A new deployment can answer health checks but cannot authenticate any state-bearing request, including `POST /api/tokens`.
+References: `apps/swordfish/src/daemon.ts:18-74`.
 
-The harness hides this by calling `ApiTokenRepository.create` directly, a capability no deployed client has. Add a secure one-shot bootstrap path or an explicit deployment-time administrative command, and test a new database through that supported path rather than seeding the repository behind the API.
+Shutdown relies on unbounded scope finalization even though configuration requires a positive shutdown timeout. A stuck
+socket/server finalizer can exceed the supervisor's grace period, and the documented configuration value has no effect.
+Apply a bounded finalization policy or remove the unsupported setting.
 
-### [x] H5. Lifecycle state, durable intent, approvals, and client events are separate commits
+#### 10. [Resolved] Reconciliation and lock integration tests bypass the production conditions they claim to validate
 
-**Resolution:** Each mutation now commits its intent, state, approval, and visible event in one locked transaction.
+Resolution: the test harness now acquires the database-derived authority lock before migrating or bootstrapping SQLite,
+matching production startup ordering. A component test starts a second harness over the same `databasePath` and asserts it
+fails at the lock. The reconciliation test spawns a real child process and creates a real worktree directory, restarts,
+and asserts surviving and vanished records are marked `needs_attention` and `unknown` respectively.
 
-**Where:** `apps/bebop/src/api/handlers.ts:134-143`, `apps/bebop/src/api/handlers.ts:163-227`, `apps/bebop/src/service/bounties.ts:282-310`
+References: `apps/swordfish/test/component/support/harness.ts`, `apps/swordfish/test/component/control.test.ts`,
+`apps/swordfish/test/component/persistence.test.ts`.
 
-Effect sequencing does not make SQL operations atomic. Stop queues a command and then changes lifecycle state. Recover/destroy enqueue a job and then change lifecycle state. Approval writes the approval and then queues a command. `transitionLifecycle` updates the bounty and appends its SSE event in separate transactions.
+The harness migrates and bootstraps SQLite before any control socket is acquired, unlike production startup. The
+second-daemon check starts another socket server in the same already-bootstrapped runtime rather than a second daemon
+process. The reconciliation test uses a hard-coded PID `123`, does not create a real child or worktree, and can produce a
+different result if that PID exists on the host.
 
-Failures between these commits produce states such as a delivered stop command with a non-stopping bounty, a destroy job with no destroying state, an approval Swordfish was never told about, or a lifecycle change absent from the event stream. Retrying can then add another command or event.
+There is no integration test with a real child process, real temporary worktree/path, or two daemon processes sharing
+one authority. Those are the boundaries named by the milestone, and they are where startup ordering and fail-closed
+behavior matter.
 
-Put each application operation behind one service method and one `SqlClient.withTransaction` covering every durable row it owns. External provider calls should remain outside the transaction, but database intent and resulting database state must commit together. Add failpoint tests between each write and assert all-or-nothing behavior.
+#### 11. [Resolved] Protocol and CLI coverage is materially narrower than the completion claims
 
-### [x] H6. Command results are neither bounty-scoped nor monotonic
+Resolution: the fake WebSocket peer contract-decodes every outbound frame through `SwordfishToBebopMessage` and the tests
+assert registration, heartbeat, command-result identity, and cursor fields exactly. New protocol tests cover wrong
+identity, acknowledgement beyond the produced frontier, malformed frames, oversized frames, repeated registration, and
+queue saturation. New control tests exercise takeover, handback, extend, retry, and approve-config over a real socket,
+and reject a valid success response with the wrong correlation id or command. `PLAN.md` is updated to reflect the
+broadened coverage.
 
-**Resolution:** Results are bounty-scoped, unknown foreign commands fail, and terminal statuses cannot regress.
+References: `apps/swordfish/test/component/protocol.test.ts`, `apps/swordfish/test/component/control.test.ts`.
 
-**Where:** `apps/bebop/src/swordfish-gateway/gateway.ts:248-264`, `apps/bebop/src/persistence/commands.ts:133-138`
+The fake WebSocket peer parses outbound traffic as unchecked `Record<string, unknown>` and branches mostly on `type`.
+It does not contract-decode or exactly assert registration, heartbeat, or command-result identity and cursor fields.
+Wrong identity, acknowledgement ahead/regression, malformed frames, oversized frames, repeated registration, and queue
+saturation are not covered.
 
-The envelope identity is checked, but `recordResult` updates only by `command_id`. An authenticated Swordfish for bounty A can report a result for bounty B's command if it learns or guesses that ID. The update also blindly replaces status, so a delayed `accepted` replay can regress a `completed` command.
+Process/CLI coverage exercises help, absent-daemon status, trailing-argument rejection, packed status, and packed stop.
+There is no behavioral CLI/control coverage for takeover, handback, extend, retry, or approve-config. The completion note
+claims wrong correlation/command coverage, but the new real-socket test sends only a structurally malformed response;
+no valid success response with the wrong command is tested.
 
-Scope the update by both command ID and the registered bounty, require a matching row, and enforce monotonic/idempotent transitions. Return a protocol error for unknown or foreign commands. Add cross-bounty, duplicate, out-of-order, and terminal-regression tests.
+The existing tests are useful, but `PLAN.md` overstates what they establish.
 
-### [x] H7. The HTTP listener is acquired before migrations and startup reconciliation
+#### 12. [Resolved] The installed Effect packages are not actually on one compatible beta
 
-**Resolution:** Server-layer acquisition is suspended until migrations, token bootstrap, and reconciliation finish.
+Resolution: the root `package.json` overrides `@effect/platform-node-shared` to `4.0.0-beta.101`, matching the catalog
+pins for `effect` and `@effect/platform-bun`. The lockfile resolves only `@effect/platform-node-shared@4.0.0-beta.101`.
 
-**Where:** `apps/bebop/src/api.ts:27-44`, `apps/bebop/src/api.ts:52-69`, `apps/bebop/test/component/support/harness.ts:112-129`
+References: `package.json:26-28`, `bun.lock:144,233`.
 
-`Effect.provide(ServerLayer)` acquires the layer before running the provided effect. The listener therefore exists before the generator executes `migrateDatabase` and `reconcileConnectionsOnStartup`, despite the comments claiming the opposite. The test harness makes the ordering especially visible: it builds the server layer at line 124 and migrates at line 127.
+The catalog pins Effect and `@effect/platform-bun` to `4.0.0-beta.101`, but the lock resolves
+`@effect/platform-node-shared@4.0.0-beta.102`, whose peer dependency requires `effect@^4.0.0-beta.102`. Swordfish now
+directly exercises the Bun socket modules that load this unsupported cross-beta combination.
 
-Requests can hit missing tables or observe inherited connections as live during startup. If migration fails, the process may briefly expose a listener before teardown.
+This mismatch already exists on `origin/main`, so it is not introduced by the PR, but it prevents an unconditional
+confirmation that the runtime is on a coherent pinned Effect v4 stack. Pin the transitive package to beta.101 or upgrade
+all Effect packages together.
 
-Build/provide the database runtime first, run migrations and reconciliation, and only then acquire the server layer around the long-lived effect. Add a startup barrier test proving that the port is not reachable until migration and reconciliation complete.
+### Low Severity
 
-### [x] H8. A stale or disconnected Swordfish still appears `autonomous` or `ready`
+#### 13. [Resolved] Structured transport logs omit durable identity and useful failure causes
 
-**Resolution:** Compact status now incorporates freshness and degrades active claims to `needs_attention`.
+Resolution: `Effect.annotateLogs({ bounty_id, vm_id })` wraps the entire daemon effect, so every log — including
+registration, heartbeat, and reconnect logs from forked transport fibers — inherits the durable identity. The reconnect
+warning logs the typed failure's tag and reason (and its cause for `BebopSessionError`) instead of just the outcome tag.
 
-**Where:** `apps/bebop/src/service/bounties.ts:87-107`, `apps/bebop/src/domain/bounty.ts:61-114`
+References: `apps/swordfish/src/daemon.ts:43-46`, `apps/swordfish/src/protocol/client.ts:221-263`.
 
-Compact status is derived only from lifecycle state and the last Swordfish stage. Freshness is returned as a separate field but never affects status. A bounty whose last stage was `implementing` or `ready` continues to report `autonomous` or `ready` after becoming stale/disconnected.
+`bounty_id` and `vm_id` annotate only the single startup log call, not the daemon or transport effect. Registration and
+reconnect logs therefore omit the required identity. The reconnect warning logs only whether the captured `Exit` was a
+success or failure and discards its cause. Apply log annotations around the long-lived daemon effect and log the typed
+session failure/cause at the retry boundary.
 
-This is the exact behavior `SPEC.md` section 9.3 forbids: a disconnected Swordfish cannot be presented as currently working merely because its last event said it was. Include freshness in compact-status derivation so inactive connections degrade active/ready claims, normally to `needs_attention`, and assert both fields after stale detection and restart.
+## Effect v4 Assessment
 
-### [x] H9. The provisioning credential is not durable across the external side effect
+Most of the code uses APIs and patterns that are current in the pinned Effect 4 beta:
 
-**Resolution:** Bounty credentials are retry-stable HMAC derivations; Postgres continues to store only hashes.
+- `Context.Service` is a supported v4 service definition style in the installed source.
+- `Data.TaggedError`, `Layer.effect`, `Layer.unwrap`, and explicit service requirements provide typed composition.
+- `Effect.forkScoped`, `Effect.scoped`, and socket/server scopes give transport fibers structured lifetime.
+- Effect Schema decodes protocol and persisted snapshot payloads at their boundaries.
+- `effect/unstable/cli`, `effect/unstable/socket`, and `effect/unstable/sql` match the repository's chosen v4 modules.
+- Time and correlation IDs are behind an Effect service and are replaceable in tests.
+- SQL command application, event writes, snapshots, entity histories, command results, and outbox writes are grouped in
+  transactions.
 
-**Where:** `apps/bebop/src/worker/jobs.ts:55-84`, `apps/bebop/src/lifecycle/provider.ts:42-59`
+The code is therefore broadly v4-native, not an Effect 3 compatibility implementation. The remediation pass closed the
+two error-model gaps the assessment identified:
 
-Provisioning mints the credential in memory, calls the external provider, and stores its hash afterward. A crash or SQL failure after the provider succeeds loses the credential that was injected into the VM. A retry mints a different token; an idempotent provider is allowed to return the existing VM and is not required by this interface to replace its bootstrap credential, so Bebop can store a hash the VM does not possess.
+- **The reconnect loop no longer erases the defect boundary.** It uses `Effect.result`, retries only `BebopSessionError`
+  and `SocketError`, and propagates defects, SQL failures, and failed disconnect bookkeeping to process supervision.
+  `decodeFrame` and `verifyIdentity` now return `Effect.fail(BebopSessionError)` instead of throwing, so malformed or
+  oversized peer traffic is a typed session failure that reconnects rather than a defect that crashes the daemon. Every
+  session end is a typed failure — a clean socket close is mapped to `BebopSessionError` inside `session`, unifying the
+  reconnect loop so it never distinguishes "success-with-retry" from "failure-with-retry." The explicit `for (;;)` loop
+  is retained over `Effect.retry` because `Schedule.resetAfter` (needed to reset backoff after a healthy registration)
+  is not available in this v4 beta; the explicit loop with `Effect.result` already follows the error-model idiom.
+- **The cross-beta dependency resolution is corrected.** The root `package.json` overrides
+  `@effect/platform-node-shared` to `4.0.0-beta.101`, and the lockfile resolves only that version.
 
-Persist a stable provisioning attempt/credential before the side effect, derive it deterministically from protected durable material, or strengthen the provider operation to guarantee idempotent credential replacement. Test a crash after provider success and prove that the original VM can authenticate after worker restart.
+A secondary fix emerged from the error-model work: inbound-queue saturation previously closed the WebSocket with code
+1013 ("Try Again Later"), which is reserved for intermediary proxies per RFC 6455 and is not transmitted by Bun's
+WebSocket client (it arrives as 1006 / abnormal). The close code is now 1008 (Policy Violation), a standard endpoint
+code the peer receives correctly.
 
-## Medium Findings
+The daemon's scope finalization was also tightened to follow the v4 resource idiom: rather than relying on
+`Effect.scoped` with unbounded finalizers, the daemon manages its scope manually and races `Scope.close` against
+`SWORDFISH_SHUTDOWN_TIMEOUT` in a detached fiber, so a stuck socket close cannot outlive the supervisor's grace period.
 
-### [x] M1. One transient SQL error permanently stops command polling for a socket
+Direct `node:fs`, `node:net`, `process.kill`, and global clock/random calls are wrapped in effects or an app service, so
+they are not by themselves correctness findings here. Using Effect platform filesystem/path services would improve
+typed platform errors and test substitution, but the real-filesystem tests provide reasonable coverage for the current
+small surface.
 
-**Resolution:** Poll failures are handled per iteration, so the repeating fiber survives transient errors.
+## Test Layer Assessment
 
-**Where:** `apps/bebop/src/swordfish-gateway/gateway.ts:272-281`
+| Layer                      | What exists                                                                                                                                                                      | Assessment                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit                       | 10 Swordfish reducer tests and 2 config tests; the PR adds one initial-announcement reducer case and one config assertion. Shared workflow tests cover the pure transition core. | Useful reducer coverage, but little new unit coverage for snapshot serialization, command hashing/results, cursor policy, or reconciliation decisions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Component / contract-style | 5 SQLite tests, 5 Unix-socket tests, and 8 real-WebSocket/fake-peer tests.                                                                                                       | These use real SQLite files and real transports and are valuable. The high-severity recovery composition, nontrivial restoration, cursor regression, defect propagation, and fail-closed reconciliation gaps are covered. Outbound contract decoding is now exercised: the fake peer decodes every frame through `SwordfishToBebopMessage` and asserts identity, cursor, and correlation fields exactly. New robustness tests cover wrong identity, acknowledgement ahead, malformed/oversized/repeated-registration frames, and queue saturation. Behavioral control coverage exercises takeover, handback, extend, retry, and approve-config over a real socket, rejects a valid success response with the wrong correlation or command, proves a correlated `internal_error` on internal failures, and refuses a second runtime over the same SQLite authority. Reconciliation coverage uses a real child process and a real worktree directory. |
+| Integration / process      | Swordfish source-process checks for CLI/config failure plus one packed SIGKILL/restart test.                                                                                     | Real processes are exercised. The packed SIGKILL/restart test now observes replay at a real fake WebSocket peer, and a competing daemon with another control path fails at the authority lock. No Bebop-Swordfish end-to-end test exists, appropriately deferred to Milestone 5.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Artifact smoke             | `apps/swordfish/scripts/smoke.ts` starts packed daemon/CLI artifacts against a fresh SQLite database, calls packed status, and stops through the packed CLI.                     | Useful proof that bundled migration loading and basic artifacts work. It is a happy-path smoke, not recovery or integration coverage. The CLI helper has no timeout, so a hung packed CLI can hang `ready`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
-`Effect.repeat` stops on the first failure, and `Effect.ignore` is outside the repeat. A temporary database failure therefore ends the polling fiber successfully instead of allowing the next scheduled iteration. Commands may still move on a heartbeat, but the documented polling floor is gone until reconnect.
-
-Handle/log failures per iteration before `repeat`, or use an explicit retry schedule with bounded backoff. Add a repository-failure injection test that proves polling resumes.
-
-### [x] M2. Normal socket close never records `connection_lost`
-
-**Resolution:** Socket scope finalization applies a connection-fenced `connection_lost` input immediately.
-
-**Where:** `apps/bebop/src/swordfish-gateway/gateway.ts:283-323`
-
-The socket scope ends without a finalizer applying `connection_lost` for its session. A cleanly closed connection remains `connected` until the worker threshold expires, and then becomes `stale` rather than `disconnected`. If the worker is delayed, the false connected state is unbounded.
-
-Attach an `onExit`/finalizer that applies `connection_lost` using the session's connection ID. The reducer's connection fencing already makes cleanup from a replaced socket safe. Test ordinary close without restarting the API.
-
-### [x] M3. The CLI exits when the server performs its intentional idle disconnect
-
-**Resolution:** The CLI reconnects with bounded delay from its last successfully emitted cursor.
-
-**Where:** `apps/bebop/src/config.ts:66-76`, `apps/bebop/src/cli/events.ts:63-92`, `apps/bebop/test/component/cli.test.ts:108-131`
-
-The server deliberately closes quiet streams after at most 255 seconds and the configuration comment says clients reconnect with `Last-Event-ID`. `streamBountyEvents` instead returns when `reader.read()` reports `done`; it does not retain the latest cursor or reconnect.
-
-As a result, `bebop bounty events` is not actually a tail command for a quiet bounty. Reconnect with bounded backoff from the last successfully decoded cursor and preserve interruption as the way to exit. The current test kills the process after 800 ms and cannot detect this failure; add a short-idle-timeout reconnect test with an event emitted after reconnection.
-
-### [x] M4. SSE replay buffers the full history before emitting the first frame
-
-**Resolution:** Replay uses effectful pagination and emits each page before requesting the next.
-
-**Where:** `apps/bebop/src/api/event-stream.ts:58-78`
-
-`drain` repeatedly reads pages into one array, advances the cursor, and only then creates a stream from the complete array. This defeats paging: subscriber memory and time-to-first-byte grow with the entire bounty history, and a history growing at least as quickly as it is read may prevent replay from ever finishing.
-
-Use an effectful paginated/unfold stream that emits each page as it is pulled. Preserve the single cursor and concatenated replay/live phases, which are otherwise a good design.
-
-### [x] M5. Startup reconciliation handles only the first 1,000 connections
-
-**Resolution:** Reconciliation processes batches until no persisted live connection remains.
-
-**Where:** `apps/bebop/src/api/server.ts:58-78`, `apps/bebop/src/persistence/swordfish.ts:178-184`
-
-Reconciliation performs one bounded query and never loops. Rows after the first 1,000 retain dead connection IDs after API restart. Process batches until no connected projections remain; updated rows no longer match the query, so no offset is needed.
-
-### [x] M6. The gateway's outer `catchCause` turns startup faults into empty success responses
-
-**Resolution:** Only typed socket closure is absorbed; SQL failures and defects propagate through the consumer race.
-
-**Where:** `apps/bebop/src/swordfish-gateway/gateway.ts:315-323`
-
-The outer `catchCause` covers credential lookup, upgrade, all socket work, defects, and interruption. A database failure during token lookup or a programming defect is logged as an ordinary disconnect and converted to an empty response, potentially HTTP 200, instead of reaching HTTP error handling or supervision.
-
-Catch expected clean socket closure/interruption at the narrow socket boundary. Propagate typed pre-upgrade failures and defects, and log them at error severity.
-
-### [x] M7. Token creation reports every SQL failure as a duplicate name
-
-**Resolution:** Only the token-name `UniqueViolation` maps to 422; other SQL errors remain internal failures.
-
-**Where:** `apps/bebop/src/api/handlers.ts:233-249`
-
-The handler catches every repository failure and returns `A token named ... already exists`. Connection loss, timeout, permissions, or schema failure are therefore misreported as a user error and will not be retried or diagnosed correctly.
-
-Match only the named unique-constraint violation. Map all other SQL failures through the internal-error path.
-
-## Test Review
-
-### [x] T1. The restart test does not restart a worker or prove commands/projections survive
-
-**Resolution:** Packed processes restart over one Postgres; component protocol tests verify persisted commands and projections.
-
-**Where:** `apps/bebop/test/component/lifecycle.test.ts:128-150`, `apps/bebop/test/component/support/harness.ts:174-185`
-
-The test named `restarting the API preserves bounties, tokens, and commands` restarts only the in-process HTTP layer. There is no worker process to restart, no command assertion, and no projection assertion. Jobs are manually run to exhaustion before restart.
-
-Replace or supplement it with a process-level test that starts the packed API and worker as independent processes against one disposable database, terminates each at controlled boundaries, restarts them, and verifies the bounty, API token, command, projection cursor, and lifecycle job. This is also needed to prove packed migrations and signal shutdown rather than only source-module wiring.
-
-### [x] T2. The SSE test does not prove its `every stored event` or history/live-race claim
-
-**Resolution:** A strict SSE helper now validates transport and schema while a 206-event test crosses replay into live delivery.
-
-**Where:** `apps/bebop/test/component/events.test.ts:36-74`, `apps/bebop/test/component/support/sse.ts:16-64`, `apps/bebop/src/api/event-stream.ts:26-100`
-
-The test asks for exactly two frames and asserts `[1, 2]`; it never determines how many events are stored, crosses the 200-event page boundary, or appends while replay is draining. The live test calls broken `recover` only to obtain some next event.
-
-The helper also converts timeout/abort into a partial successful result, returns an empty list for a bodyless response, ignores malformed blocks, and does not assert status or content type. Several tests use `length >= requested`, which can still pass after timeout with only the expected prefix.
-
-Insert at least 205 known events, deliberately slow replay, append around the replay/live transition, and assert the complete exact cursor sequence once and in order. Make the helper fail unless it reaches the requested count with HTTP 200, `text/event-stream`, and schema-valid frames.
-
-### [x] T3. Token tests exercise hashing trivia but not the security property
-
-**Resolution:** HTTP tests cover bootstrap, creation, hash-only storage, listing, authentication, revocation, and duplicate names.
-
-**Where:** `apps/bebop/test/persistence/tokens.test.ts:17-32`, `apps/bebop/test/component/api.test.ts:34-55`, `apps/bebop/test/component/support/harness.ts:152-163`
-
-Asserting that a SHA-256 digest does not contain its input is not evidence that plaintext never reaches Postgres or a response that should omit it. There are no component tests for token creation, listing, duplicate names, revocation, immediate revocation enforcement, or authentication on the separately secured token route group.
-
-Use the supported bootstrap path from H4, create a named token through HTTP, inspect Postgres to prove only its hash exists, authenticate with it, prove list contains metadata but no secret, revoke it, and require the very next request to return 401. Also assert every token route itself requires authentication.
-
-### [x] T4. Failure, retry, interruption, and cancellation paths are effectively untested
-
-**Resolution:** Injected failures cover retries, exhaustion, post-side-effect failure, lease recovery, and stop/destroy races.
-
-**Where:** `apps/bebop/src/lifecycle/provider.ts:88-125`, `apps/bebop/src/worker/jobs.ts:114-159`, `apps/bebop/test/component/lifecycle.test.ts:44-150`
-
-The fake provider cannot block or fail, so the suite cannot exercise failure before a side effect, failure after a side effect, worker interruption, retry delay, attempt exhaustion, destroy failure, or stop/destroy racing with provisioning. `PLAN.md` section 9 requires expected failure, restart, and cancellation behavior for milestone completion.
-
-Add a controllable provider with barriers, fail-before, fail-after, and call-history modes. Assert retry timing, maximum attempts, final bounty status, no duplicate VM, no orphaned `running` job, and legal state under stop/destroy races.
-
-### [x] T5. Gateway tests cover useful happy paths but omit the adversarial protocol boundaries
-
-**Resolution:** Real WebSocket tests now cover ordering, VM binding, malformed and oversized frames, replay conflicts, and foreign results.
-
-**Where:** `apps/bebop/test/component/gateway.test.ts:102-349`, `apps/bebop/src/swordfish-gateway/gateway.ts:137-313`
-
-The duplicate-event and replaced-connection tests are valuable, but all stateful frames are sent sequentially with waits. Missing scenarios include concurrent consecutive events, heartbeat/event races, register replacement races, arbitrary VM registration, event before registration, conflicting duplicate sequence, malformed JSON, schema-invalid input, oversized frames and close code 1009, foreign command results, monotonic command results, and uncertain command delivery.
-
-Add these as real WebSocket tests. For concurrency cases, use barriers in persistence rather than sleeps so the tests deterministically force the bad interleaving.
-
-### [x] T6. Boundary-validation tests accept unrelated failures and do not check side effects
-
-**Resolution:** Tests assert exact statuses, unchanged row counts, one durable create, and one provider operation.
-
-**Where:** `apps/bebop/test/component/api.test.ts:88-102`, `apps/bebop/test/component/lifecycle.test.ts:78-89`
-
-The invalid-create tests accept any 4xx response, so a 401, 404, 409, or handler-level 422 would pass even if contract decoding were bypassed. They do not verify that no bounty, idempotency key, event, or job was written. The concurrent-create test checks only one returned ID, not one bounty row, one job, one provider call, and no orphan rows.
-
-Assert the exact typed bad-request response and database counts before/after invalid requests. Strengthen concurrent create to inspect every durable row and run the worker, proving one provider operation.
-
-### [x] T7. The bounded-shutdown regression has no targeted test
-
-**Resolution:** Gateway restart is timed while a WebSocket close handshake is in flight.
-
-**Where:** `apps/bebop/src/runtime/shutdown.ts:24-46`, `apps/bebop/test/component/support/harness.ts:132-145`
-
-Normal harness cleanup does not recreate the documented WebSocket close-handshake hang or assert the configured deadline. Removing `withBoundedShutdown` could leave the whole suite green.
-
-Hold a WebSocket in the problematic close state, signal a real API process, and assert exit within `shutdownTimeout` plus a small tolerance. Verify committed state after restart.
+The test suite is not superficial: it exercises real boundaries and catches meaningful regressions. The strongest
+guarantees still concern behavior across multiple boundaries, while the suite generally tests each boundary in isolation,
+but the remediation pass broadened both the contract-decoded component coverage and the process-level recovery
+composition.
 
 ## Validation Performed
 
-- `vp install --frozen-lockfile`: passed.
-- `vp run check`: passed.
-- `BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop vp run ready`: passed.
-- Unit and component tests: 35 files and 279 tests passed.
-- Integration tests: 8 passed, including packed API/worker operation and restart over a disposable Postgres.
-- Artifact smokes: all three Bebop artifacts and both Swordfish entrypoints passed.
+- `vp install`: passed (lockfile updated to pin `@effect/platform-node-shared` to beta.101).
+- `vp run ready`: passed.
+- Unit/component run: 242 passed, 58 skipped; all Swordfish tests ran (33 Swordfish tests across 6 files).
+- Integration run: 8 passed, 2 skipped; all Swordfish process tests ran.
+- Swordfish packed artifact smoke: passed.
+- Formatting, linting, and type checking: passed with no warnings or errors.
+
+The 58 skipped unit/component tests and 2 skipped integration tests are Postgres-backed Bebop tests and do not reduce
+the Swordfish-specific execution described above.

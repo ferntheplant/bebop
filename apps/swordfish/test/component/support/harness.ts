@@ -7,6 +7,7 @@ import { ConfigProvider, Effect, Exit, Layer, Logger, Scope } from "effect";
 
 import type { SwordfishConfig } from "#src/config.ts";
 import { loadSwordfishConfig, swordfishConfigurationLayerFrom } from "#src/config.ts";
+import { makeAuthorityLock } from "#src/control/server.ts";
 import { fixedSwordfishIdentityLayer } from "#src/domain/identity.ts";
 import { initializeDatabase } from "#src/persistence/database.ts";
 import { swordfishRuntimeLayer } from "#src/runtime/layers.ts";
@@ -21,9 +22,9 @@ export interface SwordfishHarness {
   readonly close: () => Promise<void>;
 }
 
-async function harnessConfig(root: string, bebopWebSocketUrl: string): Promise<SwordfishConfig> {
+async function harnessConfig(root: string, options?: { bebopWebSocketUrl?: string; databasePath?: string }) {
   const paths = {
-    databasePath: join(root, "state", "swordfish.sqlite"),
+    databasePath: options?.databasePath ?? join(root, "state", "swordfish.sqlite"),
     controlSocketPath: join(root, "run", "control.sock"),
     repositoryPath: join(root, "repository"),
     artifactRoot: join(root, "artifacts"),
@@ -42,7 +43,7 @@ async function harnessConfig(root: string, bebopWebSocketUrl: string): Promise<S
           SWORDFISH_VM_ID: "vm-component",
           SWORDFISH_REPOSITORY: "withco/bebop",
           SWORDFISH_ASSIGNED_BRANCH: "bounty/bty-component",
-          SWORDFISH_BEBOP_WEB_SOCKET_URL: bebopWebSocketUrl,
+          SWORDFISH_BEBOP_WEB_SOCKET_URL: options?.bebopWebSocketUrl ?? "ws://127.0.0.1:1/swordfish",
           SWORDFISH_BEBOP_TOKEN: "component-token",
           SWORDFISH_DATABASE_PATH: paths.databasePath,
           SWORDFISH_CONTROL_SOCKET_PATH: paths.controlSocketPath,
@@ -61,10 +62,10 @@ async function harnessConfig(root: string, bebopWebSocketUrl: string): Promise<S
 
 export async function startSwordfishHarness(
   label: string,
-  options?: { readonly bebopWebSocketUrl?: string },
+  options?: { readonly bebopWebSocketUrl?: string; readonly databasePath?: string },
 ): Promise<SwordfishHarness> {
   const root = await mkdtemp(join(tmpdir(), `bebop-swordfish-${label}-`));
-  const config = await harnessConfig(root, options?.bebopWebSocketUrl ?? "ws://127.0.0.1:1/swordfish");
+  const config = await harnessConfig(root, options);
 
   interface Running {
     readonly scope: Scope.Closeable;
@@ -73,21 +74,38 @@ export async function startSwordfishHarness(
 
   async function start(): Promise<Running> {
     const scope = Effect.runSync(Scope.make());
-    const layer = swordfishRuntimeLayer({
-      configuration: swordfishConfigurationLayerFrom(config),
-      identity: fixedSwordfishIdentityLayer(),
-    }).pipe(Layer.provideMerge(Logger.layer([])));
-    const context = (await Effect.runPromise(Layer.buildWithScope(layer, scope))) as Context.Context<never>;
-    await Effect.runPromise(
-      Effect.provideContext(
-        initializeDatabase.pipe(Effect.andThen(Effect.flatMap(WorkflowService, (workflow) => workflow.bootstrap))),
-        context,
-      ) as Effect.Effect<void, unknown, never>,
-    );
-    return { scope, context };
+    try {
+      // Production startup acquires the database-derived authority lock before migration or
+      // reconciliation can touch SQLite, so the lock is built into the layer ahead of the
+      // store and released by the same scope finalization the daemon relies on.
+      const authorityLock = Layer.effectDiscard(makeAuthorityLock).pipe(
+        Layer.provide(swordfishConfigurationLayerFrom(config)),
+      );
+      const layer = swordfishRuntimeLayer({
+        configuration: swordfishConfigurationLayerFrom(config),
+        identity: fixedSwordfishIdentityLayer(),
+      }).pipe(Layer.provideMerge(authorityLock), Layer.provideMerge(Logger.layer([])));
+      const context = (await Effect.runPromise(Layer.buildWithScope(layer, scope))) as Context.Context<never>;
+      await Effect.runPromise(
+        Effect.provideContext(
+          initializeDatabase.pipe(Effect.andThen(Effect.flatMap(WorkflowService, (workflow) => workflow.bootstrap))),
+          context,
+        ) as Effect.Effect<void, unknown, never>,
+      );
+      return { scope, context };
+    } catch (cause) {
+      await Effect.runPromise(Scope.close(scope, Exit.fail(cause))).catch(() => undefined);
+      throw cause;
+    }
   }
 
-  let current = await start();
+  let current: Running;
+  try {
+    current = await start();
+  } catch (cause) {
+    await rm(root, { recursive: true, force: true }).catch(() => undefined);
+    throw cause;
+  }
   const run = <A, E, R>(effect: Effect.Effect<A, E, R>): Promise<A> =>
     Effect.runPromise(Effect.provideContext(effect, current.context) as Effect.Effect<A, E, never>);
   const fork = <A, E, R>(effect: Effect.Effect<A, E, R>): Fiber.Fiber<A, E> =>

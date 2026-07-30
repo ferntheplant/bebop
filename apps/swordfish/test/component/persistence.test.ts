@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+
 import type { CommandMessage } from "@bebop/contracts";
 import {
   CommandMessage as CommandMessageSchema,
@@ -138,36 +140,68 @@ describe("Swordfish SQLite authority", () => {
     }
   });
 
-  test("marks uncertain child and worktree records for operator reconciliation", async () => {
+  test("marks surviving and vanished child and worktree records for operator reconciliation", async () => {
     harness = await startSwordfishHarness("reconciliation");
-    await harness.run(
-      Effect.gen(function* () {
-        const store = yield* SwordfishStore;
-        const identity = yield* SwordfishIdentity;
-        yield* store.startReconciliation(
-          { recordId: "worktree-1", kind: "worktree", path: `${harness?.root}/missing-worktree` },
-          yield* identity.now,
-        );
-      }),
-    );
-    await harness.restart();
-    const reconciled = await harness.run(
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        const workflow = yield* WorkflowService;
-        return {
-          rows: yield* sql`SELECT status, detail FROM reconciliation_records`,
-          status: yield* workflow.status,
-        };
-      }),
-    );
-    expect(reconciled.rows[0]?.["status"]).toBe("unknown");
-    expect(reconciled.rows[0]?.["detail"]).toContain("completion is unknown");
-    expect(reconciled.status.stage).toBe("needs_attention");
-    expect(reconciled.status.recentEvents.at(-1)?.event).toMatchObject({
-      type: "attention_required",
-      reason: expect.stringContaining("1 local operation"),
+    // A real long-lived child and a real worktree directory: reconciliation must inspect the
+    // host, not a fixture answer, to decide that these operations survived the restart.
+    const child = Bun.spawn([process.execPath, "-e", "setInterval(() => {}, 1000)"], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
     });
+    try {
+      await mkdir(`${harness.root}/live-worktree`, { recursive: true });
+      await harness.run(
+        Effect.gen(function* () {
+          const store = yield* SwordfishStore;
+          const identity = yield* SwordfishIdentity;
+          yield* store.startReconciliation(
+            { recordId: "child-live", kind: "child_process", pid: child.pid },
+            yield* identity.now,
+          );
+          yield* store.startReconciliation(
+            { recordId: "worktree-live", kind: "worktree", path: `${harness?.root}/live-worktree` },
+            yield* identity.now,
+          );
+          yield* store.startReconciliation(
+            { recordId: "worktree-missing", kind: "worktree", path: `${harness?.root}/missing-worktree` },
+            yield* identity.now,
+          );
+        }),
+      );
+      await harness.restart();
+      const reconciled = await harness.run(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const workflow = yield* WorkflowService;
+          return {
+            rows: yield* sql`SELECT record_id, status, detail FROM reconciliation_records`,
+            status: yield* workflow.status,
+          };
+        }),
+      );
+      const byRecordId = new Map(reconciled.rows.map((row) => [row["record_id"], row] as const));
+      expect(byRecordId.get("child-live")).toMatchObject({
+        status: "needs_attention",
+        detail: expect.stringContaining("survived restart"),
+      });
+      expect(byRecordId.get("worktree-live")).toMatchObject({
+        status: "needs_attention",
+        detail: expect.stringContaining("survived restart"),
+      });
+      expect(byRecordId.get("worktree-missing")).toMatchObject({
+        status: "unknown",
+        detail: expect.stringContaining("completion is unknown"),
+      });
+      expect(reconciled.status.stage).toBe("needs_attention");
+      expect(reconciled.status.recentEvents.at(-1)?.event).toMatchObject({
+        type: "attention_required",
+        reason: expect.stringContaining("3 local operation"),
+      });
+    } finally {
+      child.kill();
+      await child.exited.catch(() => undefined);
+    }
   });
 
   test("restores nontrivial workflow authority, artifacts, constraints, and command results", async () => {

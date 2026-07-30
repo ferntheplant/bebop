@@ -2,13 +2,20 @@ import { chmod, lstat, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
-import { currentSfControlVersion, SfControlRequest } from "@bebop/contracts";
+import type { SfControlCommand, SfControlResponse } from "@bebop/contracts";
+import {
+  currentSfControlVersion,
+  SfControlRequest,
+  SfControlResponse as SfControlResponseSchema,
+  SwordfishEvent,
+} from "@bebop/contracts";
 import { Effect, Fiber, Schema } from "effect";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
 import { requestControl, verifyControlSocket } from "#src/control/client.ts";
 import { runControlSocket } from "#src/control/server.ts";
 import { SwordfishIdentity } from "#src/domain/identity.ts";
+import { WorkflowService, WorkflowTransitionError } from "#src/workflow/service.ts";
 import type { SwordfishHarness } from "#test/component/support/harness.ts";
 import { startSwordfishHarness } from "#test/component/support/harness.ts";
 
@@ -18,6 +25,15 @@ afterEach(async () => {
   await harness?.close();
   harness = undefined;
 });
+
+function controlRequest(correlationId: string, command: SfControlCommand): SfControlRequest {
+  return Schema.decodeUnknownSync(SfControlRequest)({
+    type: "request",
+    controlVersion: currentSfControlVersion,
+    correlationId,
+    command,
+  });
+}
 
 async function waitForSocket(path: string): Promise<void> {
   const deadline = Date.now() + 3_000;
@@ -131,6 +147,168 @@ describe("Swordfish local control", () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(path, { force: true });
+    }
+  });
+
+  test("rejects valid daemon responses that do not match the request", async () => {
+    harness = await startSwordfishHarness("mismatched-response");
+    const fiber = harness.fork(runControlSocket);
+    try {
+      await waitForSocket(harness.config.controlSocketPath);
+      const baseline = await Effect.runPromise(
+        requestControl(harness.config.controlSocketPath, controlRequest("sf-baseline", { type: "status" })).pipe(
+          Effect.scoped,
+        ),
+      );
+      expect(baseline.type).toBe("success");
+
+      const root = harness.root;
+      const serveOnce = async (mutate: (encoded: Record<string, unknown>) => void) => {
+        const path = join(root, `mismatch-${Math.random().toString(36).slice(2)}.sock`);
+        const server = createServer((connection) => {
+          connection.once("data", () => {
+            const encoded = Schema.encodeUnknownSync(SfControlResponseSchema)(baseline) as Record<string, unknown>;
+            mutate(encoded);
+            connection.end(`${JSON.stringify(encoded)}\n`);
+          });
+        });
+        await new Promise<void>((resolve) => server.listen(path, resolve));
+        await chmod(path, 0o600);
+        try {
+          const exit = await Effect.runPromise(
+            Effect.exit(requestControl(path, controlRequest("sf-baseline", { type: "status" })).pipe(Effect.scoped)),
+          );
+          expect(exit._tag).toBe("Failure");
+        } finally {
+          await new Promise<void>((resolve) => server.close(() => resolve()));
+          await rm(path, { force: true });
+        }
+      };
+
+      // A schema-valid success response under another correlation id.
+      await serveOnce((encoded) => {
+        encoded["correlationId"] = "sf-someone-else";
+      });
+      // A schema-valid success response answering a different command than requested.
+      await serveOnce((encoded) => {
+        (encoded["result"] as Record<string, unknown>)["command"] = { type: "stop" };
+      });
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
+  test("answers internal workflow failures with a correlated internal_error response", async () => {
+    harness = await startSwordfishHarness("internal-error");
+    const real = await harness.run(WorkflowService);
+    const fiber = harness.fork(
+      runControlSocket.pipe(
+        Effect.provideService(WorkflowService, {
+          ...real,
+          applyCommand: () =>
+            Effect.fail(
+              new WorkflowTransitionError({
+                error: { type: "illegal_transition", stage: "interactive", eventType: "test" },
+              }),
+            ),
+        }),
+      ),
+    );
+    try {
+      await waitForSocket(harness.config.controlSocketPath);
+      const response = await Effect.runPromise(
+        requestControl(harness.config.controlSocketPath, controlRequest("sf-internal", { type: "stop" })).pipe(
+          Effect.scoped,
+        ),
+      );
+      expect(response.type).toBe("error");
+      if (response.type === "error") {
+        expect(response.correlationId).toBe("sf-internal");
+        expect(response.error.code).toBe("internal_error");
+      }
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
+  test("drives takeover, handback, extend, retry, and approve-config over the socket", async () => {
+    harness = await startSwordfishHarness("commands");
+    // A seat can only be taken over once Swordfish holds its lease.
+    await harness.run(
+      Effect.flatMap(WorkflowService, (workflow) =>
+        workflow.append(
+          Schema.decodeUnknownSync(SwordfishEvent)({
+            type: "lease_changed",
+            seat: "ein",
+            seatId: "seat-ein",
+            owner: "swordfish",
+          }),
+        ),
+      ),
+    );
+    const fiber = harness.fork(runControlSocket);
+    try {
+      await waitForSocket(harness.config.controlSocketPath);
+      const socketPath = harness.config.controlSocketPath;
+      const send = (correlationId: string, command: SfControlCommand): Promise<SfControlResponse> =>
+        Effect.runPromise(requestControl(socketPath, controlRequest(correlationId, command)).pipe(Effect.scoped));
+
+      const takeover = await send("sf-cmd-takeover", { type: "takeover", seat: "ein", force: false });
+      expect(takeover.type).toBe("success");
+      if (takeover.type === "success") {
+        expect(takeover.result.snapshot.stage).toBe("human_controlled");
+        expect(takeover.result.snapshot.seats.find((seat) => seat.role === "ein")?.leaseOwner).toBe("human");
+      }
+
+      const handback = await send("sf-cmd-handback", { type: "handback" });
+      expect(handback.type).toBe("success");
+      if (handback.type === "success") {
+        expect(handback.result.snapshot.stage).toBe("interactive");
+        expect(handback.result.snapshot.seats.find((seat) => seat.role === "ein")?.leaseOwner).toBe("swordfish");
+      }
+
+      const extend = await send("sf-cmd-extend", { type: "extend_constraint", constraint: "primary_turns" });
+      expect(extend.type).toBe("success");
+      if (extend.type === "success") {
+        expect(
+          extend.result.snapshot.constraints.find((entry) => entry.constraint === "primary_turns")?.extensionsGranted,
+        ).toBe(1);
+      }
+
+      const extended = await send("sf-cmd-extend-again", { type: "extend_constraint", constraint: "primary_turns" });
+      expect(extended.type).toBe("error");
+      if (extended.type === "error") expect(extended.error.code).toBe("constraint_extension_not_allowed");
+
+      const retry = await send("sf-cmd-retry", { type: "retry_stage", stage: "local_validation" });
+      expect(retry.type).toBe("error");
+      if (retry.type === "error") expect(retry.error.code).toBe("stage_retry_not_allowed");
+
+      const approve = await send("sf-cmd-approve", { type: "approve_config" });
+      expect(approve.type).toBe("error");
+      if (approve.type === "error") expect(approve.error.code).toBe("config_approval_not_pending");
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
+  test("refuses a second runtime over the same SQLite authority", async () => {
+    harness = await startSwordfishHarness("authority-owner");
+    await expect(
+      startSwordfishHarness("authority-competitor", { databasePath: harness.config.databasePath }),
+    ).rejects.toThrow("Could not use Swordfish control socket");
+
+    // The surviving owner is untouched and still serves its control socket.
+    const fiber = harness.fork(runControlSocket);
+    try {
+      await waitForSocket(harness.config.controlSocketPath);
+      const response = await Effect.runPromise(
+        requestControl(harness.config.controlSocketPath, controlRequest("sf-owner", { type: "status" })).pipe(
+          Effect.scoped,
+        ),
+      );
+      expect(response.type).toBe("success");
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
     }
   });
 });

@@ -1,4 +1,6 @@
-import { Effect, Fiber } from "effect";
+import type { RegisterMessage, SwordfishToBebopMessage } from "@bebop/contracts";
+import { SwordfishToBebopMessage as SwordfishToBebopMessageSchema } from "@bebop/contracts";
+import { Effect, Fiber, Schema } from "effect";
 import { SqlClient } from "effect/unstable/sql";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
@@ -23,105 +25,191 @@ async function waitFor(predicate: () => boolean | Promise<boolean>, description:
   throw new Error(`timed out waiting for ${description}`);
 }
 
+interface FakePeer {
+  port: number | undefined;
+  /** Every frame Swordfish sent, decoded against the protocol contract. */
+  readonly received: Array<SwordfishToBebopMessage>;
+  /** Frames Swordfish sent that failed contract decoding; must always be empty. */
+  readonly decodeErrors: Array<unknown>;
+  /** The WebSocket subprotocol offered on each upgrade, proving the token reaches the peer. */
+  readonly protocols: Array<string | null>;
+  readonly state: { connections: number; registrations: number };
+  stop: () => void;
+}
+
+type FakePeerSocket = Bun.ServerWebSocket<unknown>;
+
+/**
+ * A Bebop stand-in that contract-decodes every outbound frame. Tests branch on decoded
+ * messages, so identity, cursor, and correlation fields are asserted by construction.
+ */
+function startFakePeer(handlers: {
+  readonly onOpen?: (socket: FakePeerSocket, peer: FakePeer) => void;
+  readonly onRegister?: (socket: FakePeerSocket, message: RegisterMessage, peer: FakePeer) => void;
+  readonly onMessage?: (socket: FakePeerSocket, message: SwordfishToBebopMessage, peer: FakePeer) => void;
+  readonly onClose?: (code: number, reason: string) => void;
+}): FakePeer {
+  const peer: FakePeer = {
+    port: 0,
+    received: [],
+    decodeErrors: [],
+    protocols: [],
+    state: { connections: 0, registrations: 0 },
+    stop: () => undefined,
+  };
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request, bunServer) {
+      const protocol = request.headers.get("sec-websocket-protocol");
+      peer.protocols.push(protocol);
+      const upgraded = bunServer.upgrade(request, {
+        headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
+      });
+      return upgraded ? undefined : new Response("upgrade required", { status: 426 });
+    },
+    websocket: {
+      open(socket) {
+        peer.state.connections += 1;
+        handlers.onOpen?.(socket, peer);
+      },
+      message(socket, data) {
+        const raw = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)) as unknown;
+        let message: SwordfishToBebopMessage;
+        try {
+          message = Schema.decodeUnknownSync(SwordfishToBebopMessageSchema)(raw);
+        } catch (cause) {
+          peer.decodeErrors.push(cause);
+          return;
+        }
+        peer.received.push(message);
+        if (message.type === "register") {
+          peer.state.registrations += 1;
+          handlers.onRegister?.(socket, message, peer);
+        }
+        handlers.onMessage?.(socket, message, peer);
+      },
+      close(_socket, code, reason) {
+        handlers.onClose?.(code, reason);
+      },
+    },
+  });
+  peer.port = server.port;
+  peer.stop = () => void server.stop(true);
+  return peer;
+}
+
+function registeredMessage(registrations: number, acknowledgedThrough = 0): string {
+  return JSON.stringify({
+    type: "registered",
+    protocolVersion: 1,
+    connectionId: `conn-${registrations}`,
+    bountyId: "bty-component",
+    vmId: "vm-component",
+    serverTime: "2026-07-29T00:00:00.000Z",
+    acknowledgedThrough,
+  });
+}
+
 describe("Swordfish outbound protocol", () => {
   test("registers, replays, reconnects, heartbeats, acknowledges, and deduplicates commands", async () => {
-    const received: Array<Record<string, unknown>> = [];
-    const protocols: Array<string | null> = [];
-    let registrations = 0;
-    let firstConnection: Bun.ServerWebSocket<unknown> | undefined;
-
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch(request, bunServer) {
-        const protocol = request.headers.get("sec-websocket-protocol");
-        protocols.push(protocol);
-        const upgraded = bunServer.upgrade(request, {
-          headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
-        });
-        return upgraded ? undefined : new Response("upgrade required", { status: 426 });
+    let firstConnection: FakePeerSocket | undefined;
+    const peer = startFakePeer({
+      onOpen(socket) {
+        if (firstConnection === undefined) firstConnection = socket;
       },
-      websocket: {
-        open(socket) {
-          if (firstConnection === undefined) firstConnection = socket;
-        },
-        message(socket, data) {
-          const message = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)) as Record<
-            string,
-            unknown
-          >;
-          received.push(message);
-          if (message["type"] === "register") {
-            registrations += 1;
-            socket.send(
-              JSON.stringify({
-                type: "registered",
-                protocolVersion: 1,
-                connectionId: `conn-${registrations}`,
-                bountyId: "bty-component",
-                vmId: "vm-component",
-                serverTime: "2026-07-29T00:00:00.000Z",
-                acknowledgedThrough: 0,
-              }),
-            );
-            const command = JSON.stringify({
-              type: "command",
+      onRegister(socket, _message, { state }) {
+        socket.send(registeredMessage(state.registrations));
+        const command = JSON.stringify({
+          type: "command",
+          protocolVersion: 1,
+          bountyId: "bty-component",
+          vmId: "vm-component",
+          commandId: "cmd-duplicate",
+          issuedAt: "2026-07-29T00:00:01.000Z",
+          command: { type: "extend_constraint", constraint: "primary_turns" },
+        });
+        socket.send(command);
+        socket.send(command);
+      },
+      onMessage(socket, message, { state, received }) {
+        if (message.type === "event" && state.registrations >= 2) {
+          socket.send(
+            JSON.stringify({
+              type: "event_acknowledged",
               protocolVersion: 1,
               bountyId: "bty-component",
               vmId: "vm-component",
-              commandId: "cmd-duplicate",
-              issuedAt: "2026-07-29T00:00:01.000Z",
-              command: { type: "extend_constraint", constraint: "primary_turns" },
-            });
-            socket.send(command);
-            socket.send(command);
-          } else if (message["type"] === "event") {
-            if (registrations >= 2) {
-              socket.send(
-                JSON.stringify({
-                  type: "event_acknowledged",
-                  protocolVersion: 1,
-                  bountyId: "bty-component",
-                  vmId: "vm-component",
-                  acknowledgedThrough: message["sequence"],
-                }),
-              );
-            }
-          } else if (
-            message["type"] === "heartbeat" &&
-            socket === firstConnection &&
-            received.filter((entry) => entry["type"] === "command_result").length >= 2
-          ) {
-            socket.close(1012, "force reconnect");
-          }
-        },
+              acknowledgedThrough: message.sequence,
+            }),
+          );
+        } else if (
+          message.type === "heartbeat" &&
+          socket === firstConnection &&
+          received.filter((entry) => entry.type === "command_result").length >= 2
+        ) {
+          socket.close(1012, "force reconnect");
+        }
       },
     });
 
     harness = await startSwordfishHarness("protocol", {
-      bebopWebSocketUrl: `ws://127.0.0.1:${server.port}/swordfish`,
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
     });
     const fiber = harness.fork(runBebopClient);
     try {
-      await waitFor(() => registrations >= 1, "initial registration");
+      await waitFor(() => peer.state.registrations >= 1, "initial registration");
       await waitFor(
-        () => received.filter((message) => message["type"] === "command_result").length >= 2,
+        () => peer.received.filter((message) => message.type === "command_result").length >= 2,
         "initial command results",
       );
-      await waitFor(() => received.some((message) => message["type"] === "heartbeat"), "a heartbeat");
-      await waitFor(() => registrations >= 2, "a reconnect");
+      await waitFor(() => peer.received.some((message) => message.type === "heartbeat"), "a heartbeat");
+      await waitFor(() => peer.state.registrations >= 2, "a reconnect");
       await waitFor(
-        () => received.filter((message) => message["type"] === "command_result").length >= 4,
+        () => peer.received.filter((message) => message.type === "command_result").length >= 4,
         "deduplicated command results",
       );
-      expect(protocols.every((protocol) => protocol === "bebop-token.component-token")).toBe(true);
-      expect(received.some((message) => message["type"] === "heartbeat")).toBe(true);
-      const eventSequences = received
-        .filter((message) => message["type"] === "event")
-        .map((message) => message["sequence"]);
-      expect(eventSequences.length).toBeGreaterThanOrEqual(1);
-      expect(new Set(eventSequences)).toEqual(new Set([1]));
+
+      // Every frame is contract-decoded by the fake peer, so these are exact assertions.
+      expect(peer.decodeErrors).toEqual([]);
+      expect(peer.protocols.length).toBeGreaterThanOrEqual(2);
+      expect(peer.protocols.every((protocol) => protocol === "bebop-token.component-token")).toBe(true);
+      const registers = peer.received.filter((message) => message.type === "register");
+      expect(registers.length).toBeGreaterThanOrEqual(2);
+      for (const register of registers) {
+        expect(register).toMatchObject({
+          protocolVersion: 1,
+          bountyId: "bty-component",
+          vmId: "vm-component",
+          swordfishVersion: "0.0.0",
+          lastProducedEventSequence: 1,
+        });
+      }
+      const heartbeats = peer.received.filter((message) => message.type === "heartbeat");
+      expect(heartbeats.length).toBeGreaterThanOrEqual(1);
+      for (const heartbeat of heartbeats) {
+        expect(heartbeat).toMatchObject({
+          protocolVersion: 1,
+          bountyId: "bty-component",
+          vmId: "vm-component",
+          lastProducedEventSequence: 1,
+        });
+      }
+      expect(heartbeats.some((heartbeat) => heartbeat.lastAppliedCommandId === "cmd-duplicate")).toBe(true);
+      const results = peer.received.filter((message) => message.type === "command_result");
+      expect(results.length).toBeGreaterThanOrEqual(4);
+      for (const result of results) {
+        expect(result).toMatchObject({
+          protocolVersion: 1,
+          bountyId: "bty-component",
+          vmId: "vm-component",
+          commandId: "cmd-duplicate",
+          status: "completed",
+        });
+      }
+      const eventSequences = peer.received.filter((message) => message.type === "event").map((event) => event.sequence);
       expect(eventSequences.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(eventSequences)).toEqual(new Set([1]));
       await waitFor(
         async () =>
           (await harness?.run(Effect.flatMap(SwordfishStore, (store) => store.deliveryState)))?.acknowledgedThrough ===
@@ -149,97 +237,55 @@ describe("Swordfish outbound protocol", () => {
       expect(durable.extensions).toBe(1);
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
-      void server.stop(true);
+      peer.stop();
     }
   }, 20_000);
 
   test("reconnects when a peer closes before registration", async () => {
-    let connections = 0;
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch(request, bunServer) {
-        const protocol = request.headers.get("sec-websocket-protocol");
-        const upgraded = bunServer.upgrade(request, {
-          headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
-        });
-        return upgraded ? undefined : new Response("upgrade required", { status: 426 });
-      },
-      websocket: {
-        open(socket) {
-          connections += 1;
-          socket.close(1000, "no registration");
-        },
-        message() {},
+    const peer = startFakePeer({
+      onOpen(socket) {
+        socket.close(1000, "no registration");
       },
     });
     harness = await startSwordfishHarness("pre-registration-close", {
-      bebopWebSocketUrl: `ws://127.0.0.1:${server.port}/swordfish`,
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
     });
     const fiber = harness.fork(runBebopClient);
     try {
-      await waitFor(() => connections >= 2, "reconnect after a pre-registration close");
+      await waitFor(() => peer.state.connections >= 2, "reconnect after a pre-registration close");
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
-      void server.stop(true);
+      peer.stop();
     }
   }, 10_000);
 
   test("replays retained events when Bebop's durable cursor regresses", async () => {
-    const eventSequences: Array<number> = [];
-    let registrations = 0;
-    let firstConnection: Bun.ServerWebSocket<unknown> | undefined;
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch(request, bunServer) {
-        const protocol = request.headers.get("sec-websocket-protocol");
-        const upgraded = bunServer.upgrade(request, {
-          headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
-        });
-        return upgraded ? undefined : new Response("upgrade required", { status: 426 });
+    let firstConnection: FakePeerSocket | undefined;
+    const peer = startFakePeer({
+      onOpen(socket) {
+        if (firstConnection === undefined) firstConnection = socket;
       },
-      websocket: {
-        open(socket) {
-          if (firstConnection === undefined) firstConnection = socket;
-        },
-        message(socket, data) {
-          const message = JSON.parse(typeof data === "string" ? data : new TextDecoder().decode(data)) as Record<
-            string,
-            unknown
-          >;
-          if (message["type"] === "register") {
-            registrations += 1;
-            socket.send(
-              JSON.stringify({
-                type: "registered",
-                protocolVersion: 1,
-                connectionId: `conn-regression-${registrations}`,
-                bountyId: "bty-component",
-                vmId: "vm-component",
-                serverTime: "2026-07-29T00:00:00.000Z",
-                acknowledgedThrough: 0,
-              }),
-            );
-          } else if (message["type"] === "event" && typeof message["sequence"] === "number") {
-            eventSequences.push(message["sequence"]);
-            if (registrations === 1) {
-              socket.send(
-                JSON.stringify({
-                  type: "event_acknowledged",
-                  protocolVersion: 1,
-                  bountyId: "bty-component",
-                  vmId: "vm-component",
-                  acknowledgedThrough: message["sequence"],
-                }),
-              );
-            }
-          }
-        },
+      onRegister(socket, _message, { state }) {
+        // Every registration reports cursor 0: after the first connection acknowledged
+        // sequence 1, a forced close simulates Bebop restoring behind Swordfish's cursor.
+        socket.send(registeredMessage(state.registrations));
+      },
+      onMessage(socket, message, { state }) {
+        if (message.type === "event" && state.registrations === 1) {
+          socket.send(
+            JSON.stringify({
+              type: "event_acknowledged",
+              protocolVersion: 1,
+              bountyId: "bty-component",
+              vmId: "vm-component",
+              acknowledgedThrough: message.sequence,
+            }),
+          );
+        }
       },
     });
     harness = await startSwordfishHarness("cursor-regression", {
-      bebopWebSocketUrl: `ws://127.0.0.1:${server.port}/swordfish`,
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
     });
     const fiber = harness.fork(runBebopClient);
     try {
@@ -250,36 +296,29 @@ describe("Swordfish outbound protocol", () => {
         "the first durable acknowledgement",
       );
       firstConnection?.close(1012, "reconnect with regressed cursor");
-      await waitFor(() => registrations >= 2 && eventSequences.length >= 2, "the retained event replay");
-      expect(eventSequences).toEqual([1, 1]);
+      await waitFor(() => peer.state.registrations >= 2, "the second registration");
+      await waitFor(
+        () => peer.received.filter((message) => message.type === "event").length >= 2,
+        "the retained event replay",
+      );
+      expect(peer.decodeErrors).toEqual([]);
+      expect(peer.received.filter((message) => message.type === "event").map((event) => event.sequence)).toEqual([
+        1, 1,
+      ]);
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
-      void server.stop(true);
+      peer.stop();
     }
   }, 10_000);
 
   test("does not retry defects from durable disconnect bookkeeping", async () => {
-    let connections = 0;
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch(request, bunServer) {
-        const protocol = request.headers.get("sec-websocket-protocol");
-        const upgraded = bunServer.upgrade(request, {
-          headers: protocol === null ? undefined : { "sec-websocket-protocol": protocol },
-        });
-        return upgraded ? undefined : new Response("upgrade required", { status: 426 });
-      },
-      websocket: {
-        open(socket) {
-          connections += 1;
-          socket.close(1012, "trigger disconnect bookkeeping");
-        },
-        message() {},
+    const peer = startFakePeer({
+      onOpen(socket) {
+        socket.close(1012, "trigger disconnect bookkeeping");
       },
     });
     harness = await startSwordfishHarness("durable-defect", {
-      bebopWebSocketUrl: `ws://127.0.0.1:${server.port}/swordfish`,
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
     });
     const realStore = await harness.run(SwordfishStore);
     const fiber = harness.fork(
@@ -295,10 +334,125 @@ describe("Swordfish outbound protocol", () => {
       expect(exit._tag).toBe("Failure");
       if (exit._tag === "Failure") expect(String(exit.cause)).toContain("durable disconnect defect");
       await Bun.sleep(100);
-      expect(connections).toBe(1);
+      expect(peer.state.connections).toBe(1);
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
-      void server.stop(true);
+      peer.stop();
+    }
+  }, 10_000);
+
+  test("reconnects when the peer registers a foreign identity", async () => {
+    const peer = startFakePeer({
+      onRegister(socket) {
+        socket.send(
+          JSON.stringify({
+            type: "registered",
+            protocolVersion: 1,
+            connectionId: "conn-foreign",
+            bountyId: "bty-someone-else",
+            vmId: "vm-someone-else",
+            serverTime: "2026-07-29T00:00:00.000Z",
+            acknowledgedThrough: 0,
+          }),
+        );
+      },
+    });
+    harness = await startSwordfishHarness("foreign-identity", {
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
+    });
+    const fiber = harness.fork(runBebopClient);
+    try {
+      await waitFor(() => peer.state.registrations >= 2, "reconnect after a foreign registration");
+      expect(peer.decodeErrors).toEqual([]);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      peer.stop();
+    }
+  }, 10_000);
+
+  test("reconnects when the peer acknowledges beyond the produced frontier", async () => {
+    const peer = startFakePeer({
+      onRegister(socket, _message, { state }) {
+        socket.send(registeredMessage(state.registrations, 99));
+      },
+    });
+    harness = await startSwordfishHarness("ack-ahead", {
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
+    });
+    const fiber = harness.fork(runBebopClient);
+    try {
+      await waitFor(() => peer.state.registrations >= 2, "reconnect after an acknowledgement ahead");
+      expect(peer.decodeErrors).toEqual([]);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      peer.stop();
+    }
+  }, 10_000);
+
+  test("reconnects after malformed, oversized, and repeated-registration frames", async () => {
+    let phase: "malformed" | "oversized" | "repeated" = "malformed";
+    const peer = startFakePeer({
+      onRegister(socket, _message, { state }) {
+        socket.send(registeredMessage(state.registrations));
+        if (phase === "malformed") {
+          socket.send("this is not json");
+          phase = "oversized";
+        } else if (phase === "oversized") {
+          socket.send("x".repeat(1_100_000));
+          phase = "repeated";
+        } else {
+          socket.send(registeredMessage(state.registrations));
+          phase = "malformed";
+        }
+      },
+    });
+    harness = await startSwordfishHarness("bad-frames", {
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
+    });
+    const fiber = harness.fork(runBebopClient);
+    try {
+      // Each poisoned frame kills its session, so three registrations means the daemon
+      // survived all three and came back every time.
+      await waitFor(() => peer.state.registrations >= 3, "reconnects after each poisoned frame");
+      expect(peer.decodeErrors).toEqual([]);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      peer.stop();
+    }
+  }, 10_000);
+
+  test("closes the socket when a peer saturates the inbound queue", async () => {
+    const closeCodes: Array<number> = [];
+    const peer = startFakePeer({
+      onRegister(socket, _message, { state }) {
+        socket.send(registeredMessage(state.registrations));
+        // Flood valid acknowledgements fast enough to fill the bounded queue before the
+        // consumer can drain a single item past capacity. The read loop closes with 1008
+        // (policy violation: "inbound queue full").
+        const ack = JSON.stringify({
+          type: "event_acknowledged",
+          protocolVersion: 1,
+          bountyId: "bty-component",
+          vmId: "vm-component",
+          acknowledgedThrough: 1,
+        });
+        for (let index = 0; index < 128; index += 1) {
+          socket.send(ack);
+        }
+      },
+      onClose(code) {
+        closeCodes.push(code);
+      },
+    });
+    harness = await startSwordfishHarness("queue-saturation", {
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
+    });
+    const fiber = harness.fork(runBebopClient);
+    try {
+      await waitFor(() => closeCodes.includes(1008), "the inbound-queue close");
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      peer.stop();
     }
   }, 10_000);
 });

@@ -31,25 +31,25 @@ export class BebopSessionError extends Data.TaggedError("BebopSessionError")<{
   }
 }
 
-function decodeFrame(frame: string): BebopToSwordfishMessage {
+// Malformed or oversized peer traffic is an expected session failure, not a defect:
+// throwing these values would turn them into defects that supervision cannot retry.
+const decodeFrame = (frame: string): Effect.Effect<BebopToSwordfishMessage, BebopSessionError> => {
   if (new TextEncoder().encode(frame).byteLength > maxFrameLength) {
-    throw new BebopSessionError({ reason: "Bebop sent an oversized frame." });
+    return Effect.fail(new BebopSessionError({ reason: "Bebop sent an oversized frame." }));
   }
-  try {
-    return decodeBebopToSwordfishMessage(JSON.parse(frame) as unknown);
-  } catch (cause) {
-    throw new BebopSessionError({ reason: "Bebop sent an invalid protocol message.", cause });
-  }
-}
+  return Effect.try({
+    try: () => decodeBebopToSwordfishMessage(JSON.parse(frame) as unknown),
+    catch: (cause) => new BebopSessionError({ reason: "Bebop sent an invalid protocol message.", cause }),
+  });
+};
 
-function verifyIdentity(
+const verifyIdentity = (
   message: Exclude<BebopToSwordfishMessage, { readonly type: "protocol_error" }>,
   config: { readonly bountyId: string; readonly vmId: string },
-): void {
-  if ("bountyId" in message && (message.bountyId !== config.bountyId || message.vmId !== config.vmId)) {
-    throw new BebopSessionError({ reason: "Bebop sent a message for a different bounty or VM." });
-  }
-}
+): Effect.Effect<void, BebopSessionError> =>
+  "bountyId" in message && (message.bountyId !== config.bountyId || message.vmId !== config.vmId)
+    ? Effect.fail(new BebopSessionError({ reason: "Bebop sent a message for a different bounty or VM." }))
+    : Effect.void;
 
 const session = (onRegistered: Effect.Effect<void>) =>
   Effect.gen(function* () {
@@ -66,7 +66,7 @@ const session = (onRegistered: Effect.Effect<void>) =>
     const socketFiber = yield* Effect.forkScoped(
       socket.runString((frame) => {
         if (!Queue.offerUnsafe(inbound, frame)) {
-          return write(new Socket.CloseEvent(1013, "inbound queue full"));
+          return write(new Socket.CloseEvent(1008, "inbound queue full"));
         }
       }),
     );
@@ -92,7 +92,7 @@ const session = (onRegistered: Effect.Effect<void>) =>
       }),
     );
 
-    const first = decodeFrame(
+    const first = yield* decodeFrame(
       yield* Effect.raceFirst(Queue.take(inbound), socketEnded).pipe(
         Effect.timeoutOrElse({
           duration: config.reconnectMaximumDelay,
@@ -103,7 +103,7 @@ const session = (onRegistered: Effect.Effect<void>) =>
     if (first.type !== "registered") {
       return yield* Effect.fail(new BebopSessionError({ reason: "Bebop did not register this Swordfish connection." }));
     }
-    verifyIdentity(first, config);
+    yield* verifyIdentity(first, config);
     if (first.acknowledgedThrough > delivery.lastProduced) {
       return yield* Effect.fail(
         new BebopSessionError({ reason: "Bebop acknowledged an event Swordfish has not produced." }),
@@ -161,41 +161,43 @@ const session = (onRegistered: Effect.Effect<void>) =>
       | Socket.SocketError
       | SqlError.SqlError
       | WorkflowTransitionError
-    > => {
-      if (message.type === "protocol_error") {
-        return Effect.fail(
-          new BebopSessionError({ reason: `Bebop protocol error (${message.code}): ${message.message}` }),
-        );
-      }
-      verifyIdentity(message, config);
-      switch (message.type) {
-        case "registered":
-          return handleRegistered(message);
-        case "event_acknowledged":
-          return identity.now.pipe(
-            Effect.flatMap((at) => store.acknowledge(message.acknowledgedThrough, at)),
-            Effect.andThen(drain),
+    > =>
+      Effect.gen(function* () {
+        if (message.type === "protocol_error") {
+          return yield* Effect.fail(
+            new BebopSessionError({ reason: `Bebop protocol error (${message.code}): ${message.message}` }),
           );
-        case "command":
-          return workflow
-            .applyCommand(message)
-            .pipe(
-              Effect.flatMap((result) =>
-                send(result).pipe(
-                  Effect.andThen(
-                    message.command.type === "stop" && result.status === "completed" ? shutdown.request : Effect.void,
-                  ),
-                ),
-              ),
+        }
+        yield* verifyIdentity(message, config);
+        switch (message.type) {
+          case "registered":
+            return yield* handleRegistered(message);
+          case "event_acknowledged": {
+            const at = yield* identity.now;
+            yield* store.acknowledge(message.acknowledgedThrough, at);
+            yield* drain;
+            return;
+          }
+          case "command": {
+            const result = yield* workflow.applyCommand(message);
+            yield* send(result);
+            if (message.command.type === "stop" && result.status === "completed") {
+              yield* shutdown.request;
+            }
+            return;
+          }
+          default:
+            return yield* Effect.fail(
+              new BebopSessionError({ reason: `Bebop sent unsupported ${message.type} traffic.` }),
             );
-        default:
-          return Effect.fail(new BebopSessionError({ reason: `Bebop sent unsupported ${message.type} traffic.` }));
-      }
-    };
+        }
+      });
 
+    // Every session end is a typed failure: a clean close is a BebopSessionError, so the
+    // reconnect loop never has to distinguish success-with-retry from failure-with-retry.
     yield* Effect.raceFirst(
-      Effect.forever(Queue.take(inbound).pipe(Effect.map(decodeFrame), Effect.flatMap(handle))),
-      Fiber.join(socketFiber),
+      Effect.forever(Queue.take(inbound).pipe(Effect.flatMap(decodeFrame), Effect.flatMap(handle))),
+      socketEnded,
     );
   }).pipe(
     Effect.catchTags({
@@ -216,6 +218,11 @@ const session = (onRegistered: Effect.Effect<void>) =>
     Effect.scoped,
   );
 
+function describeSessionFailure(failure: BebopSessionError | Socket.SocketError): string {
+  if (failure._tag === "BebopSessionError") return failure.reason;
+  return failure.reason.message;
+}
+
 export const runBebopClient = Effect.gen(function* () {
   const config = yield* SwordfishConfiguration;
   const identity = yield* SwordfishIdentity;
@@ -224,6 +231,8 @@ export const runBebopClient = Effect.gen(function* () {
   const maximum = Duration.toMillis(config.reconnectMaximumDelay);
 
   for (;;) {
+    // `Effect.result` captures only typed failures; defects and interruption still
+    // terminate the daemon for its supervisor instead of being retried forever.
     const outcome = yield* Effect.result(
       session(Effect.sync(() => (delay = Duration.toMillis(config.reconnectMinimumDelay)))).pipe(
         Effect.provide(
@@ -234,23 +243,18 @@ export const runBebopClient = Effect.gen(function* () {
         ),
       ),
     );
-    if (
-      outcome._tag === "Failure" &&
-      outcome.failure._tag !== "BebopSessionError" &&
-      outcome.failure._tag !== "SocketError"
-    ) {
+    // A session only ends in a typed failure: a clean close is mapped to
+    // BebopSessionError inside `session`, so a success here is unreachable.
+    if (outcome._tag === "Success") continue;
+    if (outcome.failure._tag !== "BebopSessionError" && outcome.failure._tag !== "SocketError") {
       return yield* Effect.fail(outcome.failure);
     }
     const disconnectedAt = yield* identity.now;
     yield* store.setConnected(false, disconnectedAt);
     yield* Effect.logWarning("Bebop connection ended; reconnecting").pipe(
       Effect.annotateLogs("retry_delay_ms", String(delay)),
-      Effect.annotateLogs(
-        "reason",
-        outcome._tag === "Failure" && outcome.failure._tag === "BebopSessionError"
-          ? outcome.failure.reason
-          : "socket closed",
-      ),
+      Effect.annotateLogs("error_tag", outcome.failure._tag),
+      Effect.annotateLogs("reason", describeSessionFailure(outcome.failure)),
     );
     yield* Effect.sleep(Duration.millis(delay));
     delay = Math.min(maximum, delay * 2);

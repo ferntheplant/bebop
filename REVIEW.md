@@ -6,19 +6,21 @@ recovery, protocol, control, and implementation requirements in `SPEC.md`.
 ## Verdict
 
 The initial review found seven high-severity issues and concluded that Milestone 4 should not be marked complete yet.
-All seven high-severity findings are resolved in the current working tree. Medium- and low-severity findings remain open
-and were intentionally not addressed in this remediation pass.
+All seven high-severity findings are resolved in the current working tree. All five medium-severity findings and the
+single low-severity finding are also resolved in this remediation pass.
 
 The PR establishes a substantial core: real SQLite persistence, transactional event/outbox writes, a real outbound
 WebSocket client, a permission-checked Unix control socket, a socket-only `sf` CLI, packed artifacts, and tests over
 real SQLite/socket/process boundaries. `vp run ready` passes.
 
-The remaining issues are not cosmetic. Startup can resume a workflow whose local operation is explicitly uncertain,
-the reconnect loop absorbs defects that should crash under supervision, two daemons can share one SQLite authority by
-using different socket paths, and the implementation refuses the replay cursor behavior required by `SPEC.md`.
-Several Milestone 4 persistence surfaces also exist only as tables with no production write path. The tests are useful,
-but the strongest restart and reconciliation claims are inferred by composing separate tests rather than exercised
-end to end.
+The remediation pass closed every open finding. Control requests now produce a correlated `internal_error` response on
+expected typed failures instead of closing the connection silently. Shutdown is bounded by `SWORDFISH_SHUTDOWN_TIMEOUT`.
+The test harness acquires the database-derived authority lock before migrating SQLite, reconciliation coverage uses a
+real child process and worktree, the fake WebSocket peer contract-decodes every outbound frame, behavioral control
+coverage exercises takeover through approve-config, and the Effect package stack is coherently pinned to one beta.
+Transport logs carry the durable identity and the reconnect warning reports the typed session failure. The protocol
+error model was tightened: malformed and oversized peer traffic is a typed session failure (not a defect), every session
+end is a typed failure, and inbound-queue saturation uses a WebSocket close code Bun actually transmits.
 
 ## Findings
 
@@ -157,10 +159,14 @@ close and rebuild the layer or process, and assert both normalized status and re
 
 ### Medium Severity
 
-#### 8. Valid control requests can terminate without a protocol response
+#### 8. [Resolved] Valid control requests can terminate without a protocol response
 
-References: `apps/swordfish/src/control/server.ts:119-181,246-265`,
-`packages/contracts/src/sf-control.ts:176-214`, `PLAN.md:185-186,422`.
+Resolution: once a request is decoded, `connectionHandler` translates `SqlError` and `WorkflowTransitionError` into a
+schema-valid `internal_error` response on the request's correlation id. `CommandConflictError` continues to map to
+`correlation_conflict`. Defects still escape to supervision. A real-socket component test sends a `stop` command against
+a fake workflow service that fails `applyCommand` and asserts the correlated `internal_error` response.
+
+References: `apps/swordfish/src/control/server.ts:115-135,255-275`, `apps/swordfish/test/component/control.test.ts`.
 
 Only `CommandConflictError` is translated at the connection boundary. SQL failures, workflow transition failures, and
 other typed failures escape `connectionHandler`; the server closes the connection and `sf` reports a transport error.
@@ -169,19 +175,28 @@ The contract includes `internal_error`, but the server never emits it.
 Once a request is decoded and has a correlation ID, expected internal failures should produce a schema-valid,
 correlated error response. Defects may still terminate the handler/process according to the supervision policy.
 
-#### 9. `SWORDFISH_SHUTDOWN_TIMEOUT` is parsed but never used
+#### 9. [Resolved] `SWORDFISH_SHUTDOWN_TIMEOUT` is parsed but never used
 
-References: `apps/swordfish/src/config.ts:48`, `apps/swordfish/src/daemon.ts:18-40`, `PLAN.md:416`.
+Resolution: the daemon now manages its scope manually. After the main effect exits (success, failure, or interruption),
+scope finalizers run in a detached daemon fiber raced against `config.shutdownTimeout`. If finalization exceeds the
+timeout, the daemon logs a warning and abandons the remaining finalizers; `BunRuntime.runMain` exits once the main fiber
+completes.
+
+References: `apps/swordfish/src/daemon.ts:18-74`.
 
 Shutdown relies on unbounded scope finalization even though configuration requires a positive shutdown timeout. A stuck
 socket/server finalizer can exceed the supervisor's grace period, and the documented configuration value has no effect.
 Apply a bounded finalization policy or remove the unsupported setting.
 
-#### 10. Reconciliation and lock integration tests bypass the production conditions they claim to validate
+#### 10. [Resolved] Reconciliation and lock integration tests bypass the production conditions they claim to validate
 
-References: `apps/swordfish/test/component/support/harness.ts:74-87`,
-`apps/swordfish/test/component/control.test.ts:37-68`,
-`apps/swordfish/test/component/persistence.test.ts:117-134`, `PLAN.md:412,427-434`.
+Resolution: the test harness now acquires the database-derived authority lock before migrating or bootstrapping SQLite,
+matching production startup ordering. A component test starts a second harness over the same `databasePath` and asserts it
+fails at the lock. The reconciliation test spawns a real child process and creates a real worktree directory, restarts,
+and asserts surviving and vanished records are marked `needs_attention` and `unknown` respectively.
+
+References: `apps/swordfish/test/component/support/harness.ts`, `apps/swordfish/test/component/control.test.ts`,
+`apps/swordfish/test/component/persistence.test.ts`.
 
 The harness migrates and bootstraps SQLite before any control socket is acquired, unlike production startup. The
 second-daemon check starts another socket server in the same already-bootstrapped runtime rather than a second daemon
@@ -192,11 +207,16 @@ There is no integration test with a real child process, real temporary worktree/
 one authority. Those are the boundaries named by the milestone, and they are where startup ordering and fail-closed
 behavior matter.
 
-#### 11. Protocol and CLI coverage is materially narrower than the completion claims
+#### 11. [Resolved] Protocol and CLI coverage is materially narrower than the completion claims
 
-References: `apps/swordfish/test/component/protocol.test.ts:48-95`,
-`apps/swordfish/test/component/control.test.ts:37-89,114-135`,
-`test/integration/entrypoints.test.ts:204-216`, `PLAN.md:28,422-423`.
+Resolution: the fake WebSocket peer contract-decodes every outbound frame through `SwordfishToBebopMessage` and the tests
+assert registration, heartbeat, command-result identity, and cursor fields exactly. New protocol tests cover wrong
+identity, acknowledgement beyond the produced frontier, malformed frames, oversized frames, repeated registration, and
+queue saturation. New control tests exercise takeover, handback, extend, retry, and approve-config over a real socket,
+and reject a valid success response with the wrong correlation id or command. `PLAN.md` is updated to reflect the
+broadened coverage.
+
+References: `apps/swordfish/test/component/protocol.test.ts`, `apps/swordfish/test/component/control.test.ts`.
 
 The fake WebSocket peer parses outbound traffic as unchecked `Record<string, unknown>` and branches mostly on `type`.
 It does not contract-decode or exactly assert registration, heartbeat, or command-result identity and cursor fields.
@@ -210,9 +230,12 @@ no valid success response with the wrong command is tested.
 
 The existing tests are useful, but `PLAN.md` overstates what they establish.
 
-#### 12. The installed Effect packages are not actually on one compatible beta
+#### 12. [Resolved] The installed Effect packages are not actually on one compatible beta
 
-References: `package.json:43-50`, `bun.lock:230-236`.
+Resolution: the root `package.json` overrides `@effect/platform-node-shared` to `4.0.0-beta.101`, matching the catalog
+pins for `effect` and `@effect/platform-bun`. The lockfile resolves only `@effect/platform-node-shared@4.0.0-beta.101`.
+
+References: `package.json:26-28`, `bun.lock:144,233`.
 
 The catalog pins Effect and `@effect/platform-bun` to `4.0.0-beta.101`, but the lock resolves
 `@effect/platform-node-shared@4.0.0-beta.102`, whose peer dependency requires `effect@^4.0.0-beta.102`. Swordfish now
@@ -224,10 +247,13 @@ all Effect packages together.
 
 ### Low Severity
 
-#### 13. Structured transport logs omit durable identity and useful failure causes
+#### 13. [Resolved] Structured transport logs omit durable identity and useful failure causes
 
-References: `apps/swordfish/src/daemon.ts:32-35`, `apps/swordfish/src/protocol/client.ts:122-125,246-249`,
-`PLAN.md:194`, `SPEC.md:1553-1556`.
+Resolution: `Effect.annotateLogs({ bounty_id, vm_id })` wraps the entire daemon effect, so every log — including
+registration, heartbeat, and reconnect logs from forked transport fibers — inherits the durable identity. The reconnect
+warning logs the typed failure's tag and reason (and its cause for `BebopSessionError`) instead of just the outcome tag.
+
+References: `apps/swordfish/src/daemon.ts:43-46`, `apps/swordfish/src/protocol/client.ts:221-263`.
 
 `bounty_id` and `vm_id` annotate only the single startup log call, not the daemon or transport effect. Registration and
 reconnect logs therefore omit the required identity. The reconnect warning logs only whether the captured `Exit` was a
@@ -247,10 +273,28 @@ Most of the code uses APIs and patterns that are current in the pinned Effect 4 
 - SQL command application, event writes, snapshots, entity histories, command results, and outbox writes are grouped in
   transactions.
 
-The code is therefore broadly v4-native, not an Effect 3 compatibility implementation. It does not fully follow the
-error-model idiom, however: the `Effect.exit` reconnect loop deliberately erases the distinction between expected typed
-transport errors and defects. The cross-beta dependency resolution also needs correction before the stack can be called
-coherently pinned.
+The code is therefore broadly v4-native, not an Effect 3 compatibility implementation. The remediation pass closed the
+two error-model gaps the assessment identified:
+
+- **The reconnect loop no longer erases the defect boundary.** It uses `Effect.result`, retries only `BebopSessionError`
+  and `SocketError`, and propagates defects, SQL failures, and failed disconnect bookkeeping to process supervision.
+  `decodeFrame` and `verifyIdentity` now return `Effect.fail(BebopSessionError)` instead of throwing, so malformed or
+  oversized peer traffic is a typed session failure that reconnects rather than a defect that crashes the daemon. Every
+  session end is a typed failure — a clean socket close is mapped to `BebopSessionError` inside `session`, unifying the
+  reconnect loop so it never distinguishes "success-with-retry" from "failure-with-retry." The explicit `for (;;)` loop
+  is retained over `Effect.retry` because `Schedule.resetAfter` (needed to reset backoff after a healthy registration)
+  is not available in this v4 beta; the explicit loop with `Effect.result` already follows the error-model idiom.
+- **The cross-beta dependency resolution is corrected.** The root `package.json` overrides
+  `@effect/platform-node-shared` to `4.0.0-beta.101`, and the lockfile resolves only that version.
+
+A secondary fix emerged from the error-model work: inbound-queue saturation previously closed the WebSocket with code
+1013 ("Try Again Later"), which is reserved for intermediary proxies per RFC 6455 and is not transmitted by Bun's
+WebSocket client (it arrives as 1006 / abnormal). The close code is now 1008 (Policy Violation), a standard endpoint
+code the peer receives correctly.
+
+The daemon's scope finalization was also tightened to follow the v4 resource idiom: rather than relying on
+`Effect.scoped` with unbounded finalizers, the daemon manages its scope manually and races `Scope.close` against
+`SWORDFISH_SHUTDOWN_TIMEOUT` in a detached fiber, so a stuck socket close cannot outlive the supervisor's grace period.
 
 Direct `node:fs`, `node:net`, `process.kill`, and global clock/random calls are wrapped in effects or an app service, so
 they are not by themselves correctness findings here. Using Effect platform filesystem/path services would improve
@@ -259,23 +303,23 @@ small surface.
 
 ## Test Layer Assessment
 
-| Layer                      | What exists                                                                                                                                                                      | Assessment                                                                                                                                                                                                                                                                                                                                                                                     |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unit                       | 10 Swordfish reducer tests and 2 config tests; the PR adds one initial-announcement reducer case and one config assertion. Shared workflow tests cover the pure transition core. | Useful reducer coverage, but little new unit coverage for snapshot serialization, command hashing/results, cursor policy, or reconciliation decisions.                                                                                                                                                                                                                                         |
-| Component / contract-style | 5 SQLite tests, 3 Unix-socket tests, and 4 real-WebSocket/fake-peer tests.                                                                                                       | These use real SQLite files and real transports and are valuable. The high-severity recovery composition, nontrivial restoration, cursor regression, defect propagation, and fail-closed reconciliation gaps are now covered. Outbound contract decoding and corruption/contention remain missing. The WebSocket cases fit the plan's fake-peer contract layer as much as the component layer. |
-| Integration / process      | Swordfish source-process checks for CLI/config failure plus one packed SIGKILL/restart test.                                                                                     | Real processes are exercised, but no test combines process restart with peer-observed replay, no two-daemon authority race is tested, and no real child/worktree reconciliation fixture exists. There is no Bebop-Swordfish end-to-end test, appropriately deferred to Milestone 5.                                                                                                            |
-| Artifact smoke             | `apps/swordfish/scripts/smoke.ts` starts packed daemon/CLI artifacts against a fresh SQLite database, calls packed status, and stops through the packed CLI.                     | Useful proof that bundled migration loading and basic artifacts work. It is a happy-path smoke, not recovery or integration coverage. The CLI helper has no timeout, so a hung packed CLI can hang `ready`.                                                                                                                                                                                    |
+| Layer                      | What exists                                                                                                                                                                      | Assessment                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit                       | 10 Swordfish reducer tests and 2 config tests; the PR adds one initial-announcement reducer case and one config assertion. Shared workflow tests cover the pure transition core. | Useful reducer coverage, but little new unit coverage for snapshot serialization, command hashing/results, cursor policy, or reconciliation decisions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Component / contract-style | 5 SQLite tests, 5 Unix-socket tests, and 8 real-WebSocket/fake-peer tests.                                                                                                       | These use real SQLite files and real transports and are valuable. The high-severity recovery composition, nontrivial restoration, cursor regression, defect propagation, and fail-closed reconciliation gaps are covered. Outbound contract decoding is now exercised: the fake peer decodes every frame through `SwordfishToBebopMessage` and asserts identity, cursor, and correlation fields exactly. New robustness tests cover wrong identity, acknowledgement ahead, malformed/oversized/repeated-registration frames, and queue saturation. Behavioral control coverage exercises takeover, handback, extend, retry, and approve-config over a real socket, rejects a valid success response with the wrong correlation or command, proves a correlated `internal_error` on internal failures, and refuses a second runtime over the same SQLite authority. Reconciliation coverage uses a real child process and a real worktree directory. |
+| Integration / process      | Swordfish source-process checks for CLI/config failure plus one packed SIGKILL/restart test.                                                                                     | Real processes are exercised. The packed SIGKILL/restart test now observes replay at a real fake WebSocket peer, and a competing daemon with another control path fails at the authority lock. No Bebop-Swordfish end-to-end test exists, appropriately deferred to Milestone 5.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Artifact smoke             | `apps/swordfish/scripts/smoke.ts` starts packed daemon/CLI artifacts against a fresh SQLite database, calls packed status, and stops through the packed CLI.                     | Useful proof that bundled migration loading and basic artifacts work. It is a happy-path smoke, not recovery or integration coverage. The CLI helper has no timeout, so a hung packed CLI can hang `ready`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
-The test suite is not superficial: it exercises real boundaries and catches meaningful regressions. The issue is that its
-strongest guarantees concern behavior across multiple boundaries, while the suite generally tests each boundary in
-isolation.
+The test suite is not superficial: it exercises real boundaries and catches meaningful regressions. The strongest
+guarantees still concern behavior across multiple boundaries, while the suite generally tests each boundary in isolation,
+but the remediation pass broadened both the contract-decoded component coverage and the process-level recovery
+composition.
 
 ## Validation Performed
 
-- `vp install`: passed with no changes.
-- `git diff --check origin/main...HEAD`: passed.
+- `vp install`: passed (lockfile updated to pin `@effect/platform-node-shared` to beta.101).
 - `vp run ready`: passed.
-- Unit/component run: 234 passed, 58 skipped; all Swordfish tests ran.
+- Unit/component run: 242 passed, 58 skipped; all Swordfish tests ran (33 Swordfish tests across 6 files).
 - Integration run: 8 passed, 2 skipped; all Swordfish process tests ran.
 - Swordfish packed artifact smoke: passed.
 - Formatting, linting, and type checking: passed with no warnings or errors.

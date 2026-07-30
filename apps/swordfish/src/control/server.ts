@@ -121,6 +121,17 @@ function responseError(request: SfControlRequest, code: SfControlErrorCode, mess
   };
 }
 
+function internalErrorResponse(request: SfControlRequest, kind: string, error: unknown) {
+  return Effect.logWarning(`Swordfish control request failed with a ${kind}.`).pipe(
+    Effect.annotateLogs("error_tag", error instanceof Error ? error.name : String(error)),
+    Effect.annotateLogs("error_message", error instanceof Error ? error.message : String(error)),
+    Effect.as({
+      response: responseError(request, "internal_error", "Swordfish could not apply the request; see daemon logs."),
+      stop: false,
+    }),
+  );
+}
+
 const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
   const config = yield* SwordfishConfiguration;
   const identity = yield* SwordfishIdentity;
@@ -259,6 +270,14 @@ const connectionHandler = Effect.fnUntraced(function* (socket: Socket.Socket) {
           stop: false,
         }),
       ),
+      // Once a request is decoded it owns a correlation id: every expected internal
+      // failure becomes a schema-valid error response on that id rather than a closed
+      // connection. Defects still escape to the connection fiber's supervision.
+      Effect.catchTags({
+        SqlError: (error) => internalErrorResponse(decoded.success, "durable authority failure", error),
+        WorkflowTransitionError: (error) =>
+          internalErrorResponse(decoded.success, "workflow transition failure", error),
+      }),
     );
     response = handled.response;
     stop = handled.stop;

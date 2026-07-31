@@ -1,4 +1,4 @@
-// The `bebop-api` container process (SPEC section 24).
+// The `bebop-api` container process (`docs/capabilities/15-deployment-and-operation.md`).
 //
 // It serves the public API and accepts Swordfish connections on one port, runs migrations
 // before listening, reconciles inherited connection freshness, and shuts down on a signal
@@ -63,7 +63,7 @@ export const runBebopApi = Effect.gen(function* () {
   // The server runs for the life of this scope; `never` holds the scope open until the
   // runtime interrupts it on SIGINT or SIGTERM, at which point the listener closes through
   // its own finalizer. A clean shutdown surfaces as an interrupt rather than a failure
-  // (`spikes/effect-runtime`, finding 5), which is why nothing here treats it as an error.
+  // (`prototypes/effect-runtime`, finding 5), which is why nothing here treats it as an error.
   yield* Effect.suspend(() => Effect.never.pipe(Effect.provide(ServerLayer)));
 }).pipe(
   Effect.provide(LocalLifecycleProviderLayer),

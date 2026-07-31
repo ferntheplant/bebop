@@ -250,7 +250,7 @@ export const CreateTokenRequest = Schema.Struct({ name: ApiTokenName });
 /**
  * The only response that carries the secret.
  *
- * Bebop stores tokens hashed (SPEC section 17.4), so the plaintext exists exactly once, in
+ * Bebop stores tokens hashed (`docs/capabilities/14-the-security-model.md`), so the plaintext exists exactly once, in
  * this response. It is `Redacted` so it cannot reach a log through an accidental
  * interpolation, and unlike the process-configuration secrets it does not set
  * `disallowEncode` — this response body *is* its transport boundary. `RedactedFromValue`
@@ -283,7 +283,7 @@ export const RevokeTokenEndpoint = HttpApiEndpoint.delete("revokeToken", "/api/t
   error: tokenErrors,
 });
 
-// Health carries no bearer middleware. SPEC section 24 puts health-checked blue/green
+// Health carries no bearer middleware. The deployment puts health-checked blue/green
 // containers behind Caddy, and a liveness probe that needs a credential means baking a
 // token into the image or the compose file — a durable secret created solely to ask a
 // process whether it is alive. The route exposes only liveness; every route that can read

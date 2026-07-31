@@ -1,4 +1,4 @@
-// The `bebop-worker` container process (SPEC section 24).
+// The `bebop-worker` container process (`docs/capabilities/15-deployment-and-operation.md`).
 //
 // Same image, same repositories, different responsibilities: it works the durable job queue
 // and sweeps connection freshness. It has no listener and serves no traffic, so an operator

@@ -1,9 +1,10 @@
-// The durable command queue (SPEC section 18.1, 18.4).
+// The durable command queue ("Swordfish connects outbound only" (ADR 0013), and
+// `docs/capabilities/13-recovery-and-reliability.md` for the offline case).
 //
 // A command survives Swordfish being offline: Bebop writes the row, and the gateway drains
 // undelivered rows whenever a connection exists. `command_id` is the deduplication key on
-// both sides, so redelivering after an uncertain disconnect is safe — SPEC section 18.3 makes
-// deduplication Bebop's job, and Milestone 4 makes it Swordfish's too.
+// both sides, so redelivering after an uncertain disconnect is safe — "Replay fails closed" (ADR 0029) makes
+// deduplication Bebop's job, and Swordfish deduplicates on its side too.
 
 import type { BebopCommand, BountyId, CommandId, CommandResultStatus, Timestamp } from "@bebop/contracts";
 import { BebopCommand as BebopCommandSchema, CommandId as CommandIdSchema } from "@bebop/contracts";
@@ -27,7 +28,7 @@ import {
  * The life of a queued command.
  *
  * `queued` and `delivered` are Bebop's observations; the rest are what Swordfish reported
- * back on `command_result` (SPEC section 18.1). Keeping delivery separate from the reported
+ * back on `command_result` ("Swordfish connects outbound only" (ADR 0013)). Keeping delivery separate from the reported
  * status is what lets a redelivery after a disconnect be distinguished from a command that
  * was never sent.
  */
@@ -69,8 +70,8 @@ export interface CommandRepositoryService {
    * Queues a command, or returns the existing row for a repeated `commandId`.
    *
    * Enqueuing is idempotent because a retried API request must not turn into a second
-   * takeover or a second stop (PLAN Milestone 5: "duplicate commands do not repeat takeover,
-   * stop, or retry behavior").
+   * takeover or a second stop: duplicate commands must not repeat takeover, stop, or retry
+   * behaviour.
    */
   readonly enqueue: (options: {
     readonly commandId: CommandId;

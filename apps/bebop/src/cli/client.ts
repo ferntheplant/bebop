@@ -1,6 +1,6 @@
 // The CLI's connection to the API.
 //
-// SPEC section 17.1: "the CLI is a thin wrapper over the generated client with zero CLI-only
+// "API first, with a thin CLI" (ADR 0006): "the CLI is a thin wrapper over the generated client with zero CLI-only
 // logic". The client here is generated from `BebopHttpApi` — the same declaration the server
 // serves and the OpenAPI document is produced from — so a request the CLI can make is by
 // construction a request any client can make.

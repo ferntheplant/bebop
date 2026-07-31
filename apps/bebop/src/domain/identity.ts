@@ -1,8 +1,8 @@
 // Identifier and secret generation, behind a service.
 //
-// PLAN section 4: "Time, IDs, process execution, and external clients are Effect services so
+// `AGENTS.md` architectural rules: "Time, IDs, process execution, and external clients are Effect services so
 // tests can replace them." Bounty IDs appear in branch names (`bounty/<bounty-id>`,
-// SPEC section 2) and in every log line, so a test that cannot fix them cannot assert on
+// "The bounty primitive" (ADR 0001)) and in every log line, so a test that cannot fix them cannot assert on
 // either.
 
 import type { ApiTokenId, ApiTokenSecret, BountyId, CommandId, ConnectionId, Timestamp } from "@bebop/contracts";

@@ -1,8 +1,7 @@
 // Cursor replay followed by live delivery, with no history/live race.
 //
-// PLAN Milestone 3's exit criterion is "SSE replay delivers each stored event once in
-// sequence before switching to live delivery". The property is structural here rather than
-// tested-into-existence:
+// SSE replay must deliver each stored event once, in sequence, before switching to live
+// delivery. The property is structural here rather than tested-into-existence:
 //
 // - there is exactly one source of truth for what a client has seen — a cursor that starts
 //   at `Last-Event-ID` and advances only as events are emitted;
@@ -12,7 +11,7 @@
 //   emits always come from a read after the current cursor. A notification that arrives
 //   early, twice, or not at all cannot produce a duplicate, a gap, or an out-of-order event.
 //
-// `spikes/effect-runtime` (S1–S3) proved the transport half of this on the pinned Bun; what
+// `prototypes/effect-runtime` (S1–S3) proved the transport half of this on the pinned Bun; what
 // it did not cover — a live subscription rather than a finite range — is what this module is.
 
 import type { BountyEventCursorString, BountyEventEnvelope, BountyId } from "@bebop/contracts";

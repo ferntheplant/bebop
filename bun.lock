@@ -99,8 +99,8 @@
         "vite-plus": "catalog:",
       },
     },
-    "spikes/effect-runtime": {
-      "name": "@bebop/spike-effect-runtime",
+    "prototypes/effect-runtime": {
+      "name": "@bebop/prototype-effect-runtime",
       "version": "0.0.0",
       "devDependencies": {
         "@effect/platform-bun": "catalog:",
@@ -109,8 +109,8 @@
         "vite-plus": "catalog:",
       },
     },
-    "spikes/lease-guard": {
-      "name": "@bebop/spike-lease-guard",
+    "prototypes/lease-guard": {
+      "name": "@bebop/prototype-lease-guard",
       "version": "0.0.0",
       "devDependencies": {
         "@opencode-ai/plugin": "catalog:",
@@ -119,8 +119,8 @@
         "vite-plus": "catalog:",
       },
     },
-    "spikes/persistence": {
-      "name": "@bebop/spike-persistence",
+    "prototypes/persistence": {
+      "name": "@bebop/prototype-persistence",
       "version": "0.0.0",
       "devDependencies": {
         "@effect/platform-bun": "catalog:",
@@ -131,8 +131,8 @@
         "vite-plus": "catalog:",
       },
     },
-    "spikes/tmux-input-lock": {
-      "name": "@bebop/spike-tmux-input-lock",
+    "prototypes/tmux-input-lock": {
+      "name": "@bebop/prototype-tmux-input-lock",
       "version": "0.0.0",
       "devDependencies": {
         "typescript": "catalog:",
@@ -172,15 +172,15 @@
 
     "@bebop/opencode-plugin": ["@bebop/opencode-plugin@workspace:apps/bebop-opencode-plugin"],
 
+    "@bebop/prototype-effect-runtime": ["@bebop/prototype-effect-runtime@workspace:prototypes/effect-runtime"],
+
+    "@bebop/prototype-lease-guard": ["@bebop/prototype-lease-guard@workspace:prototypes/lease-guard"],
+
+    "@bebop/prototype-persistence": ["@bebop/prototype-persistence@workspace:prototypes/persistence"],
+
+    "@bebop/prototype-tmux-input-lock": ["@bebop/prototype-tmux-input-lock@workspace:prototypes/tmux-input-lock"],
+
     "@bebop/server": ["@bebop/server@workspace:apps/bebop"],
-
-    "@bebop/spike-effect-runtime": ["@bebop/spike-effect-runtime@workspace:spikes/effect-runtime"],
-
-    "@bebop/spike-lease-guard": ["@bebop/spike-lease-guard@workspace:spikes/lease-guard"],
-
-    "@bebop/spike-persistence": ["@bebop/spike-persistence@workspace:spikes/persistence"],
-
-    "@bebop/spike-tmux-input-lock": ["@bebop/spike-tmux-input-lock@workspace:spikes/tmux-input-lock"],
 
     "@bebop/swordfish": ["@bebop/swordfish@workspace:apps/swordfish"],
 

@@ -1,7 +1,6 @@
 // A disposable Postgres for component tests.
 //
-// PLAN Milestone 3's exit criterion is "API component tests run against a real disposable
-// Postgres database" — real, because the things being tested are the things a fake would
+// Component tests run against a real disposable Postgres database — real, because the things being tested are the things a fake would
 // paper over: transactional idempotency, `FOR UPDATE SKIP LOCKED`, advisory locks, `jsonb`
 // round trips, and `bigint` coming back as a string.
 //

@@ -1,7 +1,7 @@
 // Reading values back out of Postgres.
 //
 // Two driver behaviours are load-bearing here and were both pinned down by
-// `spikes/persistence`:
+// `prototypes/persistence`:
 //
 // - `bigint` columns come back as JavaScript **strings** (PG5). `node-postgres` refuses to
 //   narrow `int8` to a double, which is why no digits are lost. Any schema written as

@@ -131,14 +131,14 @@ const GateCompletedEventBase = Schema.Struct({
  * Two rules are enforced here rather than left to the implementation:
  *
  * 1. **A failed gate must carry feedback.** A failure with no explanation cannot be
- *    returned to ein as a revision packet (SPEC section 12.8), so the schema refuses it.
+ *    returned to ein as a revision packet (`docs/capabilities/06-autonomous-implementation.md`), so the schema refuses it.
  *    A stage whose agent produced nothing usable says so with `kind: "unstructured"` and a
  *    reason — that is the detectable error, and it is not the same value as an empty
  *    findings list.
  * 2. **The feedback must match the gate.** Review findings cannot arrive on a QA gate.
  *
  * A passed gate may still carry feedback: non-blocking review findings ride along and are
- * summarised at ready time (SPEC section 12.6).
+ * summarised at ready time (`docs/capabilities/09-code-review.md`).
  */
 export const GateCompletedEvent = GateCompletedEventBase.pipe(
   Schema.check(

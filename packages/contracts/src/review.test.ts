@@ -15,7 +15,7 @@ const encodedFinding = {
 } as const;
 
 describe("ReviewFinding", () => {
-  test("decodes and re-encodes the SPEC shape", () => {
+  test("decodes and re-encodes the documented shape", () => {
     const finding = Schema.decodeUnknownSync(ReviewFinding)(encodedFinding);
 
     expect(Schema.encodeSync(ReviewFinding)(finding)).toEqual(encodedFinding);

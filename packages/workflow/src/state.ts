@@ -35,7 +35,7 @@ export interface ReadinessClaim {
  * The fields whose interpretation is identical in Swordfish and in Bebop's projection.
  *
  * `stage` is nullable here because Bebop's projection starts before it has heard anything
- * from a Swordfish, while Swordfish itself starts at `interactive` (SPEC section 12.1).
+ * from a Swordfish, while Swordfish itself starts at `interactive` (`docs/capabilities/06-autonomous-implementation.md`).
  * Each app narrows the field in its own state type; the core never writes null to it.
  */
 export interface WorkflowCoreState {

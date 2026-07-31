@@ -1,4 +1,4 @@
-# Stateful local dependencies only (PLAN section 2).
+# Stateful local dependencies only (see `AGENTS.md`).
 #
 # Bebop itself runs from `vp run dev` or a packed artifact; this file exists so component
 # tests have a real Postgres to talk to without one being installed on the machine.

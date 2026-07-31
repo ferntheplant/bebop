@@ -1,4 +1,4 @@
-// Bebop's Postgres schema (SPEC section 22.1).
+// Bebop's Postgres schema ("Postgres for bebop, SQLite for Swordfish" (ADR 0008)).
 //
 // Migrations are a static record rather than a directory read at runtime.
 // `Migrator.fromFileSystem` loads each migration by dynamic import from a path, which does
@@ -14,14 +14,14 @@ import { Migrator, SqlClient } from "effect/unstable/sql";
 const initial = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
-  // Bounty identity and the lifecycle state Bebop is authoritative for (SPEC section 9.1).
+  // Bounty identity and the lifecycle state Bebop is authoritative for ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
   //
-  // `status` is deliberately absent: the compact status in SPEC section 17.5 is derived from
+  // `status` is deliberately absent: the compact status in `docs/capabilities/01-bounty-lifecycle.md` is derived from
   // `lifecycle_state` plus the Swordfish stage, and storing a derived value invites the two
   // to disagree after a projection update that forgets to rewrite it.
   //
   // `swordfish_token_hash` is nullable because the bounty-scoped token is minted when the VM
-  // is created and injected at its bootstrap (SPEC section 18.2). A bounty that has a record
+  // is created and injected at its bootstrap ("Swordfish tokens are bounty-scoped" (ADR 0014)). A bounty that has a record
   // but no computer yet has nothing to authenticate.
   yield* sql`
     CREATE TABLE bounties (
@@ -66,7 +66,7 @@ const initial = Effect.gen(function* () {
     )
   `;
 
-  // The client-visible event log behind `GET /api/bounties/:id/events` (SPEC section 17.2).
+  // The client-visible event log behind `GET /api/bounties/:id/events` (`docs/capabilities/01-bounty-lifecycle.md`).
   // The cursor is per bounty and dense, which is what makes `Last-Event-ID` replay exact.
   yield* sql`
     CREATE TABLE bounty_events (
@@ -82,7 +82,7 @@ const initial = Effect.gen(function* () {
   // boundary.
   //
   // The fingerprint has its own column because `jsonb` does not preserve key order (proved
-  // by `spikes/persistence`, PG4b). Recomputing it from `payload` on read would produce a
+  // by `prototypes/persistence`, PG4b). Recomputing it from `payload` on read would produce a
   // different hash than the one taken over the wire, and every replay would then look like a
   // conflicting replay.
   yield* sql`
@@ -98,7 +98,7 @@ const initial = Effect.gen(function* () {
     )
   `;
 
-  // The durable projection (SPEC section 9.3). `snapshot` carries the workflow core; the
+  // The durable projection ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)). `snapshot` carries the workflow core; the
   // columns beside it are the fields Bebop queries, sweeps, or lists on.
   yield* sql`
     CREATE TABLE swordfish_projections (
@@ -119,7 +119,7 @@ const initial = Effect.gen(function* () {
       ON swordfish_projections (freshness, last_observed_at)
   `;
 
-  // The durable command queue (SPEC section 18.1). A command survives Swordfish being
+  // The durable command queue ("Swordfish connects outbound only" (ADR 0013)). A command survives Swordfish being
   // offline and is delivered on reconnect; `command_id` is the deduplication key on both
   // sides.
   yield* sql`
@@ -140,7 +140,7 @@ const initial = Effect.gen(function* () {
       WHERE status IN ('queued', 'delivered')
   `;
 
-  // SHA-pinned privileged-path approvals (SPEC section 13.3).
+  // SHA-pinned privileged-path approvals ("`.bebop/**` is permanently privileged" (ADR 0011)).
   yield* sql`
     CREATE TABLE config_approvals (
       bounty_id     text NOT NULL REFERENCES bounties (bounty_id) ON DELETE CASCADE,
@@ -150,7 +150,7 @@ const initial = Effect.gen(function* () {
     )
   `;
 
-  // Idempotency keys (SPEC section 22.1). `request_fingerprint` is what makes a reused key
+  // Idempotency keys ("Postgres for bebop, SQLite for Swordfish" (ADR 0008)). `request_fingerprint` is what makes a reused key
   // carrying a different request a conflict rather than a silent alias for the first one.
   yield* sql`
     CREATE TABLE idempotency_keys (
@@ -163,7 +163,7 @@ const initial = Effect.gen(function* () {
     )
   `;
 
-  // Durable background work for `bebop-worker` (SPEC section 25: "durable job rows in
+  // Durable background work for `bebop-worker` (`docs/capabilities/15-deployment-and-operation.md`: "durable job rows in
   // Postgres worked by Effect fibers"). `dedupe_key` is what stops one idempotent create
   // from enqueuing two provisioning runs.
   yield* sql`

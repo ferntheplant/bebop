@@ -1,8 +1,8 @@
-// Durable background work for `bebop-worker` (SPEC section 25).
+// Durable background work for `bebop-worker` (`docs/capabilities/15-deployment-and-operation.md`).
 //
 // The API never provisions or destroys inline. It writes durable intent — a job row, in the
 // same transaction as the state change that justified it — and the worker performs the
-// externally visible operation. That ordering is PLAN section 4's rule that "Bebop and
+// externally visible operation. That ordering is `AGENTS.md`'s rule that "Bebop and
 // Swordfish write durable intent before performing externally visible side effects", and it
 // is what makes a crash mid-provision recoverable rather than a lost VM.
 //

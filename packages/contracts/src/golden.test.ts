@@ -14,7 +14,7 @@ import protocolV1Encoding from "./golden/protocol-v1-encoding.json" with { type:
 // This fixture is a catalogue of every message SHAPE, not a replayable workflow: its
 // events are ordered to cover the union, and that ordering is deliberately not a legal
 // sequence for the workflow reducer. The name says so, because a golden transcript that
-// looks replayable but is not is a trap for whoever wires up Milestone 5.
+// looks replayable but is not is a trap for whoever wires up the real protocol.
 //
 // The legal transcript lives in `apps/swordfish/test/workflow/golden-replay-v1.json` and is
 // replayed there against the real reducer.

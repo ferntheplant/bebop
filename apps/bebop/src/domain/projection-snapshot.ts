@@ -1,9 +1,9 @@
-// The durable encoding of Bebop's Swordfish projection (SPEC section 9.3).
+// The durable encoding of Bebop's Swordfish projection ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
 //
 // The projection is a decoded domain value: it holds `DateTime.Utc` timestamps, branded
 // identifiers, and a nested effective spec. None of that survives `JSON.stringify` on its
 // own, so the snapshot has a schema and is decoded at the persistence boundary like every
-// other external representation (PLAN section 4).
+// other external representation (see `AGENTS.md`, architectural rules).
 //
 // Rebuilding the projection by replaying `swordfish_events` would also work, and is the
 // repair path if a snapshot is ever unreadable. It is not the load path: a long-running

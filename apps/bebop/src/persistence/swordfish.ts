@@ -1,4 +1,4 @@
-// The durable Swordfish projection and the accepted-event log behind it (SPEC section 9.3).
+// The durable Swordfish projection and the accepted-event log behind it ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
 //
 // Two things are persisted, and they answer different questions:
 //
@@ -72,7 +72,7 @@ export interface AcceptedSwordfishEvent {
   /**
    * Computed once, over the decoded message, at the moment it arrived.
    *
-   * Never recomputed from `payload`: `jsonb` reorders keys (`spikes/persistence`, PG4b), so
+   * Never recomputed from `payload`: `jsonb` reorders keys (`prototypes/persistence`, PG4b), so
    * a re-derived fingerprint would differ from the original and make every legitimate replay
    * look like a conflict.
    */

@@ -27,7 +27,7 @@ const encodedSpec = {
 } as const;
 
 describe("EffectiveSpec", () => {
-  test("decodes and re-encodes the SPEC shape", () => {
+  test("decodes and re-encodes the documented shape", () => {
     const spec = Schema.decodeUnknownSync(EffectiveSpec)(encodedSpec);
 
     expect(DateTime.isUtc(spec.createdAt)).toBe(true);

@@ -31,7 +31,7 @@ describe("stage feedback", () => {
     const decoded = Schema.decodeUnknownSync(ValidatorRun)(validatorRun);
     expect(Schema.encodeSync(ValidatorRun)(decoded)).toEqual(validatorRun);
 
-    // A timeout is its own outcome rather than an exit code, because Milestone 6 has to
+    // A timeout is its own outcome rather than an exit code, because a hook timing out has to
     // kill the process group and consume an attempt budget for it.
     const timedOut = { ...validatorRun, outcome: { kind: "timed_out", afterMilliseconds: 600_000 } } as const;
     expect(Schema.encodeSync(ValidatorRun)(Schema.decodeUnknownSync(ValidatorRun)(timedOut))).toEqual(timedOut);

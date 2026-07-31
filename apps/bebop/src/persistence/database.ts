@@ -1,7 +1,7 @@
 // The Postgres connection and its migration step.
 //
 // Both entrypoints provide this layer. Migrations run at startup from the packed schema
-// record (SPEC section 24: "backward-compatible database migrations"), and both processes
+// record (`docs/capabilities/15-deployment-and-operation.md`: "backward-compatible database migrations"), and both processes
 // may attempt them concurrently — the migrator takes an ACCESS EXCLUSIVE lock and treats a
 // losing racer as already-running rather than as an error.
 

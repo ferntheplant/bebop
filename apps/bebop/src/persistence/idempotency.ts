@@ -1,7 +1,7 @@
-// Idempotency keys (SPEC section 22.1).
+// Idempotency keys ("Postgres for bebop, SQLite for Swordfish" (ADR 0008)).
 //
-// PLAN Milestone 3's exit criterion is that "creating the same bounty request with one
-// idempotency key cannot create duplicate lifecycle work". Two things make that true:
+// Creating the same bounty request with one idempotency key must not create duplicate
+// lifecycle work. Two things make that true:
 //
 // - the key row is inserted in the **same transaction** as the bounty and its provisioning
 //   job, so a crash between them is impossible; and

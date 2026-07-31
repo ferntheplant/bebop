@@ -2,7 +2,7 @@
 //
 // Every handler is a translation: decoding is already done by the contract, so what is left
 // is calling the service and mapping its typed failure onto the typed error the endpoint
-// declares. Nothing here decides policy — SPEC section 4.3 requires that a machine client can
+// declares. Nothing here decides policy — `ABSTRACT.md` §3.3 requires that a machine client can
 // do everything the CLI can, and the way to keep that true is for both to go through the
 // service operations rather than for the handlers to hold logic of their own.
 
@@ -40,7 +40,7 @@ import {
  * Queues a Bebop command for Swordfish.
  *
  * The command is durable before this returns, so a Swordfish that is offline — or a Bebop
- * that restarts a second later — still delivers it (SPEC section 18.4).
+ * that restarts a second later — still delivers it (`docs/capabilities/13-recovery-and-reliability.md`).
  */
 const enqueueCommand = Effect.fnUntraced(function* (options: {
   readonly bountyId: BountyId;
@@ -123,7 +123,8 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
     )
 
     .handle("getBountyEvidence", ({ params }) =>
-      // Evidence ingestion lands in Milestone 10. An empty bundle list is the honest answer
+      // Evidence ingestion is not built (`docs/capabilities/11-evidence.md`). An empty bundle
+      // list is the honest answer
       // for a bounty that has uploaded none, which today is every bounty; the route exists so
       // the contract is whole and clients can be written against it now.
       requireBounty(params.bountyId).pipe(
@@ -156,8 +157,9 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
     )
 
     .handle("mergeBounty", ({ params }) =>
-      // Merge authority is Bebop's (SPEC section 9.1) and needs GitHub, which Milestone 3
-      // deliberately does not have. Refusing is the only honest answer: a success here would
+      // Merge authority is Bebop's ("Bebop owns authority, Swordfish owns the loop", ADR 0002)
+      // and needs GitHub, which this Bebop deliberately does not have
+      // (`docs/capabilities/12-pull-request-and-merge.md`). Refusing is the only honest answer: a success here would
       // claim an external side effect that never happened.
       requireBounty(params.bountyId).pipe(
         Effect.flatMap(() =>

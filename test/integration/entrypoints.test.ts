@@ -2,7 +2,7 @@
 //
 // This is the layer that catches a whole class of mistake nothing else does: a missing
 // platform layer, a top-level import that only resolves under one runtime, a service that is
-// never provided. `spikes/effect-runtime` finding 4 is the archetype — without `BunStdio`,
+// never provided. `prototypes/effect-runtime` finding 4 is the archetype — without `BunStdio`,
 // every CLI invocation fails at startup including `--help`, and only running the binary
 // notices.
 

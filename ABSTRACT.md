@@ -12,8 +12,8 @@ This is the north star: what Bebop is, why it exists, what it must and must not 
 It is deliberately short. The rest of the documentation hangs off it:
 
 - the vocabulary it uses is defined in [`CONTEXT.md`](./CONTEXT.md);
+- what each capability delivers and where it stands is in [`docs/capabilities/`](./docs/capabilities/);
 - the decisions behind it are in [`docs/adr/`](./docs/adr/);
-- the area-level design detail is in [`docs/design/SYSTEM.md`](./docs/design/SYSTEM.md);
 - the route from here to the MVP is charted in [`.scratch/bebop-mvp/map.md`](./.scratch/bebop-mvp/map.md).
 
 ---

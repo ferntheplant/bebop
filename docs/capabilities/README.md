@@ -46,5 +46,6 @@ can expect and points at the decisions that shaped it — it does not restate th
 that is really a decision, it belongs in [`docs/adr/`](../adr/); a term belongs in `CONTEXT.md`; an open question
 belongs on [the map](../../.scratch/bebop-mvp/map.md).
 
-This directory is also where [`docs/design/SYSTEM.md`](../design/SYSTEM.md) drains to. When work touches an area,
-that area's descriptive content moves here and the `SYSTEM.md` section becomes a pointer.
+These files carry provisional answers as well as settled ones — a default nobody has reviewed is still the
+starting position a session has to react to. Where a value is provisional and its question is live, the
+capability says so and links the ticket.

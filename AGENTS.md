@@ -5,21 +5,20 @@ Bebop moves a trusted local coding-agent workflow onto remote computers. Read
 
 ## Where things live
 
-| If you need                              | Read                                                                  |
-| ---------------------------------------- | --------------------------------------------------------------------- |
-| What Bebop is and what "done" looks like | [`ABSTRACT.md`](./ABSTRACT.md)                                        |
-| What the system does for its user        | [`docs/capabilities/`](./docs/capabilities/)                          |
-| What a word means                        | [`CONTEXT.md`](./CONTEXT.md)                                          |
-| Why something is the way it is           | [`docs/adr/`](./docs/adr/)                                            |
-| Why something that looks broken isn't    | [`docs/gotchas.md`](./docs/gotchas.md)                                |
-| Area-level design detail                 | [`docs/design/SYSTEM.md`](./docs/design/SYSTEM.md) — descriptive only |
-| What is still undecided                  | [`.scratch/bebop-mvp/map.md`](./.scratch/bebop-mvp/map.md)            |
-| What a PR is meant to build              | `.scratch/<feature>/brief.md`, alongside that effort's tickets        |
-| How to run and test things               | [`README.md`](./README.md), [`docs/testing.md`](./docs/testing.md)    |
-| How the issue tracker works              | [`.agents/ISSUE-TRACKER.md`](./.agents/ISSUE-TRACKER.md)              |
+| If you need                              | Read                                                               |
+| ---------------------------------------- | ------------------------------------------------------------------ |
+| What Bebop is and what "done" looks like | [`ABSTRACT.md`](./ABSTRACT.md)                                     |
+| What the system does for its user        | [`docs/capabilities/`](./docs/capabilities/)                       |
+| What a word means                        | [`CONTEXT.md`](./CONTEXT.md)                                       |
+| Why something is the way it is           | [`docs/adr/`](./docs/adr/)                                         |
+| Why something that looks broken isn't    | [`docs/gotchas.md`](./docs/gotchas.md)                             |
+| What is still undecided                  | [`.scratch/bebop-mvp/map.md`](./.scratch/bebop-mvp/map.md)         |
+| What a PR is meant to build              | `.scratch/<feature>/brief.md`, alongside that effort's tickets     |
+| How to run and test things               | [`README.md`](./README.md), [`docs/testing.md`](./docs/testing.md) |
+| How the issue tracker works              | [`.agents/ISSUE-TRACKER.md`](./.agents/ISSUE-TRACKER.md)           |
 
-New writing goes to one of those homes from the start. `docs/design/SYSTEM.md` is a quarry being mined, not a
-place to add to.
+New writing goes to one of those homes from the start. Nothing lives in two of them: a capability file says what
+a user can expect and links the decision behind it rather than restating it.
 
 ## Vocabulary
 

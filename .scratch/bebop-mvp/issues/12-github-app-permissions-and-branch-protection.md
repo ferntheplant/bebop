@@ -16,7 +16,7 @@ Establish:
 - how the VM's push credential is scoped, and whether it can be restricted to `bounty/*` refs; if it cannot,
   what branch protection has to do instead;
 - what protected-branch configuration the target repository must carry for
-  [ADR 0017](../../../docs/adr/0017-squash-only-merges-with-crew-authorship.md) to hold, and whether that can
+  [Squash-only merges (ADR 0017)](../../../docs/adr/0017-squash-only-merges.md) to hold, and whether that can
   be verified by bebop rather than assumed;
 - how check polling behaves against rate limits at the fleet sizes this is meant to reach;
 - what the App sees on a repository it has not been installed on, so the failure is a clear refusal rather than

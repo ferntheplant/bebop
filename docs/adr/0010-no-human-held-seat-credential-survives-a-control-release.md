@@ -6,6 +6,4 @@ Without rotation, one takeover would grant permanent shell-route access to that 
 
 ## Consequences
 
-Rotation restarts the seat's OpenCode server, because `OPENCODE_SERVER_PASSWORD` is read at process start. Sessions survive in the seat's `OPENCODE_DB`, but Swordfish must re-attach the seat panes and re-establish its event subscription, and must reconcile that restart like any other externally visible operation.
-
-Rotation is conditional: if no credential was issued during a control episode there is nothing to revoke, which keeps the common path — steering through the tmux pane, then handing back — free of a restart.
+Rotation restarts the seat's OpenCode server, because `OPENCODE_SERVER_PASSWORD` is read at process start — so Swordfish must re-attach the seat panes, re-establish its event subscription, and reconcile that restart like any other externally visible operation. Rotation is therefore conditional: if no credential was issued during a control episode there is nothing to revoke, which keeps the common path — steering through the tmux pane, then handing back — free of a restart.

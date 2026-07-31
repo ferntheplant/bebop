@@ -10,7 +10,7 @@ Names come from the ship, crew, and world of _Cowboy Bebop_, chosen deliberately
 The whole system, and the name of this repository.
 
 **bebop**:
-The always-on provisioner service and its CLI — the ship. It creates and destroys bounty VMs, owns GitHub authority, holds the canonical bounty API, and is the only actor that may merge.
+The always-on provisioner service and its CLI — the ship. It owns bounty lifecycle, all authority reaching outside a sandbox, and the canonical bounty API, and is the only actor that may merge.
 _Avoid_: master (says where it runs, not what it is), server, control plane.
 
 **Swordfish**:
@@ -31,8 +31,8 @@ Merging a bounty's pull request. The only act that finishes a bounty, and it req
 _Avoid_: shipping, landing, closing.
 
 **effective spec**:
-The structured snapshot of what one bounty is supposed to accomplish, distilled from the opening conversation and confirmed by the user. It carries a revision number, and must declare at least one acceptance criterion — everything downstream assesses the work against those criteria.
-_Avoid_: requirements, PRD, ticket description. (A **spec** in `docs/specs/` is a different thing: one PR's worth of work on Bebop itself.)
+The structured snapshot of what one bounty is supposed to accomplish, distilled from the opening conversation and confirmed by the user. It must declare at least one acceptance criterion, because every gate downstream assesses the work against them.
+_Avoid_: requirements, PRD, ticket description. "Spec" unqualified always means this; a PR's worth of work on Bebop itself is a **brief**.
 
 **candidate**:
 An explicit submission by ein, tied to exactly one commit SHA. Only a candidate can enter authoritative verification; a harness falling idle is not a candidate.
@@ -48,7 +48,7 @@ _Avoid_: state, status, phase. (**status** is the compact, derived summary bebop
 The reasoning agents aboard one bounty VM. Swordfish is not crew.
 
 **seat**:
-One long-lived OpenCode session bound to one crew role for the life of the bounty. Seat identity — role to session ID — is Swordfish-authoritative.
+One long-lived OpenCode session bound to one crew role for the life of the bounty.
 _Avoid_: session (collides with OpenCode and tmux), worker, slot.
 
 **ein**:
@@ -76,14 +76,14 @@ _Avoid_: terminal, dashboard, console.
 Connecting a human to a bounty's cockpit. Attaching is observation; it grants no authority to type into a leased seat.
 
 **control lease**:
-The record of which single actor — `human` or `swordfish` — may submit prompts to a given seat. Enforced in four independent layers, and durable: taking and releasing it are recorded state transitions, not terminal modes.
+The record of which single actor — `human` or `swordfish` — may submit prompts to a given seat. Durable: taking and releasing it are recorded state transitions, not terminal modes.
 _Avoid_: lock, mutex, ownership.
 
 **takeover**:
-A human claiming the control lease on a seat. May issue the seat's write credential, and always records that it happened.
+A human claiming the control lease on a seat. Always recorded.
 
 **handback**:
-A human releasing the control lease back to Swordfish. Revokes any credential issued during that control episode, so no human-held seat credential survives a release.
+A human releasing the control lease back to Swordfish.
 
 **intrusion**:
 A message or tool execution on a leased seat that Swordfish did not originate. Recorded and escalated rather than silently absorbed.
@@ -95,26 +95,26 @@ A verification gate a candidate must pass — local validation, external CI, jet
 _Avoid_: check (reserved for GitHub's checks), test, stage.
 
 **validator**:
-A repository-defined mandatory check, run by Swordfish from `.bebop/hooks/validate`. Checks ein ran itself are never authoritative evidence.
+A repository-defined mandatory check that Swordfish runs. Checks ein ran itself are never authoritative evidence.
 
 **clean-room worktree**:
-The ephemeral worktree Swordfish pins to the exact candidate SHA for verification — isolated ports, disposable service state, no uncommitted files shared with ein's worktree, destroyed once its evidence is captured.
+The ephemeral worktree Swordfish pins to the exact candidate SHA for verification, sharing nothing with ein's working state.
 _Avoid_: sandbox (that is the VM), clean checkout.
 
 **hook**:
-A plain executable under `.bebop/setup/` or `.bebop/hooks/` that the repository owns and Swordfish runs. Exit code is authoritative; structured results and artifacts are optional enrichments.
+A plain executable that a target repository owns and Swordfish runs on its behalf.
 
 **privileged path**:
-A repository path whose modification by a candidate forces human approval. `.bebop/**` is always privileged and cannot be unprotected; repositories add globs in `config.yml`, read from the base revision so the list protects itself.
+A repository path whose modification by a candidate forces human approval before verification can continue.
 
 **approve-config**:
-A human approving a candidate's changes under privileged paths, recorded against that exact SHA. No autonomous path can grant it, and a later commit touching privileged paths needs a fresh one.
+A human approving a candidate's changes under privileged paths, recorded against that exact SHA. No autonomous path can grant it.
 
 **readiness claim**:
-Swordfish's assertion that a given commit is ready. A claim, never authority: bebop independently re-verifies the branch head, checks, stages, spec revision, and approvals before offering merge.
+Swordfish's assertion that a given commit is ready. A claim, never authority — bebop re-verifies independently before offering merge.
 
 **evidence bundle**:
-The artifacts tied to one bounty, spec revision, candidate commit, and verification stage — validator logs, CI results, findings, QA reports, screenshots, recordings.
+The artifacts a verification stage produced, tied to one bounty, spec revision, and candidate commit.
 _Avoid_: report, results, artifacts (an artifact is one item in a bundle).
 
 ## Repository configuration

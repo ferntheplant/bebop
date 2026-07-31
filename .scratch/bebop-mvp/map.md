@@ -19,13 +19,13 @@ repositories, real models, real GitHub — and the decisions those force.
 anything that contradicts a recorded decision.
 
 **Skills every session should consult:** `/domain-modeling` when a term is in play, `/codebase-design` when a
-seam is in play, `/grilling` by default. `/to-spec` when a ticket's resolution has made a PR-sized slice
-specifiable.
+seam is in play, `/grilling` by default. When a ticket's resolution has made a PR-sized slice specifiable, write
+it up as a brief.
 
 **Standing preferences:**
 
-- Plan, don't do. Tickets here resolve decisions. When the way through an area is clear, write a spec at
-  `.scratch/<feature>/spec.md` and hand off — the build is not tracked on this map.
+- Plan, don't do. Tickets here resolve decisions. When the way through an area is clear, write a brief at
+  `.scratch/<feature>/brief.md` and hand off — the build is not tracked on this map.
 - Prefer a prototype to an argument. Four of the decisions below were settled by a runnable probe under
   [`prototypes/`](../../prototypes/), and each one changed the design in a way the discussion had not.
 - Anything hard to reverse, surprising, and genuinely traded off gets an ADR when it resolves. Most resolutions
@@ -38,36 +38,40 @@ specifiable.
 Entries above the line predate the map — the route was walked before it was charted, so they link ADRs and
 prototypes rather than tickets.
 
-- [The bounty primitive](../../docs/adr/0001-the-bounty-primitive.md) — one VM, one branch, at most one PR.
-- [Authority split](../../docs/adr/0002-bebop-owns-authority-swordfish-owns-the-loop.md) — bebop owns everything
-  reaching outside the sandbox; Swordfish owns one bounty's delivery loop.
-- [Readiness is a claim](../../docs/adr/0003-readiness-is-a-claim-not-authority.md) — bebop re-verifies every
-  readiness claim against live state before offering merge.
-- [Commit to OpenCode](../../docs/adr/0004-commit-to-opencode-with-no-harness-abstraction.md) — no harness
-  abstraction; the plugin is a first-class module.
-- [Effect on Bun](../../docs/adr/0005-effect-on-bun-for-every-process.md) — one language, one stack, with
-  measured criteria for reconsidering a native Swordfish.
-- [Four-layer control lease](../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md) — settled by
-  [`prototypes/lease-guard`](../../prototypes/lease-guard/README.md), which found that the plugin alone cannot
-  hold the lease: `POST /session/:id/shell` invokes no hook and `--pure` skips the plugin entirely.
-- [Seat credentials die with the lease](../../docs/adr/0010-no-human-held-seat-credential-survives-a-control-release.md)
+- [The bounty primitive (ADR 0001)](../../docs/adr/0001-the-bounty-primitive.md) — one VM, one branch, at most
+  one PR.
+- [Bebop owns authority, Swordfish owns the loop (ADR 0002)](../../docs/adr/0002-bebop-owns-authority-swordfish-owns-the-loop.md)
+  — bebop owns everything reaching outside the sandbox; Swordfish owns one bounty's delivery loop.
+- [Readiness is a claim (ADR 0003)](../../docs/adr/0003-readiness-is-a-claim-not-authority.md) — bebop
+  re-verifies every readiness claim against live state before offering merge.
+- [Commit to OpenCode (ADR 0004)](../../docs/adr/0004-commit-to-opencode-with-no-harness-abstraction.md) — no
+  harness abstraction; the plugin is a first-class module.
+- [Effect on Bun (ADR 0005)](../../docs/adr/0005-effect-on-bun-for-every-process.md) — one language, one stack,
+  with measured criteria for reconsidering a native Swordfish.
+- [The four-layer control lease (ADR 0009)](../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md)
+  — settled by [the lease-guard prototype](../../prototypes/lease-guard/README.md), which found that the plugin
+  alone cannot hold the lease: `POST /session/:id/shell` invokes no hook and `--pure` skips the plugin entirely.
+- [Seat credentials die with the lease (ADR 0010)](../../docs/adr/0010-no-human-held-seat-credential-survives-a-control-release.md)
   — rotation on every control release, or the lease is advisory after the first takeover.
-- [`.bebop/**` is permanently privileged](../../docs/adr/0011-the-bebop-directory-is-permanently-privileged.md)
+- [`.bebop/**` is permanently privileged (ADR 0011)](../../docs/adr/0011-the-bebop-directory-is-permanently-privileged.md)
   — SHA-pinned human approval, glob list read from base.
-- [Outbound only, CI by polling](../../docs/adr/0013-swordfish-connects-outbound-only.md) — no inbound ingress
-  to bebop or to a bounty VM.
-- [Clean-room verification](../../docs/adr/0015-verification-runs-in-a-clean-room-worktree.md) and
-  [full invalidation](../../docs/adr/0016-every-commit-invalidates-every-downstream-result.md) — a gate result
-  is a statement about a commit, and it dies with that commit.
-- [Filesystem CAS for evidence](../../docs/adr/0018-evidence-is-a-filesystem-cas-behind-a-blob-contract.md) — no
-  single-node MinIO.
+- [Swordfish connects outbound only (ADR 0013)](../../docs/adr/0013-swordfish-connects-outbound-only.md) — no
+  inbound ingress to bebop or to a bounty VM, so CI is observed by polling.
+- [Clean-room verification (ADR 0015)](../../docs/adr/0015-verification-runs-in-a-clean-room-worktree.md) and
+  [full invalidation (ADR 0016)](../../docs/adr/0016-every-commit-invalidates-every-downstream-result.md) — a
+  gate result is a statement about a commit, and it dies with that commit.
+- [Squash-only merges (ADR 0017)](../../docs/adr/0017-squash-only-merges.md),
+  [commits authored by the acting seat (ADR 0032)](../../docs/adr/0032-commits-are-authored-by-the-acting-seat.md),
+  and [base drift gated on conflict (ADR 0033)](../../docs/adr/0033-base-drift-is-conflict-gated.md) — how a
+  bounty reaches the target branch, and whose name is on it.
+- [Evidence is a filesystem CAS (ADR 0018)](../../docs/adr/0018-evidence-is-a-filesystem-cas-behind-a-blob-contract.md)
+  — no single-node MinIO.
 - [tmux can lock a pane](../../prototypes/tmux-input-lock/README.md) — `select-pane -d` disables input while the
   pane keeps rendering, and the lock is clearable by any pane in the session, so it is UX and not protection.
-- Persistence, transport, and packaging constraints found by prototype and recorded as ADRs
-  [0020](../../docs/adr/0020-vitest-is-launched-by-bun.md),
-  [0023](../../docs/adr/0023-bun-specific-apis-are-imported-by-submodule.md),
-  [0024](../../docs/adr/0024-migrations-are-a-static-record.md), and
-  [0025](../../docs/adr/0025-postgres-encoding-rules-the-schemas-must-honour.md).
+- [Vitest is launched by Bun (ADR 0020)](../../docs/adr/0020-vitest-is-launched-by-bun.md) — no test may pass on
+  a runtime production never uses.
+- The persistence, transport, and packaging constraints the prototypes found are not decisions and are recorded
+  in [`docs/gotchas.md`](../../docs/gotchas.md) instead.
 
 ---
 

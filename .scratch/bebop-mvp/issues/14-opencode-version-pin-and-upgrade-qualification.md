@@ -10,8 +10,8 @@ OpenCode 1.18.5 is pinned in the root catalog and destined for the base image, w
 (`docs/design/SYSTEM.md` §20.1, provisional).
 
 This matters more than a normal dependency pin because
-[the whole product is committed to OpenCode](../../../docs/adr/0004-commit-to-opencode-with-no-harness-abstraction.md)
-and because [the lease guard](../../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md) depends
+[the whole product is committed to OpenCode (ADR 0004)](../../../docs/adr/0004-commit-to-opencode-with-no-harness-abstraction.md)
+and because [the four-layer control lease (ADR 0009)](../../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md) depends
 on which routes invoke plugin hooks — a fact that can change in a patch release without any announcement.
 
 Settle:

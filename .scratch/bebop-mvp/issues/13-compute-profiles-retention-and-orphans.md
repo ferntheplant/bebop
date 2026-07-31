@@ -16,7 +16,7 @@ Settle, once ticket 04 has made the real costs and limits visible:
   task, or the user;
 - whether the standard profile can hold OpenCode, language servers, a repository build, dev services, and
   Playwright at once, which is the assumption
-  [ADR 0005](../../../docs/adr/0005-effect-on-bun-for-every-process.md) rests its runtime choice on;
+  [Effect on Bun (ADR 0005)](../../../docs/adr/0005-effect-on-bun-for-every-process.md) rests its runtime choice on;
 - what the retention windows are for, given that a merged bounty's evidence outlives its VM — an hour is either
   generous or useless depending on what a human might still want to attach to;
 - what the orphan sweep does when it finds a VM Postgres does not know about: destroy it, or park it and tell

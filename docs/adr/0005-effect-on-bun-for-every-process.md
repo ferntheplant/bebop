@@ -6,6 +6,6 @@ Rust or Zig would cut Swordfish's memory, startup time, and binary size, but Ope
 
 ## Consequences
 
-The whole stack is pinned together on the Effect 4 beta: the platform APIs live under `effect/unstable/*`, and adding an Effect 3 `@effect/platform` or `@effect/cli` package would create an incompatible peer-dependency stack. `@effect/sql-pg`, `@effect/sql-sqlite-bun`, and `@effect/platform-bun` are pinned at the matching version in the root catalog.
+The whole stack is pinned together on the Effect 4 beta line — see [Imports and runtime](../gotchas.md#imports-and-runtime) for what that forbids.
 
 Reconsider a Rust-only Swordfish only on measurement: when it materially causes OOMs or stalls, sustains roughly 150–200 MB P95 working set after straightforward tuning, or when reclaiming its measured overhead would improve bounty throughput by about 10%.

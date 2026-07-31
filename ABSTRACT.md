@@ -51,6 +51,8 @@ Swordfish then drives ein's seat autonomously, executes repository-defined valid
 
 The user can observe every seat, take control of the active agent, steer it, and explicitly return control to Swordfish. The system never merges code without an explicit user command.
 
+Bebop is single-user or trusted-small-team software, operating on repositories the operator owns. It is not multi-tenant, and everything a model reads — repository content, task prompts, web pages, logs, analytics, MCP results — is treated as untrusted input. What keeps that safe is that high-value authority stays outside the sandbox; see [`docs/capabilities/`](./docs/capabilities/14-the-security-model.md).
+
 The MVP deliberately does **not** solve large-project decomposition, implement a web dashboard, or make Linear the primary frontend. Those may be built later from the bounty primitive after real usage informs their design.
 
 ## 2. Motivation
@@ -134,6 +136,12 @@ Repositories provide system-specific setup, validation, QA, and evidence hooks u
 ### 3.9 Human steering is normal
 
 An autonomous run is not an opaque batch job. The user can observe it continuously, pause it, take over any active agent, and release it back to Swordfish with explicit state.
+
+### 3.10 Refuse rather than pretend
+
+Where an external authority a route depends on does not exist yet, the route refuses rather than returning a plausible success. `merge` refuses without GitHub, because answering anything else would claim a side effect that never happened; the evidence route reports an empty bundle list for the same reason; the fake lifecycle provider creates deterministic local VM records and is honest about being local rather than imitating a provisioned computer.
+
+A stub that returns a plausible success is indistinguishable from working software right up until it matters, and every caller written against it encodes the lie.
 
 ## 4. Goals
 

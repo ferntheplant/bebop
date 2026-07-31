@@ -12,9 +12,11 @@ It is a reference, not a plan and not a contract. Section numbers are preserved 
 ## This file is a quarry, not a monument
 
 Everything here is waiting to be mined into its proper home, and the mining happens **opportunistically** — when
-work touches an area, that area's content moves out and the section here is replaced by a pointer. The four
+work touches an area, that area's content moves out and the section here is replaced by a pointer. The
 destinations:
 
+- **A capability** — descriptive behaviour a user can expect, moved into
+  [`docs/capabilities/`](../capabilities/). This is where most of this file ends up.
 - **Vocabulary** — a term this file defines or leans on, sharpened into [`CONTEXT.md`](../../CONTEXT.md).
 - **A decision** — something hard to reverse, surprising without context, and the result of a real trade-off,
   written up as an ADR in [`docs/adr/`](../adr/). Much of §9–§25 is decision-shaped and has already been mined
@@ -22,8 +24,8 @@ destinations:
 - **Fog** — anything still marked provisional, unverified, or "to decide", which belongs on the map at
   [`.scratch/bebop-mvp/map.md`](../../.scratch/bebop-mvp/map.md) as a ticket or as a line under Not yet
   specified.
-- **A spec** — behaviour that a single PR will build, written with `/to-spec` into `.scratch/<feature>/spec.md`
-  and archived at [`docs/specs/`](../specs/) once it ships.
+- **A brief** — behaviour that a single PR will build, written into `.scratch/<feature>/brief.md` and kept there
+  once it ships.
 
 Do not add to this file. New design detail belongs in one of those four places from the start.
 

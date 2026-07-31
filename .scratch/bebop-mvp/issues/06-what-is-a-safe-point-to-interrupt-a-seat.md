@@ -17,6 +17,6 @@ Settle:
 - whether takeover is legal in every stage or only some — taking over ein during QA means the candidate under
   test can change while faye is testing it;
 - what the human sees while the abort is in flight, given that
-  [the guard's message never reaches the HTTP caller](../../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md);
+  [the guard's message never reaches the HTTP caller (ADR 0009)](../../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md);
 - what happens to an in-flight gate when its seat is taken over, and whether its result is still admissible;
 - whether handback resumes the interrupted turn, restarts the stage, or requires a fresh spec confirmation.

@@ -6,7 +6,7 @@ Status: open
 ## Question
 
 Only `blocking` blocks, and non-blocking findings are provisionally destined for the evidence bundle plus a PR
-comment at ready time ([ADR 0016](../../../docs/adr/0016-every-commit-invalidates-every-downstream-result.md),
+comment at ready time ([Full invalidation (ADR 0016)](../../../docs/adr/0016-every-commit-invalidates-every-downstream-result.md),
 `docs/design/SYSTEM.md` §12.6).
 
 Settle:

@@ -5,16 +5,18 @@ Bebop moves a trusted local coding-agent workflow onto remote computers. Read
 
 ## Where things live
 
-| If you need                              | Read                                                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| What Bebop is and what "done" looks like | [`ABSTRACT.md`](./ABSTRACT.md)                                           |
-| What a word means                        | [`CONTEXT.md`](./CONTEXT.md)                                             |
-| Why something is the way it is           | [`docs/adr/`](./docs/adr/)                                               |
-| Area-level design detail                 | [`docs/design/SYSTEM.md`](./docs/design/SYSTEM.md) — descriptive only    |
-| What is still undecided                  | [`.scratch/bebop-mvp/map.md`](./.scratch/bebop-mvp/map.md)               |
-| What a PR is meant to build              | `.scratch/<feature>/spec.md`, archived to [`docs/specs/`](./docs/specs/) |
-| How to run and test things               | [`README.md`](./README.md), [`docs/testing.md`](./docs/testing.md)       |
-| How the issue tracker works              | [`.agents/ISSUE-TRACKER.md`](./.agents/ISSUE-TRACKER.md)                 |
+| If you need                              | Read                                                                  |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| What Bebop is and what "done" looks like | [`ABSTRACT.md`](./ABSTRACT.md)                                        |
+| What the system does for its user        | [`docs/capabilities/`](./docs/capabilities/)                          |
+| What a word means                        | [`CONTEXT.md`](./CONTEXT.md)                                          |
+| Why something is the way it is           | [`docs/adr/`](./docs/adr/)                                            |
+| Why something that looks broken isn't    | [`docs/gotchas.md`](./docs/gotchas.md)                                |
+| Area-level design detail                 | [`docs/design/SYSTEM.md`](./docs/design/SYSTEM.md) — descriptive only |
+| What is still undecided                  | [`.scratch/bebop-mvp/map.md`](./.scratch/bebop-mvp/map.md)            |
+| What a PR is meant to build              | `.scratch/<feature>/brief.md`, alongside that effort's tickets        |
+| How to run and test things               | [`README.md`](./README.md), [`docs/testing.md`](./docs/testing.md)    |
+| How the issue tracker works              | [`.agents/ISSUE-TRACKER.md`](./.agents/ISSUE-TRACKER.md)              |
 
 New writing goes to one of those homes from the start. `docs/design/SYSTEM.md` is a quarry being mined, not a
 place to add to.
@@ -38,6 +40,8 @@ interface. One adapter means a hypothetical seam; two adapters means a real one.
 - Every network and local-socket payload is decoded where it arrives.
 - Domain failures are typed values; defects remain crashes handled by process supervision.
 - State transitions are pure and tested separately from persistence and I/O.
+- State derivable from the event stream is derived on read, never stored — a compact status written to a column
+  is a second copy that the first missed update leaves permanently wrong.
 - Postgres is authoritative for bebop state; SQLite is authoritative for Swordfish state.
 - Bebop and Swordfish write durable intent before performing externally visible side effects.
 - At-least-once messages carry stable IDs or sequence numbers and are safe to replay.
@@ -49,7 +53,9 @@ interface. One adapter means a hypothetical seam; two adapters means a real one.
 - Logs are structured and include `bounty_id`, `vm_id`, `seat`, `stage`, `candidate_sha`, and correlation IDs
   when available.
 
-Each of these has an ADR behind it. If a rule seems wrong, read the ADR before working around it.
+Most of these have an ADR behind them. If a rule seems wrong, look for its ADR before working around it.
+
+Cite an ADR by **name and number**, with the name first: `[Readiness is a claim (ADR 0003)](./docs/adr/0003-readiness-is-a-claim-not-authority.md)`. The name is what reads at a glance; the number is what a file search finds. A bare `ADR 0003` is not a citation.
 
 ## Definition of done
 

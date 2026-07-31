@@ -8,4 +8,4 @@ Every result that applies no event carries a reason, because the acknowledgement
 
 Command deduplication follows the same shape on the Swordfish side: the payload hash and the encoded terminal result are stored under `command_id`, identical redelivery returns the stored result, and a different payload under the same ID is a protocol error.
 
-Connection freshness is scoped to a `connectionId` so that delayed events, heartbeats, disconnects, or stale timers from a replaced connection cannot mutate the active projection. Any inbound traffic on the current connection restores freshness from `stale`; `disconnected` is not recoverable that way, because `connection_lost` clears the connection id.
+Delivery is resumable in both directions — Swordfish pages a bounded window of events behind a local send cursor and resets it to bebop's durable acknowledgement on reconnect, and bebop queues commands durably while a bounty is offline. Freshness is scoped to a `connectionId` so stale traffic from a replaced connection cannot mutate the active projection.

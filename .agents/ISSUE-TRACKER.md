@@ -1,18 +1,18 @@
 # Issue tracker: Local Markdown
 
-Issues and specs (you may know a spec as a PRD) for this repo live as markdown files in `.scratch/`.
+Issues and briefs for this repo live as markdown files in `.scratch/`.
 
 `.scratch/` is **committed**, not ignored. It is the canonical tracker for this repo, not scratch space.
 
 ## Conventions
 
 - One feature per directory: `.scratch/<feature-slug>/`
-- The spec is `.scratch/<feature-slug>/spec.md`
+- The brief — what one PR is meant to build, which you may know as a PRD — is `.scratch/<feature-slug>/brief.md`. It is deliberately not called a spec: [`CONTEXT.md`](../CONTEXT.md) reserves that word for a bounty's effective spec
 - Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` — never a single combined tickets file
 - Triage state is recorded as a `Status:` line near the top of each issue file
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 
-Specs that have shipped are archived at `docs/specs/NNNN-<slug>.md` — see [AGENTS.md](../AGENTS.md).
+A brief stays with its effort once shipped. It is history, not authority — anything in one still worth defending months later belongs in an [ADR](../docs/adr/).
 
 ## When a skill says "publish to the issue tracker"
 

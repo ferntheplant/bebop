@@ -12,7 +12,7 @@ Done when:
 
 - an exe.dev account exists with billing configured and its limits known;
 - an API key is issued and stored where bebop's deployment will read it from — record _where_, since
-  [ADR 0019](../../../docs/adr/0019-the-master-runs-on-exe-dev-with-mandatory-off-vm-backups.md) says the key
+  [The master runs on exe.dev (ADR 0019)](../../../docs/adr/0019-the-master-runs-on-exe-dev-with-mandatory-off-vm-backups.md) says the key
   is held only on the master;
 - one VM has been created, attached to over SSH, stopped, and destroyed by hand;
 - the LLM and HTTP Proxy integrations are enabled on the account, so tickets 01 and 02 can be worked;

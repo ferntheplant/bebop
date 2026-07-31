@@ -19,5 +19,5 @@ Settle:
 - what happens mid-bounty when a provider is unavailable, rate-limited, or degraded: does the stage fail, wait,
   or escalate to `needs_attention`, and does that differ per seat;
 - whether the model choice is bounty-configurable or fixed by the image, and who is allowed to change it;
-- how a model change interacts with [full invalidation](../../../docs/adr/0016-every-commit-invalidates-every-downstream-result.md)
+- how a model change interacts with [Full invalidation (ADR 0016)](../../../docs/adr/0016-every-commit-invalidates-every-downstream-result.md)
   — is a review by a different model than the one recorded still a valid gate result?

@@ -7,7 +7,7 @@ Blocked by: 10
 ## Question
 
 Evidence lands in a content-addressed store
-([ADR 0018](../../../docs/adr/0018-evidence-is-a-filesystem-cas-behind-a-blob-contract.md)) and is provisionally
+([Evidence is a filesystem CAS (ADR 0018)](../../../docs/adr/0018-evidence-is-a-filesystem-cas-behind-a-blob-contract.md)) and is provisionally
 published first as a GitHub PR comment, with `bounty evidence [--download]` plus private-URL browsing as the
 access path (`docs/design/SYSTEM.md` §23).
 

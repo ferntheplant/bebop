@@ -10,4 +10,4 @@ The layers compose and fail independently, which is the point: the plugin is aut
 
 Bypass remains possible for a determined operator with a shell in the VM. That is accepted — the goal is that it cannot happen by accident.
 
-Two testing constraints follow. Any test of the guard must assert that the model endpoint received **zero** requests, not merely that an error was returned. And a hook's thrown message does not reach the HTTP caller — the synchronous route returns an opaque server error, the asynchronous route returns `204` — so "run the takeover command" must be delivered through the event stream, the seat TUI, or the status pane, never the response body.
+Two constraints follow. Any test of the guard must assert the model endpoint received **zero** requests, not merely that an error was returned. And a hook's thrown message never reaches the HTTP caller, so guidance like "run the takeover command" must be delivered through the event stream, the seat TUI, or the status pane.

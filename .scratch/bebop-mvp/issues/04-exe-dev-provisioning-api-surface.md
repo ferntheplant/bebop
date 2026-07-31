@@ -7,7 +7,7 @@ Blocked by: 03
 ## Question
 
 Bebop's `LifecycleProvider` is currently a fake that creates deterministic local records
-([ADR 0030](../../../docs/adr/0030-refuse-rather-than-pretend.md)). Before a real adapter can sit at that seam,
+(refuse rather than pretend — [`ABSTRACT.md`](../../../ABSTRACT.md) §3.10). Before a real adapter can sit at that seam,
 the provider's real interface has to be known.
 
 Establish:
@@ -15,7 +15,7 @@ Establish:
 - the create/attach/stop/destroy operations, their latencies, and which of them are asynchronous;
 - whether creation is idempotent under a client-supplied key, or whether bebop must reconcile by tag — this
   decides whether provisioning retries can be made safe the way
-  [ADR 0014](../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md) needs;
+  [Bounty-scoped Swordfish tokens (ADR 0014)](../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md) needs;
 - how integrations are attached to a VM, and whether that is part of creation or a second call that can fail
   independently;
 - what a custom base image costs to build, store, and boot, and how it is versioned;

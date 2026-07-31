@@ -165,7 +165,7 @@ export async function startHarness(
    *
    * Closing interrupts the still-listening server fiber, and Effect reports that interrupt as
    * a failed exit. It is the shape of a clean shutdown, not a problem
-   * (`spikes/effect-runtime`, finding 5), so an interrupt-only cause is accepted and anything
+   * (`prototypes/effect-runtime`, finding 5), so an interrupt-only cause is accepted and anything
    * else is raised.
    */
   async function stop(scope: Scope.Closeable): Promise<void> {

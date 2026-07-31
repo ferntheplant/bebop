@@ -1,6 +1,6 @@
-// Idempotency keys (SPEC section 22.1).
+// Idempotency keys (`docs/design/SYSTEM.md` §22.1).
 //
-// PLAN Milestone 3's exit criterion is that "creating the same bounty request with one
+// Milestone 3's exit criterion is that "creating the same bounty request with one
 // idempotency key cannot create duplicate lifecycle work". Two things make that true:
 //
 // - the key row is inserted in the **same transaction** as the bounty and its provisioning

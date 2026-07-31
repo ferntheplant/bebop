@@ -1,8 +1,8 @@
-// Bearer authentication for every route except `GET /api/health` (SPEC section 17.2, 17.4).
+// Bearer authentication for every route except `GET /api/health` (`docs/design/SYSTEM.md` §17.2, 17.4).
 //
 // The shape of this function matters more than its length. An Effect 4 security middleware
 // **wraps the endpoint effect**: it receives the endpoint's own effect and must return it for
-// the request to proceed. `spikes/effect-runtime` finding 1 records what goes wrong
+// the request to proceed. `prototypes/effect-runtime` finding 1 records what goes wrong
 // otherwise — a middleware that returns `Effect.void` on success silently skips the handler
 // and answers with nothing, rather than failing in a way anyone would notice. Bebop declares
 // this middleware on two whole groups, so every authenticated route depends on it.

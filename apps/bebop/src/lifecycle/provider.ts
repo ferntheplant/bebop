@@ -1,13 +1,13 @@
 // The bounty compute lifecycle, behind a service.
 //
-// PLAN Milestone 3 says explicitly: "Do not integrate exe.dev or GitHub in this milestone.
+// Milestone 3 says explicitly: "Do not integrate exe.dev or GitHub in this milestone.
 // The fake lifecycle provider creates deterministic local VM records and lets the
 // control-plane behavior stabilize first." This module is that boundary — the exe.dev client
 // in Milestone 9 implements the same interface, and everything upstream of it is already
 // exercised by the time it lands.
 //
 // The interface is deliberately narrow and app-local rather than a multi-provider
-// abstraction (PLAN section 4): create, describe, destroy.
+// abstraction (see `AGENTS.md`, architectural rules): create, describe, destroy.
 
 import type { BountyId, ComputeProfile, Port, PrivatePreviewAttachment, SshAttachment, VmId } from "@bebop/contracts";
 import {
@@ -44,7 +44,7 @@ export interface LifecycleProviderService {
    * Creates the bounty's VM, or returns the existing one.
    *
    * Provisioning is retried by the worker after a crash, so this must be idempotent per
-   * bounty: SPEC section 27 criterion 42 requires that restarting Bebop does not duplicate
+   * bounty: `docs/design/SYSTEM.md` §27 criterion 42 requires that restarting Bebop does not duplicate
    * VMs.
    */
   readonly provision: (options: {
@@ -52,7 +52,7 @@ export interface LifecycleProviderService {
     readonly computeProfile: ComputeProfile;
     /**
      * The bounty-scoped Swordfish credential, to be injected at VM bootstrap
-     * (SPEC section 18.2). The provider is the only component that puts it on the VM;
+     * (`docs/design/SYSTEM.md` §18.2). The provider is the only component that puts it on the VM;
      * Bebop keeps nothing but its hash.
      */
     readonly swordfishToken: Redacted.Redacted<string>;

@@ -8,7 +8,7 @@
 //   visible operation and records the result. A crash between the two is recoverable because
 //   the intent outlives the process.
 // - **The freshness sweep.** A Swordfish that stops sending heartbeats announces nothing.
-//   Something has to notice, and it cannot be the socket that died. SPEC section 9.3: "a
+//   Something has to notice, and it cannot be the socket that died. `docs/design/SYSTEM.md` §9.3: "a
 //   disconnected Swordfish cannot be presented as currently working merely because its last
 //   event said `implementing`."
 
@@ -45,7 +45,7 @@ const sweepBatchSize = 200;
 /**
  * Creates the bounty's computer and binds its Swordfish credential.
  *
- * The credential is minted here, not at bounty creation, because SPEC section 18.2 injects it
+ * The credential is minted here, not at bounty creation, because `docs/design/SYSTEM.md` §18.2 injects it
  * at VM bootstrap: a bounty with no computer has nothing to authenticate. Only its hash is
  * stored, and the plaintext is handed to the provider — which is the component that puts it
  * on the VM.
@@ -97,7 +97,7 @@ const runProvision = Effect.fnUntraced(function* (job: LifecycleJob, workerId: s
       });
       if (current.lifecycleState === "provisioning") {
         // `active` rather than a status of its own: the bounty stays `provisioning` to a
-        // client until its Swordfish registers, because SPEC section 10.1 does not consider
+        // client until its Swordfish registers, because `docs/design/SYSTEM.md` §10.1 does not consider
         // creation finished before that.
         yield* transitionLifecycle({ bountyId: bounty.bountyId, to: "active", at });
       }

@@ -1,4 +1,4 @@
-// The HTTP API against a real disposable Postgres (PLAN Milestone 3 exit criterion 1).
+// The HTTP API against a real disposable Postgres (Milestone 3 exit criterion 1).
 
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 
@@ -47,7 +47,7 @@ suite("Bebop API over Postgres", () => {
 
   // The middleware wraps the endpoint effect and must return it. A version that validated the
   // credential and returned something else would pass every test above while answering every
-  // authorised request with nothing (`spikes/effect-runtime`, finding 1).
+  // authorised request with nothing (`prototypes/effect-runtime`, finding 1).
   test("lets an authorised request reach its handler", async () => {
     const response = await harness.request("/api/bounties");
     expect(response.status).toBe(200);

@@ -1,7 +1,7 @@
-// The `bebop` CLI against a real API (PLAN Milestone 3 exit criterion 5).
+// The `bebop` CLI against a real API (Milestone 3 exit criterion 5).
 //
 // The CLI is run as a process, not imported, because half of what it has to get right is
-// process behaviour: argv parsing, exit status, and what lands on stdout. `spikes/effect-runtime`
+// process behaviour: argv parsing, exit status, and what lands on stdout. `prototypes/effect-runtime`
 // finding 4 is the reason that is worth asserting — a missing `Stdio` layer breaks every
 // invocation including `--help`, and nothing but running it would notice.
 

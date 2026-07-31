@@ -1,7 +1,7 @@
 // The bounty application service: everything the HTTP handlers do, minus the HTTP.
 //
 // Handlers stay thin so that the same operations are reachable from the worker and from
-// tests without going through a socket, and so the rule in SPEC section 4.3 — that no client
+// tests without going through a socket, and so the rule in `ABSTRACT.md` §3.3 — that no client
 // can do anything the API cannot — has one implementation to be true of.
 
 import type {
@@ -318,7 +318,7 @@ export const transitionLifecycle = Effect.fnUntraced(function* (options: {
   );
 });
 
-/** Records an approval for one exact candidate SHA (SPEC section 13.3). */
+/** Records an approval for one exact candidate SHA (`docs/design/SYSTEM.md` §13.3). */
 export const approveConfig = Effect.fnUntraced(function* (options: {
   readonly bountyId: BountyId;
   readonly candidateSha: GitSha;

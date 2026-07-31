@@ -1,7 +1,7 @@
 // Bounding how long shutdown may take.
 //
 // Bun's `server.stop()` is a *graceful* stop: it waits for open connections to finish. That
-// is what SPEC section 24's blue/green deployment wants — "flip upstream → drain old" — right
+// is what `docs/design/SYSTEM.md` §24's blue/green deployment wants — "flip upstream → drain old" — right
 // up until a connection never finishes, at which point the old colour never exits and the
 // deploy never completes.
 //

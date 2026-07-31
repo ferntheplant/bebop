@@ -49,7 +49,7 @@ const probes: ReadonlyArray<Probe> = [
     args: ["--help"],
     env: {},
     expectExitCode: "zero",
-    // `spikes/effect-runtime` finding 4: without a `Stdio` layer the CLI fails at startup for
+    // `prototypes/effect-runtime` finding 4: without a `Stdio` layer the CLI fails at startup for
     // every invocation including `--help`, so printing usage proves the platform layer
     // survived packing.
     expectOutput: "USAGE",

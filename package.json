@@ -5,7 +5,7 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "spikes/*"
+    "prototypes/*"
   ],
   "type": "module",
   "scripts": {

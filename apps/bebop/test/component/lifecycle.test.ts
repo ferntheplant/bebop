@@ -1,6 +1,6 @@
 // Bounty lifecycle across the API and the worker, and what survives a restart.
 //
-// PLAN Milestone 3 exit criteria: "creating the same bounty request with one idempotency key
+// Milestone 3 exit criteria: "creating the same bounty request with one idempotency key
 // cannot create duplicate lifecycle work" and "restarting the API and worker preserves
 // bounties, commands, tokens, and projections".
 
@@ -68,7 +68,7 @@ suite("Bounty lifecycle", () => {
     await harness.runJobs();
 
     const provisioned = await get(created.bountyId);
-    // Still `provisioning` to a client: SPEC section 10.1 does not consider a bounty created
+    // Still `provisioning` to a client: `docs/design/SYSTEM.md` §10.1 does not consider a bounty created
     // until its Swordfish connects, and none has.
     expect(provisioned.status).toBe("provisioning");
     expect(provisioned.attachment?.ssh?.host).toBe("127.0.0.1");

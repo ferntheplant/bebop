@@ -1,5 +1,5 @@
-// The bounty record Bebop is authoritative for (SPEC section 9.1), and the rule that turns
-// it plus a Swordfish stage into the compact status in SPEC section 17.5.
+// The bounty record Bebop is authoritative for (`docs/design/SYSTEM.md` §9.1), and the rule that turns
+// it plus a Swordfish stage into the compact status in `docs/design/SYSTEM.md` §17.5.
 
 import type {
   BountyId,
@@ -54,7 +54,7 @@ export interface VmMapping {
   readonly destroyedAt?: Timestamp;
 }
 
-/** The assigned working branch for a bounty (SPEC section 2: `bounty/<bounty-id>`). */
+/** The assigned working branch for a bounty (`docs/design/SYSTEM.md` §2: `bounty/<bounty-id>`). */
 export function assignedBranchFor(bountyId: BountyId): string {
   return `bounty/${bountyId}`;
 }
@@ -63,12 +63,12 @@ export function assignedBranchFor(bountyId: BountyId): string {
  * The compact status a client sees.
  *
  * Bebop's own lifecycle wins wherever it has an opinion, because it owns provisioning,
- * stopping, merging, and destruction (SPEC section 9.1). Only an `active` bounty defers to
+ * stopping, merging, and destruction (`docs/design/SYSTEM.md` §9.1). Only an `active` bounty defers to
  * the Swordfish stage — and an active bounty whose Swordfish has never registered is still
- * `provisioning`, because SPEC section 10.1 does not consider a bounty created until its
+ * `provisioning`, because `docs/design/SYSTEM.md` §10.1 does not consider a bounty created until its
  * Swordfish connects.
  *
- * `ready` is reported from the stage alone in this milestone. SPEC section 9.4 requires
+ * `ready` is reported from the stage alone in this milestone. `docs/design/SYSTEM.md` §9.4 requires
  * Bebop to verify the branch head, the checks, and the spec revision before exposing merge;
  * that verification arrives with GitHub in Milestone 10, and until then readiness is
  * presented as what it is — Swordfish's claim.

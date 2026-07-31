@@ -1,4 +1,4 @@
-// Bebop's durable projection of one Swordfish (SPEC section 9.3).
+// Bebop's durable projection of one Swordfish (`docs/design/SYSTEM.md` §9.3).
 //
 // The workflow transitions come from `@bebop/workflow`, which Swordfish applies too. What
 // this module owns is the part Swordfish has no equivalent of: which connection is

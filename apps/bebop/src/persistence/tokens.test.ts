@@ -24,7 +24,7 @@ describe("API token hashing", () => {
 
   test("never returns the secret it was given", () => {
     // The whole point of storing a hash: a database read must not recover a working
-    // credential (SPEC section 17.4).
+    // credential (`docs/design/SYSTEM.md` §17.4).
     expect(hashApiToken(secret("bebop_abc"))).not.toContain("bebop_abc");
   });
 

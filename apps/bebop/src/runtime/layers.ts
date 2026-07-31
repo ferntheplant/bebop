@@ -1,7 +1,7 @@
 // The layer stack both entrypoints share.
 //
 // `bebop-api` and `bebop-worker` run from the same image and the same repositories
-// (SPEC section 24, PLAN Milestone 3). The only difference is which fibers they start, so
+// (`docs/design/SYSTEM.md` §24, Milestone 3). The only difference is which fibers they start, so
 // they build from one definition of "connected to the database, with services" rather than
 // two that can drift.
 
@@ -69,5 +69,5 @@ export const BebopRuntimeLayer: Layer.Layer<
   Layer.provideMerge(Layer.mergeAll(BebopConfigurationLayer, IdentityLayer)),
 );
 
-/** The lifecycle provider this milestone runs (PLAN Milestone 3). */
+/** The lifecycle provider this milestone runs (Milestone 3). */
 export const LocalLifecycleProviderLayer: Layer.Layer<LifecycleProvider> = fakeLifecycleProviderLayer();

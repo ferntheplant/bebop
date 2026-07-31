@@ -2,7 +2,7 @@
 //
 // Every handler is a translation: decoding is already done by the contract, so what is left
 // is calling the service and mapping its typed failure onto the typed error the endpoint
-// declares. Nothing here decides policy — SPEC section 4.3 requires that a machine client can
+// declares. Nothing here decides policy — `ABSTRACT.md` §3.3 requires that a machine client can
 // do everything the CLI can, and the way to keep that true is for both to go through the
 // service operations rather than for the handlers to hold logic of their own.
 
@@ -40,7 +40,7 @@ import {
  * Queues a Bebop command for Swordfish.
  *
  * The command is durable before this returns, so a Swordfish that is offline — or a Bebop
- * that restarts a second later — still delivers it (SPEC section 18.4).
+ * that restarts a second later — still delivers it (`docs/design/SYSTEM.md` §18.4).
  */
 const enqueueCommand = Effect.fnUntraced(function* (options: {
   readonly bountyId: BountyId;
@@ -156,7 +156,7 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
     )
 
     .handle("mergeBounty", ({ params }) =>
-      // Merge authority is Bebop's (SPEC section 9.1) and needs GitHub, which Milestone 3
+      // Merge authority is Bebop's (`docs/design/SYSTEM.md` §9.1) and needs GitHub, which Milestone 3
       // deliberately does not have. Refusing is the only honest answer: a success here would
       // claim an external side effect that never happened.
       requireBounty(params.bountyId).pipe(

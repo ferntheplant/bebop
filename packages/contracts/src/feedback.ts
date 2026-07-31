@@ -1,4 +1,4 @@
-// Structured outputs of the stages the workflow gates on (SPEC sections 12.4, 12.6, 12.7),
+// Structured outputs of the stages the workflow gates on (`docs/design/SYSTEM.md` §§12.4, 12.6, 12.7),
 // and the aggregated packet ein consumes in order to revise (section 12.8).
 //
 // These ride the protocol rather than the evidence bundle. A gate outcome is `passed` or
@@ -58,7 +58,7 @@ export const ProcessOutcome = Schema.Union([
 ]);
 export type ProcessOutcome = typeof ProcessOutcome.Type;
 
-/** One mandatory repository validator executed against the clean-room worktree (SPEC §12.4). */
+/** One mandatory repository validator executed against the clean-room worktree (`SYSTEM.md` §12.4). */
 export const ValidatorRun = Schema.Struct({
   command: Command,
   environmentProfile: EnvironmentProfile,
@@ -70,7 +70,7 @@ export const ValidatorRun = Schema.Struct({
 });
 export type ValidatorRun = typeof ValidatorRun.Type;
 
-/** One external check observed on the pull request head (SPEC §19.3). */
+/** One external check observed on the pull request head (`SYSTEM.md` §19.3). */
 export const CiCheckResult = Schema.Struct({
   name: CheckName,
   outcome: GateOutcome,
@@ -82,7 +82,7 @@ export const qaScenarioResults = ["passed", "failed", "skipped"] as const;
 export const QaScenarioResult = Schema.Literals(qaScenarioResults);
 export type QaScenarioResult = typeof QaScenarioResult.Type;
 
-/** One QA scenario faye executed, with what it expected and what it saw (SPEC §12.7). */
+/** One QA scenario faye executed, with what it expected and what it saw (`SYSTEM.md` §12.7). */
 export const QaScenarioOutcome = Schema.Struct({
   id: QaScenarioId,
   description: ScenarioText,
@@ -165,7 +165,7 @@ export function isFeedbackForGate(gate: CandidateGate, feedback: GateFeedback): 
 }
 
 /**
- * What ein receives in order to revise (SPEC §12.8).
+ * What ein receives in order to revise (`SYSTEM.md` §12.8).
  *
  * Assembled by Swordfish from the feedback of every gate bound to one candidate, and
  * injected into ein's prompt by the plugin. Two consumers, so it is a contract rather than

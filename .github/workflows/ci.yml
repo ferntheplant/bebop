@@ -15,8 +15,8 @@ jobs:
 
     # A real Postgres, because the component tests exercise the things a fake would paper
     # over: transactional idempotency, `FOR UPDATE SKIP LOCKED`, advisory locks, and the
-    # `jsonb`/`bigint` encodings `spikes/persistence` pinned down. Those suites skip without
-    # one, so this service is what makes PLAN Milestone 3's first exit criterion actually
+    # `jsonb`/`bigint` encodings `prototypes/persistence` pinned down. Those suites skip without
+    # one, so this service is what makes Milestone 3's first exit criterion actually
     # enforced rather than merely intended.
     services:
       postgres:

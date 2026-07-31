@@ -3,7 +3,7 @@
 // Every command also supports `--json`, which prints the API's own response. These functions
 // are therefore presentation and nothing else: no field is computed here that a machine
 // client could not compute from the same response, because that would be CLI-only behaviour
-// (SPEC section 4.3).
+// (`ABSTRACT.md` §3.3).
 
 import type { BountyDetail, BountySummary, Timestamp } from "@bebop/contracts";
 import { DateTime } from "effect";
@@ -58,7 +58,7 @@ export function printBounty(bounty: BountyDetail): string {
     lines.push(`attention   ${bounty.attentionReason}`);
   }
   if (bounty.readinessClaimSha !== undefined) {
-    // Named a claim, not a state, because SPEC section 9.4 makes readiness something Bebop
+    // Named a claim, not a state, because `docs/design/SYSTEM.md` §9.4 makes readiness something Bebop
     // verifies independently before merge is offered.
     lines.push(`ready claim ${bounty.readinessClaimSha}`);
   }

@@ -1,7 +1,7 @@
 // Tailing `GET /api/bounties/:id/events` from the CLI.
 //
 // The generated client covers request/response endpoints; an SSE subscription is a long-lived
-// response the CLI reads frame by frame. What matters for SPEC section 4.3 is that this uses
+// response the CLI reads frame by frame. What matters for `ABSTRACT.md` §3.3 is that this uses
 // the same route, the same cursor header, and the same event schema any other client would —
 // each frame is decoded with `BountyEventEnvelope` from the contracts package, so a shape the
 // CLI accepts is a shape the contract accepts.

@@ -5,7 +5,7 @@ import { ConstraintProfile, defaultConstraintProfile } from "#src/constraints.ts
 import { defaultConstraintValues } from "#src/settings.ts";
 
 describe("ConstraintProfile", () => {
-  test("matches and round-trips the SPEC defaults", () => {
+  test("matches and round-trips the documented defaults", () => {
     expect(Schema.encodeSync(ConstraintProfile)(defaultConstraintProfile)).toEqual(defaultConstraintValues);
     expect(
       Schema.encodeSync(ConstraintProfile)(Schema.decodeUnknownSync(ConstraintProfile)(defaultConstraintValues)),

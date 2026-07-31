@@ -1,7 +1,7 @@
 // Assembling the `bebop-api` process.
 //
-// The public API and the Swordfish gateway share one HTTP server, which is how SPEC
-// section 24 deploys them: one container, one port behind Caddy.
+// The public API and the Swordfish gateway share one HTTP server, which is how `docs/design/SYSTEM.md`
+// §24 deploys them: one container, one port behind Caddy.
 
 import { ApiTokenName, BebopHttpApi } from "@bebop/contracts";
 import type { PgClient } from "@effect/sql-pg";
@@ -80,7 +80,7 @@ export const ensureApiTokenBootstrap = Effect.gen(function* () {
  *
  * Every WebSocket this Bebop had is gone: the sockets died with the previous process, but
  * the projections still record the connection they were bound to. Leaving them as
- * `connected` would break the one rule SPEC section 9.3 states outright — "a disconnected
+ * `connected` would break the one rule `docs/design/SYSTEM.md` §9.3 states outright — "a disconnected
  * Swordfish cannot be presented as currently working merely because its last event said
  * `implementing`".
  *

@@ -1,4 +1,4 @@
-// The Swordfish connection gateway over a real WebSocket (SPEC section 18).
+// The Swordfish connection gateway over a real WebSocket (`docs/design/SYSTEM.md` §18).
 
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 
@@ -370,7 +370,7 @@ suite("Swordfish gateway", () => {
 
   test("delivers a command queued before the connection existed", async () => {
     const bounty = await provisionedBounty("gateway-7");
-    // Queued while nothing is connected — SPEC section 18.4's offline case.
+    // Queued while nothing is connected — `docs/design/SYSTEM.md` §18.4's offline case.
     await harness.request(`/api/bounties/${bounty.bountyId}/stop`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -592,7 +592,7 @@ suite("Swordfish gateway", () => {
     expect(Date.now() - shutdownStartedAt).toBeLessThan(2_000);
 
     // A restarted API has no sockets. Reporting the connection as anything but gone would
-    // break SPEC section 9.3's rule outright.
+    // break `docs/design/SYSTEM.md` §9.3's rule outright.
     const afterRestart = (await (await harness.request(`/api/bounties/${bounty.bountyId}`)).json()) as {
       swordfishFreshness: string;
     };

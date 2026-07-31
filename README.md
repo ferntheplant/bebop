@@ -1,7 +1,10 @@
 # Bebop
 
-Bebop is a remote supervised coding-bounty system built around OpenCode and exe.dev. The architecture is
-defined in [`SPEC.md`](./SPEC.md), and the implementation sequence is tracked in [`PLAN.md`](./PLAN.md).
+Bebop is a remote supervised coding-bounty system built around OpenCode and exe.dev. What it is and why it
+exists is in [`ABSTRACT.md`](./ABSTRACT.md); the vocabulary is in [`CONTEXT.md`](./CONTEXT.md); the decisions
+are in [`docs/adr/`](./docs/adr/); and the route to the MVP is charted in
+[`.scratch/bebop-mvp/map.md`](./.scratch/bebop-mvp/map.md). [`AGENTS.md`](./AGENTS.md) is the working map of
+all of it.
 
 ## Workspace
 
@@ -13,24 +16,24 @@ defined in [`SPEC.md`](./SPEC.md), and the implementation sequence is tracked in
 | `packages/contracts`         | Shared schemas and wire contracts                        |
 | `packages/workflow`          | The pure Swordfish workflow transition core              |
 | `packages/testkit`           | Shared test processes, fixtures, and deterministic fakes |
-| `spikes/*`                   | Throwaway experiments that validate a design assumption  |
+| `prototypes/*`               | Throwaway experiments that validate a design assumption  |
 
 Apps may depend on packages, but one app must not import source from another app. Shared code remains with its
 first consumer until a second app needs a narrowly named package.
 
-Spikes are excluded from `vp run test` and are run on demand. Each spike records its verdict in its own
-`README.md`, and any assumption it invalidates is reflected in [`SPEC.md`](./SPEC.md) before implementation
+Prototypes are excluded from `vp run test` and are run on demand. Each one records its verdict in its own
+`README.md`, and any assumption it invalidates is reflected in [`docs/adr/`](./docs/adr/) before implementation
 continues.
 
-| Spike                    | Proves                                                       | Needs                     |
-| ------------------------ | ------------------------------------------------------------ | ------------------------- |
-| `spikes/lease-guard`     | The OpenCode plugin can refuse prompts on a leased seat      | `opencode` 1.18.5 on PATH |
-| `spikes/persistence`     | Effect round-trips durable state through Postgres and SQLite | a running Docker daemon   |
-| `spikes/tmux-input-lock` | tmux locks input to one pane without hiding its output       | `tmux` on PATH            |
-| `spikes/effect-runtime`  | Effect HTTP, SSE, WebSocket, and CLI run as processes on Bun | nothing beyond loopback   |
+| Prototype                    | Proves                                                       | Needs                     |
+| ---------------------------- | ------------------------------------------------------------ | ------------------------- |
+| `prototypes/lease-guard`     | The OpenCode plugin can refuse prompts on a leased seat      | `opencode` 1.18.5 on PATH |
+| `prototypes/persistence`     | Effect round-trips durable state through Postgres and SQLite | a running Docker daemon   |
+| `prototypes/tmux-input-lock` | tmux locks input to one pane without hiding its output       | `tmux` on PATH            |
+| `prototypes/effect-runtime`  | Effect HTTP, SSE, WebSocket, and CLI run as processes on Bun | nothing beyond loopback   |
 
 ```bash
-vp run @bebop/spike-persistence#spike
+vp run @bebop/prototype-persistence#prototype
 ```
 
 Each exits nonzero if any probe fails, and tears down its own state before it starts as well as after, so an
@@ -56,7 +59,7 @@ vp run ready
 
 Bebop's component tests run against a **real disposable Postgres** — the behaviour they cover is behaviour a
 fake would paper over: transactional idempotency, `FOR UPDATE SKIP LOCKED`, advisory locks, and the `jsonb` and
-`bigint` encodings recorded in `spikes/persistence`. Each suite creates its own database and drops it afterwards.
+`bigint` encodings recorded in `prototypes/persistence`. Each suite creates its own database and drops it afterwards.
 
 ```bash
 docker compose up -d --wait postgres

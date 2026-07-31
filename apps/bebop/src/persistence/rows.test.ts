@@ -1,6 +1,6 @@
 // Reading values back out of Postgres, in the forms the driver actually produces.
 //
-// `spikes/persistence` established two of these behaviours against a real database (PG5:
+// `prototypes/persistence` established two of these behaviours against a real database (PG5:
 // `bigint` arrives as a string; PG4b: `jsonb` reorders keys). These tests pin the decoding
 // side of that so a schema written as `Schema.Number` against a sequence column fails here
 // rather than in production when the first real sequence number appears.
@@ -28,7 +28,7 @@ describe("row decoding", () => {
   });
 
   test("refuses a bigint too large to be a safe JavaScript integer", () => {
-    // 2^53 + 1, the value `spikes/persistence` PG5 stored. Rounding it silently would corrupt
+    // 2^53 + 1, the value `prototypes/persistence` PG5 stored. Rounding it silently would corrupt
     // an acknowledgement cursor in a way nothing downstream could detect.
     expect(() => bigintNumber({ sequence: "9007199254740993" }, "sequence")).toThrow(RowDecodeError);
   });

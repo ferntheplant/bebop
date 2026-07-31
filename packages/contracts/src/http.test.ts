@@ -81,7 +81,7 @@ describe("Bebop HTTP contracts", () => {
       }
     }
 
-    // Liveness is the only unauthenticated route. SPEC section 24's container health checks
+    // Liveness is the only unauthenticated route. `docs/design/SYSTEM.md` §24's container health checks
     // must not need a credential baked into the image; nothing else may be reachable
     // without a bearer token.
     expect(open).toEqual(["GET /api/health"]);

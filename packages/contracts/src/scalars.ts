@@ -53,7 +53,7 @@ export type QaScenarioId = typeof QaScenarioId.Type;
 export const ApiTokenId = SafeIdentifier.pipe(Schema.brand("ApiTokenId"));
 export type ApiTokenId = typeof ApiTokenId.Type;
 
-/** The human-facing name of a bearer token, such as `fern-cli` (SPEC section 17.4). */
+/** The human-facing name of a bearer token, such as `fern-cli` (`docs/design/SYSTEM.md` §17.4). */
 export const ApiTokenName = Schema.String.pipe(
   Schema.check(
     Schema.isMinLength(1),
@@ -216,7 +216,7 @@ export type HttpsUrl = typeof HttpsUrl.Type;
  * this was the one raw `Schema.URLFromString` left in the package.
  *
  * The host is deliberately unconstrained. A development server bound to `0.0.0.0` and
- * referred to by the VM's own hostname is ordinary, and `SPEC.md` does not require
+ * referred to by the VM's own hostname is ordinary, and the design does not require
  * loopback, so narrowing this to `localhost` would invent a constraint the design has not
  * made.
  */

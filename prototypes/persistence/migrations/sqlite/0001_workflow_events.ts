@@ -1,4 +1,4 @@
-// Swordfish-authoritative state (`docs/design/SYSTEM.md` §22.2). The durable event log Swordfish
+// Swordfish-authoritative state ("Postgres for bebop, SQLite for Swordfish" (ADR 0008)). The durable event log Swordfish
 // replays from on restart.
 
 import { Effect } from "effect";

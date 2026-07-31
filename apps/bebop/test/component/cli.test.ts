@@ -1,4 +1,4 @@
-// The `bebop` CLI against a real API (Milestone 3 exit criterion 5).
+// The `bebop` CLI against a real API (`docs/capabilities/01-bounty-lifecycle.md`).
 //
 // The CLI is run as a process, not imported, because half of what it has to get right is
 // process behaviour: argv parsing, exit status, and what lands on stdout. `prototypes/effect-runtime`

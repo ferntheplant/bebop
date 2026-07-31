@@ -1,4 +1,4 @@
-// Covers the behaviours the Milestones 1-2 review found wrong or unbounded. The transition
+// Covers the behaviours an early review of this core found wrong or unbounded. The transition
 // rules that were already correct are exercised through the two app reducers, which now
 // share this core.
 

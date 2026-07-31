@@ -1,4 +1,4 @@
-// Structured logging for both Bebop processes (`docs/design/SYSTEM.md` §24: "structured JSON logs").
+// Structured logging for both Bebop processes (`docs/capabilities/15-deployment-and-operation.md`: "structured JSON logs").
 //
 // `AGENTS.md`'s architectural rules require that every log line carry `bounty_id`, `vm_id`, `seat`, `stage`,
 // `candidate_sha`, and correlation IDs when they are available. The annotation helpers below
@@ -8,7 +8,7 @@ import type { BountyId, CommandId, ConnectionId, GitSha, SwordfishStage, VmId } 
 import type { Layer } from "effect";
 import { Effect, Logger } from "effect";
 
-/** The process a log line came from. Both entrypoints ship the same image (`docs/design/SYSTEM.md` §24). */
+/** The process a log line came from. Both entrypoints ship the same image (`docs/capabilities/15-deployment-and-operation.md`). */
 export type BebopComponent = "bebop-api" | "bebop-worker";
 
 export interface LogContext {

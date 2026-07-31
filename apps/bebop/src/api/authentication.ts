@@ -1,4 +1,5 @@
-// Bearer authentication for every route except `GET /api/health` (`docs/design/SYSTEM.md` §17.2, 17.4).
+// Bearer authentication for every route except `GET /api/health`
+// (`docs/capabilities/14-the-security-model.md`, "Who may call the API").
 //
 // The shape of this function matters more than its length. An Effect 4 security middleware
 // **wraps the endpoint effect**: it receives the endpoint's own effect and must return it for

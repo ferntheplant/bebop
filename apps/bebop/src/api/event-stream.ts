@@ -1,8 +1,7 @@
 // Cursor replay followed by live delivery, with no history/live race.
 //
-// Milestone 3's exit criterion is "SSE replay delivers each stored event once in
-// sequence before switching to live delivery". The property is structural here rather than
-// tested-into-existence:
+// SSE replay must deliver each stored event once, in sequence, before switching to live
+// delivery. The property is structural here rather than tested-into-existence:
 //
 // - there is exactly one source of truth for what a client has seen — a cursor that starts
 //   at `Last-Event-ID` and advances only as events are emitted;

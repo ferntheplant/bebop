@@ -1,7 +1,8 @@
 // The layer stack both entrypoints share.
 //
 // `bebop-api` and `bebop-worker` run from the same image and the same repositories
-// (`docs/design/SYSTEM.md` §24, Milestone 3). The only difference is which fibers they start, so
+// (`docs/capabilities/15-deployment-and-operation.md`). The only difference is which fibers
+// they start, so
 // they build from one definition of "connected to the database, with services" rather than
 // two that can drift.
 
@@ -56,8 +57,8 @@ export const RepositoriesLayer: Layer.Layer<BebopRepositories, never, PgClient.P
 /**
  * Configuration, identity, the database, and every repository.
  *
- * The lifecycle provider is deliberately not here: Milestone 3 runs the fake one, Milestone 9
- * runs exe.dev, and each entrypoint chooses. Burying that choice in the shared stack would
+ * The lifecycle provider is deliberately not here: the fake one runs today and exe.dev runs
+ * later (`docs/capabilities/02-provisioning-and-attachment.md`), and each entrypoint chooses. Burying that choice in the shared stack would
  * make it the sort of thing that gets swapped by accident.
  */
 export const BebopRuntimeLayer: Layer.Layer<
@@ -69,5 +70,5 @@ export const BebopRuntimeLayer: Layer.Layer<
   Layer.provideMerge(Layer.mergeAll(BebopConfigurationLayer, IdentityLayer)),
 );
 
-/** The lifecycle provider this milestone runs (Milestone 3). */
+/** The lifecycle provider that runs today: the fake one. */
 export const LocalLifecycleProviderLayer: Layer.Layer<LifecycleProvider> = fakeLifecycleProviderLayer();

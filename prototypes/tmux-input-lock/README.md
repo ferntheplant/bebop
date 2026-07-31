@@ -6,8 +6,8 @@
 
 **Pinned version:** tmux 3.7b
 
-**Assumption under test:** [`docs/design/SYSTEM.md`](../../docs/design/SYSTEM.md) §16.2 — "tmux disables keyboard input to seat panes whose
-lease Swordfish holds (UX layer)", without giving up §16.1's "seat panes — the real OpenCode TUIs for ein, jet,
+**Assumption under test:** [The control lease (ADR 0009)](../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md) — "tmux disables keyboard input to seat panes whose
+lease Swordfish holds (UX layer)", without giving up [the cockpit's](../../docs/capabilities/03-the-cockpit.md) "seat panes — the real OpenCode TUIs for ein, jet,
 and faye, visible at all times".
 
 **Milestone:** Milestone 0, "Prove tmux can disable input to one pane without hiding its output."
@@ -19,7 +19,7 @@ rendering live in an attached client, and keeps its scrollback available through
 This is exactly Milestone 8's exit criterion "a user can observe a working seat but cannot type into its pane
 while Swordfish holds the lease".
 
-The lock is also **trivially reversible by anyone in the session** (T11). That is not a defect — `SYSTEM.md` §16.2
+The lock is also **trivially reversible by anyone in the session** (T11). That is not a defect — `docs/capabilities/03-the-cockpit.md`
 already labels this layer "UX" — but it does fix how much the cockpit may rely on it, which finding 4 covers.
 
 | Probe | Question                                                                    | Result                        |
@@ -88,7 +88,7 @@ which exist precisely so the operator can explore the VM.
 
 This is the same shape as the lease-guard prototype's conclusion and it points the same way: the tmux lock stops
 the _accidental_ keystroke, which is the stated threat model in §21.1, and the authoritative refusals live in
-the plugin and the seat server's password and private database (§11.5). `SYSTEM.md` §16.2 already orders the layers
+the plugin and the seat server's password and private database (§11.5). `docs/capabilities/03-the-cockpit.md` already orders the layers
 this way. The prototype confirms the ordering is necessary rather than merely cautious.
 
 ### 5. A headless test of a client-side input path needs a real client (process finding)
@@ -113,7 +113,7 @@ developer's tmux configuration nor their login shell can change the result (see 
 
 ## Consequences for the design
 
-1. **`SYSTEM.md` §16.2's first bullet is implementable as written.** No compromise between locking and observing is
+1. **`docs/capabilities/03-the-cockpit.md`'s first bullet is implementable as written.** No compromise between locking and observing is
    required, and no custom pane wrapper is needed.
 2. **Swordfish sets the lock once per lease transition, not per client connect** (finding 3).
 3. **Milestone 8's exit criterion "a user can observe a working seat but cannot type into its pane" should be

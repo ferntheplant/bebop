@@ -1,4 +1,4 @@
-// Bebop-authoritative state (`docs/design/SYSTEM.md` §22.1), reduced to the smallest shape that still
+// Bebop-authoritative state ("Postgres for bebop, SQLite for Swordfish" (ADR 0008)), reduced to the smallest shape that still
 // exercises the column types Milestone 3 depends on.
 
 import { Effect } from "effect";

@@ -53,7 +53,7 @@ export type QaScenarioId = typeof QaScenarioId.Type;
 export const ApiTokenId = SafeIdentifier.pipe(Schema.brand("ApiTokenId"));
 export type ApiTokenId = typeof ApiTokenId.Type;
 
-/** The human-facing name of a bearer token, such as `fern-cli` (`docs/design/SYSTEM.md` §17.4). */
+/** The human-facing name of a bearer token, such as `fern-cli` (`docs/capabilities/14-the-security-model.md`). */
 export const ApiTokenName = Schema.String.pipe(
   Schema.check(
     Schema.isMinLength(1),

@@ -1,14 +1,14 @@
 #!/usr/bin/env bun
 // The `bebop` CLI.
 //
-// `ABSTRACT.md` §3.3 and `docs/design/SYSTEM.md` §17.1 make one rule about this program: it has no behaviour the API
-// lacks. Every command below is a call on the generated client plus a way of printing the
-// answer, and `--json` prints the API's own response so a script never has to parse the
-// human rendering.
+// `ABSTRACT.md` §3.3 and "API first, with a thin CLI" (ADR 0006) make one rule about this
+// program: it has no behaviour the API lacks. Every command below is a call on the generated
+// client plus a way of printing the answer, and `--json` prints the API's own response so a
+// script never has to parse the human rendering.
 //
-// Milestone 3 ships health, create, list, status, and events. The remaining commands in `docs/design/SYSTEM.md`
-// §17.3 arrive with the authority they need — merge with GitHub, evidence with the
-// blob store.
+// Health, create, list, status, and events ship today. The rest of the surface in
+// `docs/capabilities/01-bounty-lifecycle.md` arrives with the authority it needs — merge with
+// GitHub, evidence with the blob store.
 
 import {
   BountyEventEnvelope,

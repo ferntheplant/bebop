@@ -1,6 +1,6 @@
 // Spike driver: proves one Effect process on the pinned Bun round-trips durable state
-// through both authoritative stores -- Postgres for bebop (`docs/design/SYSTEM.md` §22.1) and SQLite
-// for Swordfish (`docs/design/SYSTEM.md` §22.2).
+// through both authoritative stores -- Postgres for bebop ("Postgres for bebop, SQLite for Swordfish" (ADR 0008)) and SQLite
+// for Swordfish ("Postgres for bebop, SQLite for Swordfish" (ADR 0008)).
 //
 // Milestone 0 asks only for "a small Effect process round-trips one row through
 // Postgres and SQLite". A bare insert-then-select would pass that sentence while leaving

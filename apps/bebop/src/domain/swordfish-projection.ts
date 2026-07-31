@@ -1,4 +1,4 @@
-// Bebop's durable projection of one Swordfish (`docs/design/SYSTEM.md` §9.3).
+// Bebop's durable projection of one Swordfish ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
 //
 // The workflow transitions come from `@bebop/workflow`, which Swordfish applies too. What
 // this module owns is the part Swordfish has no equivalent of: which connection is

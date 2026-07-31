@@ -6,8 +6,9 @@
 
 **Pinned versions:** Bun 1.3.14, `effect@4.0.0-beta.101`, `@effect/platform-bun@4.0.0-beta.101`
 
-**Assumption under test:** [`docs/design/SYSTEM.md`](../../docs/design/SYSTEM.md) §25 — Effect 4 `effect/unstable/httpapi` for the HTTP API
-with generated OpenAPI, `effect/unstable/cli` for the CLI — and §18.1, "each Swordfish initiates an outbound,
+**Assumption under test:** [Effect on Bun (ADR 0005)](../../docs/adr/0005-effect-on-bun-for-every-process.md) — Effect 4 `effect/unstable/httpapi` for the HTTP API
+with generated OpenAPI, `effect/unstable/cli` for the CLI — and
+[Swordfish connects outbound only (ADR 0013)](../../docs/adr/0013-swordfish-connects-outbound-only.md), "each Swordfish initiates an outbound,
 reconnecting WebSocket to bebop".
 
 **Milestone:** Milestone 0, "Verify Effect HTTP, Postgres, SQLite, WebSocket, and CLI packages work on the
@@ -93,7 +94,7 @@ Milestone 3, where the live stream is a real subscription rather than a finite r
 
 `HttpServerRequest.upgrade` yields a `Socket` on the server; `BunSocket.layerWebSocket(url)` provides one on the
 client. Messages round-tripped in both directions (W1), and a second connection opened after the first closed
-worked against the same server (W2) — which is the shape of `SYSTEM.md` §18.1's reconnecting channel, though not yet its
+worked against the same server (W2) — which is the shape of "Swordfish connects outbound only" (ADR 0013)'s reconnecting channel, though not yet its
 reconnect _policy_.
 
 Two operational details:

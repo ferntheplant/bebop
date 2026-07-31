@@ -1,4 +1,4 @@
-// The durable Swordfish projection and the accepted-event log behind it (`docs/design/SYSTEM.md` §9.3).
+// The durable Swordfish projection and the accepted-event log behind it ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
 //
 // Two things are persisted, and they answer different questions:
 //

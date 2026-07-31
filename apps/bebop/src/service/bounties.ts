@@ -318,7 +318,7 @@ export const transitionLifecycle = Effect.fnUntraced(function* (options: {
   );
 });
 
-/** Records an approval for one exact candidate SHA (`docs/design/SYSTEM.md` §13.3). */
+/** Records an approval for one exact candidate SHA ("`.bebop/**` is permanently privileged" (ADR 0011)). */
 export const approveConfig = Effect.fnUntraced(function* (options: {
   readonly bountyId: BountyId;
   readonly candidateSha: GitSha;

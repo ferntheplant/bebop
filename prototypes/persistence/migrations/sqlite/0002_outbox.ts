@@ -1,4 +1,4 @@
-// The unsent-event outbox (`docs/design/SYSTEM.md` §18.3). Swordfish commits an event here before it
+// The unsent-event outbox ("Replay fails closed" (ADR 0029)). Swordfish commits an event here before it
 // is externally visible, which is exactly the boundary the SIGKILL probe interrupts.
 
 import { Effect } from "effect";

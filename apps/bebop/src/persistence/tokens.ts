@@ -1,4 +1,4 @@
-// Named bearer tokens, stored hashed (`docs/design/SYSTEM.md` §17.4).
+// Named bearer tokens, stored hashed (`docs/capabilities/14-the-security-model.md`).
 //
 // The plaintext exists in exactly one place: the `POST /api/tokens` response. Postgres holds
 // only a SHA-256 hash, so a database read cannot recover a working credential. Authentication
@@ -67,7 +67,7 @@ export interface ApiTokenRepositoryService {
    * Resolves a presented secret to the token that authorises the request, recording use.
    *
    * A revoked token resolves to `null`: revocation must take effect on the next request,
-   * not at the next restart (`docs/design/SYSTEM.md` §17.4, "individually revocable").
+   * not at the next restart (`docs/capabilities/14-the-security-model.md`, "individually revocable").
    */
   readonly authenticate: (options: {
     readonly secret: ApiTokenSecret;

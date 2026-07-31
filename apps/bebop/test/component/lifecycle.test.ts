@@ -1,8 +1,8 @@
 // Bounty lifecycle across the API and the worker, and what survives a restart.
 //
-// Milestone 3 exit criteria: "creating the same bounty request with one idempotency key
-// cannot create duplicate lifecycle work" and "restarting the API and worker preserves
-// bounties, commands, tokens, and projections".
+// Two invariants: creating the same bounty request with one idempotency key cannot create
+// duplicate lifecycle work, and restarting the API and worker preserves bounties, commands,
+// tokens, and projections (`ABSTRACT.md` §8 criterion 42).
 
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 
@@ -68,8 +68,8 @@ suite("Bounty lifecycle", () => {
     await harness.runJobs();
 
     const provisioned = await get(created.bountyId);
-    // Still `provisioning` to a client: `docs/design/SYSTEM.md` §10.1 does not consider a bounty created
-    // until its Swordfish connects, and none has.
+    // Still `provisioning` to a client: provisioning is not finished until the bounty's
+    // Swordfish connects (`docs/capabilities/02-provisioning-and-attachment.md`), and none has.
     expect(provisioned.status).toBe("provisioning");
     expect(provisioned.attachment?.ssh?.host).toBe("127.0.0.1");
     expect(provisioned.attachment?.previews).toHaveLength(1);

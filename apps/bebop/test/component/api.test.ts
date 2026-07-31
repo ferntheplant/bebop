@@ -1,4 +1,4 @@
-// The HTTP API against a real disposable Postgres (Milestone 3 exit criterion 1).
+// The HTTP API against a real disposable Postgres (`docs/capabilities/01-bounty-lifecycle.md`).
 
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 

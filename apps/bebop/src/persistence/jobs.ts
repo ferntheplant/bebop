@@ -1,4 +1,4 @@
-// Durable background work for `bebop-worker` (`docs/design/SYSTEM.md` §25).
+// Durable background work for `bebop-worker` (`docs/capabilities/15-deployment-and-operation.md`).
 //
 // The API never provisions or destroys inline. It writes durable intent — a job row, in the
 // same transaction as the state change that justified it — and the worker performs the

@@ -1,5 +1,5 @@
-// The bounty record Bebop is authoritative for (`docs/design/SYSTEM.md` §9.1), and the rule that turns
-// it plus a Swordfish stage into the compact status in `docs/design/SYSTEM.md` §17.5.
+// The bounty record Bebop is authoritative for ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)), and the rule that turns
+// it plus a Swordfish stage into the compact status in `docs/capabilities/01-bounty-lifecycle.md`.
 
 import type {
   BountyId,
@@ -54,7 +54,7 @@ export interface VmMapping {
   readonly destroyedAt?: Timestamp;
 }
 
-/** The assigned working branch for a bounty (`docs/design/SYSTEM.md` §2: `bounty/<bounty-id>`). */
+/** The assigned working branch for a bounty ("The bounty primitive" (ADR 0001): `bounty/<bounty-id>`). */
 export function assignedBranchFor(bountyId: BountyId): string {
   return `bounty/${bountyId}`;
 }
@@ -63,15 +63,16 @@ export function assignedBranchFor(bountyId: BountyId): string {
  * The compact status a client sees.
  *
  * Bebop's own lifecycle wins wherever it has an opinion, because it owns provisioning,
- * stopping, merging, and destruction (`docs/design/SYSTEM.md` §9.1). Only an `active` bounty defers to
+ * stopping, merging, and destruction ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)). Only an `active` bounty defers to
  * the Swordfish stage — and an active bounty whose Swordfish has never registered is still
- * `provisioning`, because `docs/design/SYSTEM.md` §10.1 does not consider a bounty created until its
- * Swordfish connects.
+ * `provisioning`, because provisioning is not finished until its Swordfish connects
+ * (`docs/capabilities/02-provisioning-and-attachment.md`).
  *
- * `ready` is reported from the stage alone in this milestone. `docs/design/SYSTEM.md` §9.4 requires
- * Bebop to verify the branch head, the checks, and the spec revision before exposing merge;
- * that verification arrives with GitHub in Milestone 10, and until then readiness is
- * presented as what it is — Swordfish's claim.
+ * `ready` is reported from the stage alone today. "Readiness is a claim, not authority"
+ * (ADR 0003) requires Bebop to verify the branch head, the checks, and the spec revision
+ * before exposing merge;
+ * that verification arrives with GitHub (`docs/capabilities/12-pull-request-and-merge.md`),
+ * and until then readiness is presented as what it is — Swordfish's claim.
  */
 export function deriveBountyStatus(
   lifecycleState: BountyLifecycleState,

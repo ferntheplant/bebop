@@ -1,5 +1,5 @@
 // Spike: does the OpenCode plugin API let a supervisor authoritatively reject
-// prompt submission to a leased seat? `docs/design/SYSTEM.md` §11.5 assumes yes.
+// prompt submission to a leased seat? "The control lease is enforced in four independent layers" (ADR 0009) assumes yes.
 //
 // `chat.message` is typed `=> Promise<void>` — there is no `output.status` deny
 // channel like `permission.ask` has. So the only available mechanism is throwing,

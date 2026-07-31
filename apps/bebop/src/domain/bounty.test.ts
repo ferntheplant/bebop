@@ -17,7 +17,7 @@ describe("bounty status derivation", () => {
     const cases: ReadonlyArray<readonly [BountyLifecycleState, SwordfishStage | null, string]> = [
       ["provisioning", null, "provisioning"],
       // A stopping bounty is stopped to a client even if its last event said `implementing`:
-      // Bebop owns lifecycle commands (`docs/design/SYSTEM.md` §9.1).
+      // Bebop owns lifecycle commands ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
       ["stopping", "implementing", "stopped"],
       ["stopped", "implementing", "stopped"],
       ["destroying", "ready", "stopped"],
@@ -32,8 +32,9 @@ describe("bounty status derivation", () => {
   });
 
   test("an active bounty whose Swordfish has never registered is still provisioning", () => {
-    // `docs/design/SYSTEM.md` §10.1 does not consider a bounty created until its Swordfish connects, so a
-    // VM with no supervisor on it is not yet something a user can work with.
+    // Provisioning is not finished until its Swordfish connects
+    // (`docs/capabilities/02-provisioning-and-attachment.md`), so a VM with no supervisor on
+    // it is not yet something a user can work with.
     expect(deriveBountyStatus("active", null, "never_connected")).toBe("provisioning");
   });
 

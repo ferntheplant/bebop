@@ -1,4 +1,4 @@
-// The bounty-scoped Swordfish credential (`docs/design/SYSTEM.md` §18.2).
+// The bounty-scoped Swordfish credential ("Swordfish tokens are bounty-scoped" (ADR 0014)).
 //
 // One token per bounty, minted when its VM is created, injected at bootstrap, bound to the
 // bounty/VM pair, and valid for the life of the bounty. Rotation and wall-clock expiry were

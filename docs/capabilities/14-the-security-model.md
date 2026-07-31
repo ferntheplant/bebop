@@ -39,6 +39,23 @@ system into granting any.
 The sandbox may _report_ that it needs another capability, but it cannot attach or grant one. Capability changes
 require a bebop action and become bounty metadata.
 
+## Who may call the API
+
+Two independent layers:
+
+1. **Private ingress.** The API is reachable only through its exe.dev private URL, so exe.dev's own
+   authentication is the first gate and there is no public surface at all.
+2. **Named bearer tokens** issued by bebop — `fern-cli`, later `linear-bot` — stored hashed in Postgres, checked
+   on every request, and individually revocable. Revocation takes effect on the next request, not at the next
+   restart.
+
+A token's plaintext exists exactly once, in the response that creates it; listing returns metadata only. A fresh
+database is bootstrapped with one token from `BEBOP_BOOTSTRAP_API_TOKEN`, consumed only while the token table is
+empty — once any token row exists, startup never recreates or un-revokes a token from environment configuration,
+so the bootstrap value can be removed from the deployment once real client tokens exist.
+
+`GET /api/health` is the single unauthenticated route, and exposes liveness and nothing else.
+
 ## What you should still expect to be true
 
 - **Integrations are VM-scoped, not seat-scoped.** Every process in an attached VM can invoke every attached

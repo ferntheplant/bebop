@@ -77,8 +77,8 @@ const tunableDefaults: {
    * How long the HTTP server holds a connection with no traffic on it.
    *
    * Bun's default is ten seconds, which would drop every `GET /api/bounties/:id/events`
-   * subscriber on a quiet bounty — exactly the clients `docs/design/SYSTEM.md` §17.6 expects to sit and
-   * tail. 255 seconds is Bun's maximum. It is deliberately not disabled: an unbounded idle
+   * subscriber on a quiet bounty — exactly the clients that are meant to sit and tail it
+   * (`docs/capabilities/01-bounty-lifecycle.md`). 255 seconds is Bun's maximum. It is deliberately not disabled: an unbounded idle
    * connection is a resource a half-dead client can hold forever, and the event stream is
    * resumable by construction — a dropped subscriber reconnects with `Last-Event-ID` and
    * misses nothing.

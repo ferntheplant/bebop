@@ -1,4 +1,4 @@
-// Bebop's projection of the Swordfish event stream (`docs/design/SYSTEM.md` §§18.3 and 22.1).
+// Bebop's projection of the Swordfish event stream ("Replay fails closed" (ADR 0029) and 22.1).
 //
 // `sequence` is bigint on purpose: protocol sequence numbers are the one place where a
 // driver that silently narrows integers to JavaScript doubles would corrupt state, so the

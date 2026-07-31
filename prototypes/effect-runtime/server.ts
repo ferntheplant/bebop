@@ -1,9 +1,9 @@
 // The server half of the spike: the miniature bebop API plus the WebSocket endpoint
-// Swordfish connects back on (`docs/design/SYSTEM.md` §18.1).
+// Swordfish connects back on ("Swordfish connects outbound only" (ADR 0013)).
 //
 // Both are mounted on one Bun HTTP server, which is how the real bebop process will run
 // them -- the Swordfish gateway and the public API share a port in the deployment described
-// in `docs/design/SYSTEM.md` §24.
+// in `docs/capabilities/15-deployment-and-operation.md`.
 
 import { Effect, Layer, Redacted, Schedule, Stream } from "effect";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";

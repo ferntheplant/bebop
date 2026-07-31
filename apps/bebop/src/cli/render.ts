@@ -58,7 +58,7 @@ export function printBounty(bounty: BountyDetail): string {
     lines.push(`attention   ${bounty.attentionReason}`);
   }
   if (bounty.readinessClaimSha !== undefined) {
-    // Named a claim, not a state, because `docs/design/SYSTEM.md` §9.4 makes readiness something Bebop
+    // Named a claim, not a state, because "Readiness is a claim, not authority" (ADR 0003) makes readiness something Bebop
     // verifies independently before merge is offered.
     lines.push(`ready claim ${bounty.readinessClaimSha}`);
   }

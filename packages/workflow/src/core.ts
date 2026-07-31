@@ -1,4 +1,4 @@
-// The Swordfish workflow transition core (`docs/design/SYSTEM.md` §12.1).
+// The Swordfish workflow transition core (`docs/capabilities/06-autonomous-implementation.md`).
 //
 // Both Swordfish and Bebop apply the same event stream and must reach the same conclusion
 // about stage, gates, candidate, and attention. This module is the single interpretation of

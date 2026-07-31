@@ -40,7 +40,7 @@ import {
  * Queues a Bebop command for Swordfish.
  *
  * The command is durable before this returns, so a Swordfish that is offline — or a Bebop
- * that restarts a second later — still delivers it (`docs/design/SYSTEM.md` §18.4).
+ * that restarts a second later — still delivers it (`docs/capabilities/13-recovery-and-reliability.md`).
  */
 const enqueueCommand = Effect.fnUntraced(function* (options: {
   readonly bountyId: BountyId;
@@ -123,7 +123,8 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
     )
 
     .handle("getBountyEvidence", ({ params }) =>
-      // Evidence ingestion lands in Milestone 10. An empty bundle list is the honest answer
+      // Evidence ingestion is not built (`docs/capabilities/11-evidence.md`). An empty bundle
+      // list is the honest answer
       // for a bounty that has uploaded none, which today is every bounty; the route exists so
       // the contract is whole and clients can be written against it now.
       requireBounty(params.bountyId).pipe(
@@ -156,8 +157,9 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
     )
 
     .handle("mergeBounty", ({ params }) =>
-      // Merge authority is Bebop's (`docs/design/SYSTEM.md` §9.1) and needs GitHub, which Milestone 3
-      // deliberately does not have. Refusing is the only honest answer: a success here would
+      // Merge authority is Bebop's ("Bebop owns authority, Swordfish owns the loop", ADR 0002)
+      // and needs GitHub, which this Bebop deliberately does not have
+      // (`docs/capabilities/12-pull-request-and-merge.md`). Refusing is the only honest answer: a success here would
       // claim an external side effect that never happened.
       requireBounty(params.bountyId).pipe(
         Effect.flatMap(() =>

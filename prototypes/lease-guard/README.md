@@ -6,7 +6,7 @@
 
 **Pinned OpenCode version:** 1.18.5 (`@opencode-ai/plugin@1.18.5`, `@opencode-ai/sdk@1.18.5`)
 
-**Assumption under test:** [`docs/design/SYSTEM.md`](../../docs/design/SYSTEM.md) §11.5 — "the bebop plugin rejects prompt submission on a
+**Assumption under test:** [The control lease (ADR 0009)](../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md) — "the bebop plugin rejects prompt submission on a
 leased seat regardless of how the prompt arrived — including a user who opens a second OpenCode client from a
 shell pane."
 
@@ -50,7 +50,7 @@ With the lease held by Swordfish, the shell route returned 200, created an assis
 part, and **executed the command** (verified by a sentinel file appearing on disk). None of `chat.message`,
 `tool.execute.before`, or `command.execute.before` fired.
 
-This is a real hole in `SYSTEM.md` §11.5's "regardless of how the prompt arrived." A user with HTTP access to the
+This is a real hole in "The control lease is enforced in four independent layers" (ADR 0009)'s "regardless of how the prompt arrived." A user with HTTP access to the
 OpenCode server — exactly what a cockpit shell pane provides — can run arbitrary commands attributed to a
 leased seat and mutate ein's worktree without the supervisor observing it.
 
@@ -62,7 +62,7 @@ The synchronous route returns an opaque `{"name":"UnknownError","data":{"message
 Check server logs for details.","ref":"err_..."}}` — the thrown message is stripped. The async route returns
 `204 No Content` and reports nothing at all; the denial surfaces only as a `session.error` event.
 
-`SYSTEM.md` §11.5 says the plugin "tells the user to run the takeover command." That cannot be delivered through the
+"The control lease is enforced in four independent layers" (ADR 0009) says the plugin "tells the user to run the takeover command." That cannot be delivered through the
 HTTP response. It has to come from the event stream, the seat's TUI, or the Swordfish status pane.
 
 ### 4. Session storage is shared per project, and `--pure` skips plugins
@@ -143,7 +143,7 @@ pane and the seat, it can be handed out deliberately, and rotating it revokes ev
 
 ## Consequences for the design
 
-1. **`SYSTEM.md` §11.5's third layer is cheap, not architectural.** Two environment variables set by Swordfish when it
+1. **"The control lease is enforced in four independent layers" (ADR 0009)'s third layer is cheap, not architectural.** Two environment variables set by Swordfish when it
    spawns OpenCode — `OPENCODE_DB` for a private seat database and `OPENCODE_SERVER_PASSWORD` for a random
    per-boot secret — cover the shell route and the second-instance route respectively. Neither a reverse proxy
    nor OS user separation is required for the MVP.
@@ -151,14 +151,14 @@ pane and the seat, it can be handed out deliberately, and rotating it revokes ev
    it should pass through with per-route lease policy and default-deny only _unknown_ routes while a lease is
    held, rather than maintaining an allowlist that must track OpenCode's API surface across upgrades.
 3. **OS user separation is not worth its cost here.** It is the only thing that makes bypass genuinely
-   impossible, but it contradicts `SYSTEM.md` §16.1's free shell panes, and an operator with sudo reopens it anyway.
+   impossible, but it contradicts `docs/capabilities/03-the-cockpit.md`'s free shell panes, and an operator with sudo reopens it anyway.
    The threat model in §21.1 is accidental interference by a trusted operator, not an adversary.
 4. **The seat password is a capability, not configuration.** Bind its lifetime to the control lease: never
    publish it, issue it only through `sf takeover`, and rotate it on every control release — `sf handback`, the
    `/auto` `set_spec` transition, and role-aware plugin handback — when one was issued during that episode.
    Without rotation, a single takeover grants permanent shell-route access and every later lease is advisory.
    Rotation costs a seat-server restart, since the variable is read at process start; sessions survive it via
-   `OPENCODE_DB`, but seat panes and the event subscription must be re-established. `SYSTEM.md` §11.5 records this.
+   `OPENCODE_DB`, but seat panes and the event subscription must be re-established. "The control lease is enforced in four independent layers" (ADR 0009) records this.
 5. **Detection belongs in the design regardless.** Swordfish already consumes the OpenCode event stream, and it
    knows which prompts it originated. Any message or tool execution on a leased seat that Swordfish did not
    originate is an intrusion, and that invariant is route-agnostic — it catches future unhooked routes that an

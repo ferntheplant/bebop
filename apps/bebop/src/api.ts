@@ -1,4 +1,4 @@
-// The `bebop-api` container process (`docs/design/SYSTEM.md` §24).
+// The `bebop-api` container process (`docs/capabilities/15-deployment-and-operation.md`).
 //
 // It serves the public API and accepts Swordfish connections on one port, runs migrations
 // before listening, reconciles inherited connection freshness, and shuts down on a signal

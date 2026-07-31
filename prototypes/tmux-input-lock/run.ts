@@ -1,6 +1,6 @@
 // Spike driver: does tmux disable keyboard input to one pane without hiding its output?
 //
-// `docs/design/SYSTEM.md` §16.2 lists the tmux input lock as the UX layer of steering safety. The
+// `docs/capabilities/03-the-cockpit.md` lists the tmux input lock as the UX layer of steering safety. The
 // claim has two halves and they pull against each other -- a pane that cannot be typed
 // into is easy to build by hiding it, and that would destroy the thing section 16.1 is
 // actually for: watching a seat work.
@@ -60,7 +60,7 @@ const host = (...args: Array<string>) => tmux(hostSocket, ...args);
 const attachPane = "host:0.1";
 const attachCommand = `tmux -f /dev/null -S ${seatSocket} attach -t seat`;
 
-// The free shell pane stands in for `docs/design/SYSTEM.md` §16.1's shell panes. `/bin/sh` is named
+// The free shell pane stands in for `docs/capabilities/03-the-cockpit.md`'s shell panes. `/bin/sh` is named
 // explicitly so the probe does not inherit the developer's login shell or its startup
 // files (see `docs/testing.md` on fixtures).
 const freeShellPane = "seat:0.1";
@@ -270,7 +270,7 @@ try {
     const off = await inputOff();
     const delivered = await deliver("unlocked-from-shell-pane", "real-client");
     return {
-      // Passing means the spike confirmed the bypass exists. `docs/design/SYSTEM.md` §16.2 already
+      // Passing means the spike confirmed the bypass exists. `docs/capabilities/03-the-cockpit.md` already
       // calls this layer "UX"; this measures how thin it is.
       pass: !off && delivered,
       observed: { paneInputOffAfterUnlock: off, keystrokeDeliveredAfterUnlock: delivered },

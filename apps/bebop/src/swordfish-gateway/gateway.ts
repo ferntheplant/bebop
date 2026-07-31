@@ -1,4 +1,4 @@
-// The Swordfish connection gateway (`docs/design/SYSTEM.md` §18).
+// The Swordfish connection gateway ("Swordfish connects outbound only" (ADR 0013)).
 //
 // Swordfish dials out; Bebop accepts. One WebSocket per bounty carries registration,
 // heartbeats, sequenced events, acknowledgements, command delivery, and command results.
@@ -6,7 +6,7 @@
 // Three rules run through everything below and are the reason the code is shaped this way:
 //
 // 1. **An acknowledgement is a promise that the event is durable.** Swordfish drops an
-//    acknowledged event from its outbox permanently (`docs/design/SYSTEM.md` §18.3), so Bebop
+//    acknowledged event from its outbox permanently ("Replay fails closed" (ADR 0029)), so Bebop
 //    acknowledges only after the projection transaction has committed, and never for an
 //    input it discarded — `wrong_connection` is not an error, but acknowledging it would
 //    lose the event for good.
@@ -14,8 +14,7 @@
 //    bound to one bounty and one VM; a later message claiming a different pair is a protocol
 //    error, not a routing hint.
 // 3. **A malformed or oversized frame fails closed.** The connection is refused rather than
-//    buffered, which is the mechanism Milestone 5's "bounded queues and oversized or
-//    malformed messages fail closed" scenario tests.
+//    buffered, so bounded queues and oversized or malformed messages fail closed.
 
 import type {
   BebopToSwordfishMessage,
@@ -48,7 +47,8 @@ import { CommandRepository } from "#src/persistence/commands.ts";
 import { applyProjectionInput } from "#src/service/projection.ts";
 import { hashSwordfishToken, presentedSwordfishToken } from "#src/swordfish-gateway/credentials.ts";
 
-/** The path Swordfish dials. Shares the API's port, as `docs/design/SYSTEM.md` §24 deploys one service. */
+/** The path Swordfish dials. Shares the API's port: one container, one port behind Caddy
+ * (`docs/capabilities/15-deployment-and-operation.md`). */
 export const swordfishGatewayPath = "/swordfish";
 
 const encodeOutbound = Schema.encodeUnknownSync(BebopToSwordfishMessageSchema);
@@ -179,7 +179,7 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
             Effect.annotateLogs("connection_id", connectionId),
           );
           // A reconnect is exactly when an offline bounty's queued commands are owed
-          // (`docs/design/SYSTEM.md` §18.4).
+          // (`docs/capabilities/13-recovery-and-reliability.md`).
           yield* drainCommands(current);
         });
 
@@ -264,7 +264,8 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
               return;
             }
             default:
-              // Evidence upload negotiation lands with the blob store in Milestone 10.
+              // Evidence upload negotiation lands with the blob store
+              // (`docs/capabilities/11-evidence.md`).
               return yield* protocolError("invalid_message", `"${message.type}" is not accepted yet.`);
           }
         });

@@ -2,7 +2,7 @@
 //
 // These three tables move together often enough that splitting them would mean a caller
 // opening a transaction across three services to answer "what is this bounty". They are all
-// Bebop-authoritative state (`docs/design/SYSTEM.md` §9.1).
+// Bebop-authoritative state ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
 
 import type {
   BountyId,
@@ -131,7 +131,7 @@ export interface BountyRepositoryService {
     readonly at: Timestamp;
   }) => Effect.Effect<void, SqlError.SqlError>;
 
-  /** Binds the bounty-scoped Swordfish credential (`docs/design/SYSTEM.md` §18.2) to the bounty. */
+  /** Binds the bounty-scoped Swordfish credential ("Swordfish tokens are bounty-scoped" (ADR 0014)) to the bounty. */
   readonly setSwordfishTokenHash: (options: {
     readonly bountyId: BountyId;
     readonly tokenHash: string;

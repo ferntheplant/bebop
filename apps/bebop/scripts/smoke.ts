@@ -1,7 +1,7 @@
 // The artifact smoke for the packed `bebop-api`, `bebop-worker`, and `bebop` executables.
 //
-// Until this milestone the smoke could simply run each artifact and compare its stdout,
-// because each one printed its own name and exited. They are real programs now: two of them
+// The smoke once ran each artifact and compared its stdout, because each one printed its own
+// name and exited. They are real programs now: two of them
 // want a database and stay up, and one is a CLI.
 //
 // What is still worth asserting is what a packaging mistake actually breaks — that each

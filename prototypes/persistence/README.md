@@ -7,7 +7,7 @@
 **Pinned versions:** Bun 1.3.14, `effect@4.0.0-beta.101`, `@effect/sql-pg@4.0.0-beta.101`,
 `@effect/sql-sqlite-bun@4.0.0-beta.101`, `@effect/platform-bun@4.0.0-beta.101`, `postgres:17-alpine`
 
-**Assumption under test:** [`docs/design/SYSTEM.md`](../../docs/design/SYSTEM.md) §25 — `@effect/sql-pg` with its Migrator for bebop and
+**Assumption under test:** [Effect on Bun (ADR 0005)](../../docs/adr/0005-effect-on-bun-for-every-process.md) — `@effect/sql-pg` with its Migrator for bebop and
 `@effect/sql-sqlite` for Swordfish, on TypeScript/Bun.
 
 **Milestone:** Milestone 0, "Verify Effect HTTP, Postgres, SQLite, WebSocket, and CLI packages work on the
@@ -131,7 +131,7 @@ therefore needs `BunServices.layer` even though the SQLite client itself has no 
 Migration files are loaded by dynamic `import`, which works under Bun for `.ts` sources. `vp pack` produces a
 bundle rather than a directory of loose migration modules, so **the packaged services should switch to
 `Migrator.fromGlob`**, whose imports are statically analysable. `fromFileSystem` is right for the prototype and for
-tests; it is not right for the single-binary Swordfish in `SYSTEM.md` §25.
+tests; it is not right for the single-binary Swordfish in `docs/capabilities/15-deployment-and-operation.md`.
 
 ### 7. A prototype that can inherit state cannot be trusted when it passes (process finding)
 
@@ -156,13 +156,13 @@ with `tmpfs` storage, and the SQLite database is recreated from scratch on every
 
 ## Layout
 
-| Path                 | Purpose                                                                   |
-| -------------------- | ------------------------------------------------------------------------- |
-| `run.ts`             | Driver: brings up Postgres, runs all 16 probes, reports and tears down    |
-| `sigkill-child.ts`   | Commits a transaction and SIGKILLs itself, for the crash-durability probe |
-| `compose.yml`        | Ephemeral Postgres on a Docker-allocated port with `tmpfs` storage        |
-| `migrations/pg/`     | Bebop-authoritative tables (`SYSTEM.md` §22.1)                            |
-| `migrations/sqlite/` | Swordfish-authoritative tables (`SYSTEM.md` §22.2)                        |
+| Path                 | Purpose                                                                                |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `run.ts`             | Driver: brings up Postgres, runs all 16 probes, reports and tears down                 |
+| `sigkill-child.ts`   | Commits a transaction and SIGKILLs itself, for the crash-durability probe              |
+| `compose.yml`        | Ephemeral Postgres on a Docker-allocated port with `tmpfs` storage                     |
+| `migrations/pg/`     | Bebop-authoritative tables ("Postgres for bebop, SQLite for Swordfish" (ADR 0008))     |
+| `migrations/sqlite/` | Swordfish-authoritative tables ("Postgres for bebop, SQLite for Swordfish" (ADR 0008)) |
 
 This is a prototype, not product code. The real repositories land in `apps/bebop` during Milestone 3 and
 `apps/swordfish` during Milestone 4.

@@ -1,4 +1,4 @@
-// Cursor replay followed by live delivery (Milestone 3 exit criterion 3).
+// Cursor replay followed by live delivery (`ABSTRACT.md` §8 criterion 40).
 
 import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 

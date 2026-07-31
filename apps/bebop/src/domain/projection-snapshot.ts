@@ -1,4 +1,4 @@
-// The durable encoding of Bebop's Swordfish projection (`docs/design/SYSTEM.md` §9.3).
+// The durable encoding of Bebop's Swordfish projection ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
 //
 // The projection is a decoded domain value: it holds `DateTime.Utc` timestamps, branded
 // identifiers, and a nested effective spec. None of that survives `JSON.stringify` on its

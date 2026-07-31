@@ -5,9 +5,25 @@ Status: open
 
 ## Question
 
-`docs/design/SYSTEM.md` §15 carries provisional values for turn budgets, wall-clock budgets, and attempt
-counts, plus the rule that exhaustion enters `needs_attention` and a human `retry` grants exactly one more
-life for the exhausted constraint only.
+The provisional profile, adopted as a recommended default and never reviewed:
+
+```yaml
+constraints:
+  primary:
+    maxTurnsPerAttempt: 40
+    maxWallClockMinutesPerAttempt: 90
+  review:
+    maxRounds: 3
+    maxTurnsPerAttempt: 15
+    maxWallClockMinutesPerAttempt: 30
+  qa:
+    maxRounds: 3
+    maxTurnsPerAttempt: 20
+    maxWallClockMinutesPerAttempt: 45
+```
+
+Swordfish keeps a ledger rather than resetting counters globally: exhaustion enters `needs_attention`, and a
+human `retry` grants exactly one more life to the exhausted constraint only.
 
 Settle:
 

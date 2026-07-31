@@ -6,8 +6,9 @@ Status: open
 ## Question
 
 faye's model is planned to arrive through exe.dev's generic HTTP Proxy integration, which injects an
-authorization header so the reusable OpenCode Go key never sits on a bounty VM
-(`docs/design/SYSTEM.md` §20.2).
+authorization header so the reusable OpenCode Go key never sits on a bounty VM — the
+[credential-off-VM rule](../../../docs/capabilities/14-the-security-model.md) is not considered implemented
+until this passes.
 
 Establish, against the live integration:
 

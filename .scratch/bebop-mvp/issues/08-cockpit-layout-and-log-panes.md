@@ -7,8 +7,8 @@ Blocked by: 06, 07
 ## Question
 
 The cockpit is a Swordfish-owned tmux with a status pane, locked seat panes, and free shell panes
-(`docs/design/SYSTEM.md` §16.1), with log panes generated from the services declared in `.bebop/config.yml` —
-that last part provisional and unbuilt.
+([the cockpit](../../../docs/capabilities/03-the-cockpit.md)), with log panes generated from the services
+declared in `.bebop/config.yml` — that last part provisional and unbuilt.
 
 Build a fake cockpit against scripted output and settle:
 

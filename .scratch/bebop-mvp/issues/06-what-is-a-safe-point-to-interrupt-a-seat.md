@@ -6,8 +6,8 @@ Status: open
 ## Question
 
 The provisional protocol is `session.abort` → wait for the idle or aborted event → record the last message ID,
-with takeover permitted only at that point unless forced (`docs/design/SYSTEM.md` §11.5, §16.2). "Safe point"
-is doing a lot of work in that sentence and has never been defined per stage.
+with takeover permitted only at that point unless forced. "Safe point" is doing a lot of work in that
+sentence and has never been defined per stage.
 
 Settle:
 

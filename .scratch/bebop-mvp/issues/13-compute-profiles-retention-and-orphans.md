@@ -6,7 +6,7 @@ Blocked by: 04
 
 ## Question
 
-All provisional (`docs/design/SYSTEM.md` §20): small 2c/4GB, standard 4c/8GB default, large 8c/16GB; merged
+All provisional: small 2c/4GB, standard 4c/8GB default, large 8c/16GB; merged
 bounties retained one hour, stopped or failed seven days, records forever; orphans reconciled by a periodic
 tag-versus-Postgres sweep.
 

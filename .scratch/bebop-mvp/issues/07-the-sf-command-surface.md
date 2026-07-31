@@ -6,7 +6,7 @@ Status: open
 ## Question
 
 `sf status/takeover/handback/extend/retry/approve-config/stop` exists and works, but the set was adopted as a
-provisional default (`docs/design/SYSTEM.md` §16.3) and has never been used by a human steering a real bounty.
+provisional default and has never been used by a human steering a real bounty.
 
 Build the cheapest possible thing to react to — a scripted transcript of a session at the cockpit, or `sf`
 against a fabricated status — and settle:

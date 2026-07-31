@@ -5,8 +5,7 @@ Status: open
 
 ## Question
 
-`docs/design/SYSTEM.md` §14.1 and §20.2 assume ein and jet reach a frontier model through exe.dev's LLM
-integration, using its OpenAI strategy against a connected ChatGPT subscription, with no reusable API key ever
+The design assumes ein and jet reach a frontier model through exe.dev's LLM integration, using its OpenAI strategy against a connected ChatGPT subscription, with no reusable API key ever
 landing on a bounty VM. That assumption has never been tested against the live product.
 
 Establish:

@@ -22,4 +22,5 @@ Establish:
 - how private URLs and SSH attachment metadata are obtained and how long they stay valid;
 - what VM loss looks like from the API's side — is a lost VM distinguishable from an unreachable one?
 
-The last point is the one the design most depends on: `docs/design/SYSTEM.md` §20.5 assumes bebop can tell.
+The last point is the one the design most depends on:
+[recovery](../../../docs/capabilities/13-recovery-and-reliability.md) assumes bebop can tell.

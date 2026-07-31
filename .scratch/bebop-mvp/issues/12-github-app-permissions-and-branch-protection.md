@@ -5,9 +5,18 @@ Status: open
 
 ## Question
 
-The provisional answer is contents RW, pull_requests RW, checks and statuses read, metadata read
-(`docs/design/SYSTEM.md` §19). The security model depends on the sandbox being unable to update the protected
-merge target, which is a claim about GitHub's configuration, not about Bebop's code.
+The provisional answer is contents RW, pull_requests RW, checks and statuses read, metadata read, on an
+identity separate from the exe.dev push App. The security model depends on the sandbox being unable to update
+the protected merge target, which is a claim about GitHub's configuration, not about Bebop's code.
+
+The provisional mitigations, none of them verified against a real repository:
+
+- default, release, and other sensitive branches use GitHub rulesets;
+- the exe.dev GitHub App cannot bypass those rules;
+- merge targets require pull requests and required checks;
+- bebop verifies the exact head SHA before merge, and only bebop merges;
+- bounty branches use the recognisable `bounty/*` namespace;
+- unexpected branch-head movement invalidates readiness.
 
 Establish:
 

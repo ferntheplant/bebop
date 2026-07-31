@@ -7,8 +7,8 @@ Blocked by: 02
 ## Question
 
 faye is supposed to verify acceptance criteria against the exact candidate SHA in a clean environment, with
-Swordfish-provisioned previews only and SHA, ports, and PIDs in the manifest (`docs/design/SYSTEM.md` §12.7,
-provisional). Playwright in-image via the Playwright MCP is the provisional browser stack.
+Swordfish-provisioned previews only and SHA, ports, and PIDs in the manifest
+([QA](../../../docs/capabilities/10-qa.md), provisional). Playwright in-image via the Playwright MCP is the provisional browser stack.
 
 Settle:
 

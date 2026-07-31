@@ -6,8 +6,8 @@ Blocked by: 01, 02
 
 ## Question
 
-The provisional answer is ein on GPT-5.6 Sol high, jet on the same at medium, faye on GLM 5.2 through the
-HTTP Proxy (`docs/design/SYSTEM.md` §14.1). It was adopted as a recommended default without operator review,
+The provisional answer is ein on GPT-5.6 Sol at high effort, jet on the same at medium, faye on GLM 5.2
+through the HTTP Proxy. It was adopted as a recommended default without operator review,
 and tickets 01 and 02 may make parts of it impossible.
 
 Settle:

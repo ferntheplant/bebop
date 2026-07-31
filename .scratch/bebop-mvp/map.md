@@ -30,8 +30,8 @@ it up as a brief.
   [`prototypes/`](../../prototypes/), and each one changed the design in a way the discussion had not.
 - Anything hard to reverse, surprising, and genuinely traded off gets an ADR when it resolves. Most resolutions
   won't qualify — a resolution comment on the ticket is enough.
-- `docs/design/SYSTEM.md` holds the pre-map design detail. Treat it as a starting position, not an answer; when
-  a ticket touches an area, mine that area out and leave a pointer.
+- [`docs/capabilities/`](../../docs/capabilities/) says what each area is meant to do and where it stands. Treat
+  a provisional value there as a starting position, not an answer.
 
 ## Decisions so far
 
@@ -82,9 +82,10 @@ prototypes rather than tickets.
 In scope, not yet sharp enough to ticket. Graduates as the frontier advances.
 
 - **The end-to-end protocol under real failure.** Both processes exist and both reconnect, but they have never
-  run as separate processes across a network that can break. The scenario list is written down
-  (`docs/design/SYSTEM.md` §18, §22) — what isn't known is which of those scenarios turn out to need a decision
-  rather than a test. Expect this patch to graduate into a small number of tickets and one spec.
+  run as separate processes across a network that can break. What the two are supposed to guarantee each other
+  is written down ([recovery and reliability](../../docs/capabilities/13-recovery-and-reliability.md)) — what
+  isn't known is which failures turn out to need a decision rather than a test. Expect this patch to graduate
+  into a small number of tickets and one brief.
 - **Repository configuration in practice.** `.bebop/config.yml`, the setup and hook contracts, and the
   clean-room worktree are designed but have never been run against a real repository. The shape of the failure
   modes — a hook that hangs, a service that never becomes healthy, a port that collides — will decide how much

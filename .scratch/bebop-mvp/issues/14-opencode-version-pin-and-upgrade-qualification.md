@@ -5,9 +5,9 @@ Status: open
 
 ## Question
 
-OpenCode 1.18.5 is pinned in the root catalog and destined for the base image, with upgrades qualified by a
-"smoke bounty" — a phrase that currently means nothing concrete
-(`docs/design/SYSTEM.md` §20.1, provisional).
+OpenCode 1.18.5 is pinned in the root catalog and destined for the base image
+([provisioning](../../../docs/capabilities/02-provisioning-and-attachment.md)), with upgrades qualified by a
+"smoke bounty" — a phrase that currently means nothing concrete.
 
 This matters more than a normal dependency pin because
 [the whole product is committed to OpenCode (ADR 0004)](../../../docs/adr/0004-commit-to-opencode-with-no-harness-abstraction.md)

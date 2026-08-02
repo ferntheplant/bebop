@@ -77,6 +77,16 @@ prototypes rather than tickets.
 
 <!-- resolutions from this point on link their ticket -->
 
+- [The merge target must enforce rulesets (ADR 0034)](../../docs/adr/0034-the-merge-target-must-enforce-rulesets.md),
+  from [ticket 12](./issues/12-github-app-permissions-and-branch-protection.md)
+  — an installation token cannot be scoped to `bounty/*`, and merging needs the same `contents: write` the
+  sandbox pushes with, so the two identities are not separable by permission. A `pull_request` rule denies
+  everyone including the repository owner, and bebop merges through the PR API rather than around it, so
+  `bypass_actors` stays empty. Squash-only and required checks are enforced and readable back from
+  `GET /rules/branches/{branch}`, which lets bebop verify protection instead of assuming it. Two constraints
+  fall out: the merge target must be public or on a paid plan, and a SHA-pinned merge only reports the
+  diagnostic `409 Head branch was modified` once `mergeable` is non-null — before that it is an ambiguous `405`.
+
 ## Not yet specified
 
 In scope, not yet sharp enough to ticket. Graduates as the frontier advances.

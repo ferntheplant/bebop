@@ -25,6 +25,13 @@ decision.
   actually becomes unmergeable, in which case ein merges base back in.
 - **The sandbox cannot reach your protected branch.** The only path to the merge target is an explicit merge
   command through bebop.
+- **Your target repository has to be one GitHub will protect.** Bebop checks, before it offers a merge, that
+  branch rules are actually in effect on the target — and refuses if they are not. GitHub enforces rulesets on
+  public repositories on every plan, but on private repositories only from Pro, Team, or Enterprise upward. A
+  private repository on a free plan cannot be a merge target until it is upgraded or made public; bebop will say
+  so, and say which plan is needed, rather than merging into an unprotected branch.
+- **Nobody hand-pushes to the target, including you.** The rule that stops the sandbox has no administrator
+  exemption. Landing something on the merge target without a pull request means removing the rule first.
 
 ## Where it stands
 
@@ -49,10 +56,14 @@ merge command squash-merges the PR).
 - [Base drift invalidates only on conflict (ADR 0033)](../adr/0033-base-drift-is-conflict-gated.md)
 - [Swordfish connects outbound only (ADR 0013)](../adr/0013-swordfish-connects-outbound-only.md) — why CI is
   polled rather than pushed to bebop.
+- [The merge target must enforce rulesets (ADR 0034)](../adr/0034-the-merge-target-must-enforce-rulesets.md) —
+  why the target repository's plan and visibility are Bebop's business.
 
-A compromised sandbox can modify unprotected refs in its allowed repository; that is accepted, and branch
-protection on the merge target is the mitigation.
+A compromised sandbox can modify unprotected refs in its allowed repository; that is accepted, and the ruleset
+on the merge target is the mitigation. It is the _only_ mitigation: an installation token cannot be scoped to
+`bounty/*`, and merging needs the same `contents: write` the sandbox pushes with, so the two identities cannot
+be separated by permission alone.
 
 ## Still open
 
-- [What GitHub App permissions are actually needed, and how is the target branch protected?](../../.scratch/bebop-mvp/issues/12-github-app-permissions-and-branch-protection.md)
+- [Which permission posts the evidence comment — `issues: write`, or does `pull_requests: write` suffice?](../../.scratch/bebop-mvp/issues/17-permission-required-to-post-the-evidence-comment.md)

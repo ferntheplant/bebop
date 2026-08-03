@@ -8,11 +8,14 @@ from then on it has an identity that outlives any computer it runs on.
 
 - **Create a bounty** from the CLI or any API client, optionally with an opening prompt.
 - **List and inspect** every bounty, with a compact status — `provisioning`, `interactive`, `autonomous`,
-  `human_controlled`, `needs_attention`, `ready`, `merging`, `done`, `failed`, `stopped` — and the detailed
-  Swordfish stage alongside it.
+  `human_controlled`, `needs_attention`, `ready`, `cancelled`, `merging`, `done`, `failed`, `stopped` — and the
+  detailed Swordfish stage alongside it. `cancelled` means the inner loop ended while the VM remains available;
+  `stopped` means the VM lifecycle stopped.
 - **Follow one live** over SSE with cursor replay, so a client that reconnects misses nothing and never has to
   poll.
 - **Stop** a bounty that is going nowhere, or **destroy** it outright.
+- **Cancel only the inner loop** with authenticated `sf cancel` while leaving Swordfish, the cockpit, and the VM
+  alive for inspection; only bebop stops or destroys the VM.
 - **See a bounty end**: catching it marks it done and deprovisions the VM after a grace period.
 - Bounty records outlive their computers. A bounty whose VM is lost keeps its identity, its branch, its effective
   spec, and its evidence.

@@ -20,7 +20,7 @@ decision.
 - **Honest authorship.** Commits are authored by the acting seat and pushed by the integration's App identity.
   Your personal GitHub identity never appears as author or committer — which is also why the exe.dev Git
   integration must not be configured with `--act-as-user`. That flag would make pushes look conventional at the
-  cost of attributing agent-written code to a human who never wrote it.
+  cost of attributing cowboy-written code to a human who never wrote it.
 - **Base drift handled without churn.** Status shows "behind base by N"; results are invalidated only if the PR
   actually becomes unmergeable, in which case ein merges base back in.
 - **The sandbox cannot reach your protected branch.** The only path to the merge target is an explicit merge
@@ -43,9 +43,9 @@ PRs, CI polling, or merging is built.
 
 Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criteria **20** (the candidate is pushed with normal Git), **21**
 (bebop creates or updates a draft PR), **35** (`bounty list` shows ready only for the verified head SHA), **36**
-(a push after readiness removes ready status), **37** (base drift drops the bounty to revision and ein merges
-base back in), **38** (the sandbox cannot update the protected merge target), and **39** (only an explicit bebop
-merge command squash-merges the PR).
+(a push after readiness removes ready status), **37** (conflicting base drift returns the bounty to `building`
+with feedback so ein merges base back in), **38** (the sandbox cannot update the protected merge target), and
+**39** (only an explicit bebop merge command squash-merges the PR).
 
 ## Decisions
 

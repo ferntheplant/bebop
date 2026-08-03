@@ -1,6 +1,6 @@
 # The security model
 
-What a bounty VM is allowed to do, and what it can never do no matter how badly its agents are behaving. The
+What a bounty VM is allowed to do, and what it can never do no matter how badly its cowboys are behaving. The
 whole design rests on one line: **high-value authority stays outside the sandbox**, so a confused or compromised
 bounty cannot merge code, provision computers, or reach another bounty.
 
@@ -22,6 +22,8 @@ system into granting any.
 - model access through the exe.dev LLM and HTTP Proxy integrations;
 - the context integrations you selected at creation;
 - a bounty-scoped Swordfish connection token;
+- a salted verifier for its per-bounty operator credential; plaintext enters only transiently through hidden
+  human terminal input, never through provisioning or persisted configuration;
 - its own local development services.
 
 ## What a bounty VM must never receive

@@ -1,8 +1,8 @@
 # Bebop
 
-Bebop moves a trusted local coding-agent workflow onto remote computers without losing direct access, steerability, repository context, or independent verification. This file is the project's ubiquitous language: what each term means, and which near-synonyms not to use.
+Bebop moves a trusted local coding workflow onto remote computers without losing direct access, steerability, repository context, or independent verification. This file is the project's ubiquitous language: what each term means, and which near-synonyms not to use.
 
-Names come from the ship, crew, and world of _Cowboy Bebop_, chosen deliberately to avoid collision with vendor vocabulary — OpenCode "sessions", tmux "sessions", Linear "threads". Only reasoning agents receive character names, with two exceptions: bebop itself (the ship) and Swordfish (the smaller ship that carries the crew into a bounty). This preserves the line between agents that reason and software that governs.
+Names come from the ship, crew, and world of _Cowboy Bebop_, chosen deliberately to avoid collision with vendor vocabulary — OpenCode "sessions", tmux "sessions", Linear "threads". Only reasoning cowboys receive character names, with two exceptions: bebop itself (the ship) and Swordfish (the smaller ship that carries the crew into a bounty). This preserves the line between cowboys that reason and software that governs.
 
 ## The system
 
@@ -14,7 +14,7 @@ The always-on provisioner service and its CLI — the ship. It owns bounty lifec
 _Avoid_: master (says where it runs, not what it is), server, control plane.
 
 **Swordfish**:
-The supervisor daemon inside a bounty VM, invoked as `sf`. Deterministic software, not a reasoning agent: it drives the crew, runs gates, and never owns merge authority.
+The supervisor daemon inside a bounty VM, invoked as `sf`. Deterministic software, not a cowboy: it drives the crew, runs gates, and never owns merge authority.
 _Avoid_: orchestrator, agent, runner.
 
 **master VM**:
@@ -45,26 +45,35 @@ An explicit submission by ein, tied to exactly one commit SHA. Only a candidate 
 _Avoid_: build, submission, attempt.
 
 **stage**:
-Where a bounty sits in Swordfish's inner workflow — `implementing`, `local_validation`, `code_review`, `qa_running`, `ready`, and the exceptional states such as `needs_attention` and `blocked`. Swordfish is authoritative for the stage; bebop holds a projection of it.
+Where a bounty sits in Swordfish's inner workflow — `creating_spec`, `building`, `validating`, `reviewing`, `qa`,
+`publishing_evidence`, `ready`, and exceptional stages such as `needs_attention`. Stage says what work is
+happening, not who controls it; Swordfish is authoritative and bebop holds a projection.
 _Avoid_: state, status, phase. (**status** is the compact, derived summary bebop shows to a client.)
 
 ## The crew
 
 **crew**:
-The reasoning agents aboard one bounty VM. Swordfish is not crew.
+The cowboys aboard one bounty VM. Swordfish is not crew.
+
+**cowboy**:
+A personified reasoning member of the crew, such as ein, jet, or faye. A cowboy may occupy a seat and request
+role-valid workflow actions; Swordfish remains authoritative for every transition.
+_Avoid_: agent (collides with OpenCode and wrongly includes deterministic Swordfish).
 
 **seat**:
-One long-lived OpenCode session bound to one crew role for the life of the bounty.
+A human-addressable OpenCode session occupied by a cowboy and available for takeover. Nested subagent sessions
+are not seats. A seat may become inactive and later be reactivated; ein keeps one for context continuity, while
+each jet and faye attempt receives a fresh one.
 _Avoid_: session (collides with OpenCode and tmux), worker, slot.
 
 **ein**:
-The primary implementation agent. Holds the task conversation, edits the primary worktree, submits candidates, and revises against findings — retaining its context across the whole loop.
+The primary implementation cowboy. Holds the task conversation, edits the primary worktree, submits candidates, and revises against findings — retaining its context across the whole loop.
 
 **jet**:
-The independent code reviewer. A distinct seat with no access to ein's conversational context, read-only tools, and structured findings as its output.
+The independent review cowboy. Each attempt gets a fresh seat with no access to ein's conversational context, read-only tools, and structured findings as its output.
 
 **faye**:
-The QA agent. Browser-driven verification of acceptance criteria against the exact candidate SHA in a clean environment. Never edits code.
+The QA cowboy. Each attempt gets a fresh seat for browser-driven verification of acceptance criteria against the exact candidate SHA in a clean environment. Never edits code.
 
 **spike**:
 _Reserved._ A future prototyper seat for research preceding implementation. Does not exist today; the directory of past prototypes is `prototypes/`, deliberately not named for this term.
@@ -85,11 +94,24 @@ Connecting a human to a bounty's cockpit. Attaching is observation; it grants no
 The record of which single actor — `human` or `swordfish` — may submit prompts to a given seat. Durable: taking and releasing it are recorded state transitions, not terminal modes.
 _Avoid_: lock, mutex, ownership.
 
-**takeover**:
-A human claiming the control lease on a seat. Always recorded.
+**workflow controller**:
+The actor — `human` or `swordfish` — responsible for directing the current stage. Control is orthogonal to stage
+and follows human-requested transitions until handoff; the active seat's control lease enforces it at the harness.
+_Avoid_: stage owner (Swordfish remains authoritative for workflow state).
 
-**handback**:
-A human releasing the control lease back to Swordfish.
+**takeover**:
+A human claiming workflow control through a quiescent handoff of the active seat. Always recorded and refused
+when no cowboy seat is active.
+
+**handoff**:
+A human releasing workflow control to Swordfish without changing stage. Swordfish resumes directing any active
+cowboy seat.
+_Avoid_: handback.
+
+**operator credential**:
+A per-bounty secret proving that a local `sf` mutation came from the human operator adapter rather than a cowboy
+process in the same VM. Bebop holds its authority; Swordfish receives only a verifier.
+_Avoid_: password (describes representation, not authority), proof of humanity.
 
 **quiescent handoff**:
 A control transfer in which the previous actor is no longer executing before the next actor receives access. It

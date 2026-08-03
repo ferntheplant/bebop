@@ -30,9 +30,9 @@ behind.
 
 ### Taking over
 
-A takeover request durably records its episode, immediately enters `human_controlled`, transfers the selected
-seat's lease to the human, stops autonomous wall-clock accounting, and prevents Swordfish from originating more
-work. The pane remains input-disabled and no human credential is issued yet, so the interrupted turn and the
+A takeover request durably records its episode, leaves stage unchanged, sets the workflow controller and active
+seat lease to human, stops autonomous wall-clock accounting, and prevents Swordfish from originating more work.
+The pane remains input-disabled and no human seat credential is issued yet, so the interrupted turn and the
 human never write concurrently.
 
 Swordfish asks OpenCode to abort, then waits until the server reports the seat idle and no tracked operation for
@@ -47,48 +47,45 @@ listener and processes are gone, and restarts the seat against the same private 
 is enabled only after that succeeds.
 
 Forced interruption still does not undo partial files, lock files, detached processes outside the tracked tree,
-or external side effects. If termination, verification, or restart fails, the bounty stays `human_controlled`
-with access marked unavailable and an attention reason. Swordfish never reclaims the lease from uncertain
-state.
+or external side effects. If termination, verification, or restart fails, workflow control stays human with
+access marked unavailable and an attention reason. Swordfish never reclaims control from uncertain state.
 
 The operation and its progress are durable and idempotent. Restarting Swordfish reconciles the recorded episode
 and process identities rather than issuing a second abort, restart, credential, or prompt. Cockpit status and
-events expose the seat, prior and resumable stage, grace deadline, graceful-versus-forced path, access readiness,
+events expose the unchanged current stage, seat, grace deadline, graceful-versus-forced path, access readiness,
 and any degraded result. The takeover command succeeds only when access is ready.
 
-One seat per bounty may be human-controlled at a time. Any existing seat may be taken over in any stage except
-`cancelling`, `cancelled`, or `failed`; once cancellation begins, stop takes precedence.
+At most one cowboy seat is active. It may be taken over in any stage that has one, except `cancelling`,
+`cancelled`, or `failed`; takeover is refused when deterministic work has no active cowboy, and once cancellation
+begins, cancel takes precedence.
 
 ### Gates and parallel work
 
-Work already running on other seats and external CI may finish while the bounty is `human_controlled`, and its
-results may advance the suspended stage. Swordfish starts no new autonomous operation until handback.
+Deterministic operations and external CI may finish while the workflow controller is human. There is no other
+active cowboy seat. Swordfish starts no new cowboy operation until handoff.
 
 Taking over a seat revokes that seat's interrupted automated operation, so a late result from the old operation
 is inadmissible. A human may complete a pending jet review or faye QA against the same candidate and spec
 revision; a result completed while its seat is human-controlled is valid with `human_steered` provenance. If no
-human result completes, handback starts a fresh automated gate operation. A clean post-handback rerun is
+human result completes, handoff starts a fresh automated gate operation. A clean post-handoff rerun is
 `automated` again.
 
 Completed gates on other seats remain statements about their pinned candidate. Human edits do not invalidate a
 candidate merely because they happened during takeover, but reconciliation emits the ordinary full invalidation
 if the assigned branch head, candidate commit, or effective-spec revision changed.
 
-### Handing back
+### Handing off
 
-The human explicitly declares whether the effective spec changed; ein does not infer this after control has
-already been released.
+Handoff is a pure control release and never changes stage. If the effective spec changed, the human first invokes
+`reopen-spec` and `set-spec`; those workflow actions retain human control until a later handoff.
 
-- **Unchanged:** handback first disables human input, rotates any credential issued during the control episode,
-  restarts the seat when rotation requires it, and reconciles OpenCode, tracked processes, Git, candidate, and
-  gate state. Only then does one transaction return the lease to Swordfish and restore the latest resumable
-  stage. An aborted turn is never resumed: Swordfish starts a fresh prompt or gate operation when that stage
-  needs one, unless the human already completed the gate.
-- **Changed:** the bounty remains human-controlled until the user confirms a revised effective spec. `set_spec`
-  persists the new revision, invalidates the old candidate and gates, revokes human access, and transfers control
-  as its existing atomic handoff.
+Handoff first disables human input, rotates any seat credential issued by `sf attach`, restarts the seat when
+rotation requires it, and reconciles OpenCode, tracked processes, Git, candidate, and gate state. Only then does
+one transaction return the workflow controller and active seat lease to Swordfish. An aborted turn is never
+resumed: Swordfish starts a fresh cowboy operation for the unchanged stage unless the human already completed
+its workflow action.
 
-If unchanged-spec reconciliation cannot prove a resumable state, handback fails closed and leaves the bounty
-human-controlled. Takeover pauses autonomous wall-clock accounting but refunds nothing already consumed: turns,
-provider cost, completed rounds, and prior elapsed autonomous time remain in the constraint ledger. The exact
-extension policy for a takeover caused by constraint exhaustion remains with the constraints ticket.
+If reconciliation cannot prove a resumable state, handoff fails closed and leaves workflow control human.
+Takeover pauses autonomous wall-clock accounting but refunds nothing already consumed: turns, provider cost,
+completed rounds, and prior elapsed autonomous time remain in the constraint ledger. The exact extension policy
+for constraint exhaustion remains with the constraints ticket.

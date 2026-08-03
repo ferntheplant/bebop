@@ -5,9 +5,10 @@ to the exact commit and spec revision they describe, and they survive the VM tha
 
 ## What you can expect
 
-- **Evidence bound to a commit.** A bundle names its bounty, spec revision, candidate SHA, and stage, plus the
-  tool and environment versions that produced it. An artifact that cannot say which commit it describes is not
-  evidence.
+- **Evidence bound to a commit and runtime.** A bundle names its bounty, spec revision, candidate SHA, stage, and
+  runtime manifest, plus stage-specific tool versions. The runtime manifest resolves to the exact image and
+  Swordfish release, including its OpenCode bill of materials. An artifact that cannot say which commit and
+  environment it describes is not evidence.
 - **Everything a gate produced**: validator logs, CI results, review findings, QA scenario outcomes, screenshots,
   and recordings.
 - **Uploaded before readiness is claimed**, and off the VM — so destroying a bounty's computer does not destroy
@@ -42,6 +43,8 @@ Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criterion **34** (Swordfish uploads 
   — evidence metadata and external publication are bebop's; the sandbox never receives publication credentials.
 - [The master runs on exe.dev (ADR 0019)](../adr/0019-the-master-runs-on-exe-dev-with-mandatory-off-vm-backups.md)
   — the artifact volume is in the nightly off-VM snapshot.
+- [The runtime manifest is the bounty software release unit (ADR 0035)](../adr/0035-the-runtime-manifest-is-the-bounty-software-release-unit.md)
+  — one durable identity names the coupled software environment that produced a bundle.
 
 Structured stage results ride the protocol's `gate_completed` event so ein gets feedback promptly; the evidence
 bundle is the durable archive, not the feedback channel.

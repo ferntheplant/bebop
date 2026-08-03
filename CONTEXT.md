@@ -20,6 +20,12 @@ _Avoid_: orchestrator, agent, runner.
 **master VM**:
 The exe.dev VM that bebop runs on. A deployment location, not a role — bebop assumes no locality between itself and the bounties it provisions.
 
+**runtime manifest**:
+The immutable bebop-owned identity of the software environment assigned to a bounty: an exact VM image digest
+and Swordfish release. The Swordfish release pins internal dependencies such as OpenCode; status and evidence
+refer to the manifest rather than treating each dependency as independently mutable bounty state.
+_Avoid_: evidence manifest (describes one evidence bundle), version (too narrow).
+
 ## Work
 
 **bounty**:

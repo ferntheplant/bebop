@@ -23,7 +23,7 @@ constraints:
 ```
 
 Swordfish keeps a ledger rather than resetting counters globally: exhaustion enters `needs_attention`, and a
-human `retry` grants exactly one more life to the exhausted constraint only.
+human `resume` grants exactly one more life to the exhausted constraint only.
 
 Settle:
 

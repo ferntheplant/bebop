@@ -35,7 +35,7 @@ happened is the two of them running as separate processes across a network that 
 ## Acceptance criteria
 
 Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criteria **29** (constraint exhaustion enters `needs_attention`),
-**30** (a human retry extends only the exhausted constraint), **40** (a client can follow the whole flow over
+**30** (a human resume extends only the exhausted constraint), **40** (a client can follow the whole flow over
 SSE without polling), and **42** (restarting Swordfish or bebop does not duplicate VMs, prompts, PRs, or merges).
 
 ## Decisions

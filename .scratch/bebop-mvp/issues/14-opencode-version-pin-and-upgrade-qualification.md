@@ -74,12 +74,12 @@ The hermetic suite grows with the supported OpenCode interface and must cover:
 - session creation and reload after server restart;
 - SSE text, tool, error, and idle events;
 - synchronous prompts, asynchronous prompts, slash commands, and cancellation;
-- the plugin's workflow signals;
+- the plugin's role-aware workflow actions;
 - lease denial before the provider is contacted (`modelCalls === 0`);
 - denial of the shell route without a seat credential;
 - private-database isolation;
 - feedback returning to the original seat; and
-- takeover credential rotation and handback.
+- takeover credential rotation and handoff.
 
 Cases land alongside the feature that first depends on them. Qualification replays known mutation routes only;
 for the MVP it does not snapshot or diff OpenCode's complete route inventory. A newly introduced unhooked route

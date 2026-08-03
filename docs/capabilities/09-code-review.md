@@ -6,8 +6,8 @@ isolation and restricted tooling, not from using a different vendor's model.
 
 ## What you can expect
 
-- **A separate seat with no shared context.** Jet cannot see ein's conversation, so it cannot inherit ein's
-  assumptions about what the code is supposed to be doing.
+- **A fresh seat for every attempt.** Jet cannot see ein's conversation or a prior review attempt, so it cannot
+  inherit either one's assumptions about what the code is supposed to be doing.
 - **Read-only by construction.** Jet has repository read access, diff access, validator and CI output, and web
   research tools. It cannot edit the repository, and it does not get ein's production-context MCPs.
 - **Review runs in parallel with external CI**, both against the exact candidate SHA, after local validation

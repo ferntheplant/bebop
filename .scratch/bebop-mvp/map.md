@@ -94,8 +94,14 @@ prototypes rather than tickets.
 - [Control passes through a quiescent handoff (ADR 0036)](../../docs/adr/0036-control-passes-through-a-quiescent-handoff.md),
   from [What is a safe point to interrupt a seat, and what does takeover do at each stage?](./issues/06-what-is-a-safe-point-to-interrupt-a-seat.md)
   — takeover claims the lease immediately but withholds human access until OpenCode aborts or the selected seat
-  is forcibly restarted. It guarantees no concurrent actor, not rollback; handback reconciles and starts fresh
+  is forcibly restarted. It guarantees no concurrent actor, not rollback; handoff reconciles and starts fresh
   work rather than resuming an interrupted turn.
+- [One controller drives one active cowboy (ADR 0037)](../../docs/adr/0037-one-controller-drives-one-active-cowboy.md)
+  and [workflow actions have role-aware adapters (ADR 0038)](../../docs/adr/0038-workflow-actions-have-role-aware-adapters.md),
+  from [What is the `sf` command surface, in use?](./issues/07-the-sf-command-surface.md) — stage and human control
+  are orthogonal, at most one cowboy seat is active, and cowboy tools, human slash commands, and authenticated
+  `sf` commands invoke one typed transition implementation. Mutating local commands require a per-bounty
+  operator credential; external authority remains bebop-side.
 
 ## Not yet specified
 

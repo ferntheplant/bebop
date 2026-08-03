@@ -45,11 +45,11 @@ interactive clarification
 → bebop-authorized merge (the bounty is caught)
 ```
 
-The user begins by creating and attaching to a bounty. They talk directly to the primary coding agent (**ein**) until the task is clear. A system-provided `/auto` workflow distills the conversation into a lightweight effective specification, asks the user to confirm it, and hands control of ein's seat to **Swordfish**, the supervisor.
+The user begins by creating and attaching to a bounty. They talk directly to the primary cowboy (**ein**) until the task is clear. A system-provided `/set-spec` workflow distills the conversation into a lightweight effective specification and asks the user to confirm it. The user then runs `/handoff` to give workflow control to **Swordfish**, the supervisor.
 
-Swordfish then drives ein's seat autonomously, executes repository-defined validators against a clean worktree, launches an independent review agent (**jet**), launches a separate QA agent (**faye**) against a clean development environment, and returns findings to ein for revision. Ein retains its conversational and implementation context throughout this loop.
+Swordfish then drives ein's seat autonomously, executes repository-defined validators against a clean worktree, activates the independent review cowboy (**jet**) in a fresh seat, activates the QA cowboy (**faye**) in another fresh seat against a clean development environment, and returns findings to ein for revision. Ein retains its conversational and implementation context throughout this loop.
 
-The user can observe every seat, take control of the active agent, steer it, and explicitly return control to Swordfish. The system never merges code without an explicit user command.
+The user can observe every seat, take control of the active cowboy, steer it, invoke role-valid workflow actions, and explicitly hand control to Swordfish. The system never merges code without an explicit user command.
 
 Bebop is single-user or trusted-small-team software, operating on repositories the operator owns. It is not multi-tenant, and everything a model reads — repository content, task prompts, web pages, logs, analytics, MCP results — is treated as untrusted input. What keeps that safe is that high-value authority stays outside the sandbox; see [`docs/capabilities/`](./docs/capabilities/14-the-security-model.md).
 
@@ -71,7 +71,7 @@ This workflow works well for small and medium tasks. Its limitations are operati
 
 - local CPU, memory, disk, and port contention limit concurrency;
 - each agent consumes a terminal and development environment;
-- the user over-monitors active agents instead of moving to another task;
+- the user over-monitors active cowboys instead of moving to another task;
 - background agents need access to the same logs, browsers, MCPs, and development services as local agents;
 - review and QA loops require repetitive manual coordination;
 - the user still needs a fast way to inspect and steer any loop that goes off track.
@@ -88,9 +88,9 @@ The immediate product goal is therefore:
 
 The product should automate implementation, review, revision, and QA coordination without inventing a requirements-management platform or an autonomous product-management layer.
 
-### 3.2 Native agent seats remain visible
+### 3.2 Native cowboy seats remain visible
 
-The primary human interaction is the real OpenCode session, not a reconstructed chat interface. The user must be able to see the harness output, attach to the workspace, inspect processes and logs, and take over an agent.
+The primary human interaction is the real OpenCode session, not a reconstructed chat interface. The user must be able to see the harness output, attach to the workspace, inspect processes and logs, and take over the active cowboy.
 
 ### 3.3 The API drives every client
 
@@ -135,7 +135,7 @@ Repositories provide system-specific setup, validation, QA, and evidence hooks u
 
 ### 3.9 Human steering is normal
 
-An autonomous run is not an opaque batch job. The user can observe it continuously, pause it, take over any active agent, and release it back to Swordfish with explicit state.
+An autonomous run is not an opaque batch job. The user can observe it continuously, take over the active cowboy, and hand the unchanged stage back to Swordfish explicitly.
 
 ### 3.10 Refuse rather than pretend
 
@@ -153,7 +153,7 @@ The MVP must:
 - provide a cockpit containing Swordfish status, visible seat panes, and free shell panes;
 - run a persistent primary OpenCode seat for ein;
 - let the user clarify work interactively before autonomy begins;
-- create and confirm a structured effective specification at the `/auto` handoff;
+- create and confirm a structured effective specification through `/set-spec`, then explicitly `/handoff`;
 - transfer exclusive control of ein's seat to Swordfish;
 - monitor OpenCode through its server API and event stream;
 - authoritatively reject human prompts to a Swordfish-controlled seat via the bebop OpenCode plugin;
@@ -244,7 +244,7 @@ The MVP will not:
 - Prepare the bebop base image (pinned OpenCode, Swordfish, tmux, Playwright).
 - Build the Swordfish daemon and `sf` CLI.
 - Integrate with OpenCode server APIs and SSE.
-- Build the bebop plugin: `/auto`, `set_spec`, workflow signals, lease guard.
+- Build the bebop plugin: shared workflow actions, human slash-command adapters, and the lease guard.
 - Create the cockpit.
 - Prove interactive-to-autonomous handoff.
 
@@ -296,9 +296,9 @@ The MVP is acceptable when this end-to-end flow succeeds:
 6. The cockpit shows a healthy bebop connection.
 7. Ein's seat is running with the configured context MCPs available.
 8. The user discusses a task interactively.
-9. `/auto` produces a structured effective spec.
+9. `/set-spec` produces a structured effective spec.
 10. The user confirms the spec.
-11. `set_spec` transfers control to Swordfish.
+11. `/handoff` transfers workflow control to Swordfish without changing stage.
 12. Ein's pane remains visible but does not accept user input.
 13. A prompt submitted to a leased seat by any other route is rejected by the plugin.
 14. Swordfish can prompt and observe OpenCode through its server API.
@@ -317,14 +317,14 @@ The MVP is acceptable when this end-to-end flow succeeds:
 27. Faye saves structured results and visual or recorded evidence.
 28. A QA failure returns to ein and restarts the full pipeline.
 29. Constraint exhaustion enters `needs_attention`.
-30. A human retry extends only the exhausted constraint.
-31. The user can take over an active agent from the cockpit.
+30. A human resume extends only the exhausted constraint.
+31. The user can take over the active cowboy from the cockpit.
 32. Human takeover provenance is recorded.
-33. Handback explicitly resumes or revises the effective spec.
+33. Handoff explicitly returns the current stage to Swordfish; spec revision is a separate workflow action.
 34. Swordfish uploads commit-bound evidence to bebop.
 35. `bounty list` shows the bounty as ready only for the verified head SHA.
 36. A push after readiness removes ready status.
-37. If the base branch advances and the PR becomes unmergeable, the bounty drops to revision and ein merges the base branch back in.
+37. If the base branch advances and the PR becomes unmergeable, the bounty returns to building with feedback and ein merges the base branch back in.
 38. The sandbox cannot directly update the protected merge target.
 39. Only an explicit bebop merge command squash-merges the PR.
 40. A client can follow the whole flow via `GET /api/bounties/:id/events` without polling.

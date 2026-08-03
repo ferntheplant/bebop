@@ -17,7 +17,12 @@ it does can reach another bounty.
   is visible in bounty status rather than being dead air.
 - **Attachment metadata returned to you**: an SSH target and private preview URLs, recorded against the bounty so
   a later client can ask for them again.
-- **Seats up and ready**, with ein's configured context MCPs available in its session.
+- **Ein's seat up and ready**, with its configured context MCPs available. Jet and faye receive fresh seats only
+  when their attempts begin.
+- **A scoped operator credential**, derived per bounty and retrievable only by an authenticated Bebop client.
+  Swordfish receives a salted verifier; the plaintext appears only when the operator explicitly retrieves it and
+  enters it at a hidden `sf` prompt, never in VM configuration, logs, or attachment metadata. Bebop can rotate a
+  lost or exposed credential.
 - Previews are always private. You authenticate through exe.dev; nothing is published to the internet.
 
 ## Where it stands
@@ -44,6 +49,8 @@ returned), and **7** (ein's seat running with its context MCPs).
   — convenience today, deployment-neutral seams, and when to leave.
 - [The runtime manifest is the bounty software release unit (ADR 0035)](../adr/0035-the-runtime-manifest-is-the-bounty-software-release-unit.md)
   — why OpenCode is qualified and changed with Swordfish rather than overridden inside a live bounty.
+- [Workflow actions have role-aware adapters (ADR 0038)](../adr/0038-workflow-actions-have-role-aware-adapters.md)
+  — why mutating local `sf` commands need a credential that cowboys never receive.
 
 ## Still open
 

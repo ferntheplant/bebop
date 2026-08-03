@@ -1,8 +1,8 @@
 # Autonomous implementation and revision
 
-The loop the whole product exists to run. Swordfish drives ein's seat, ein implements and submits candidates,
+The loop the whole product exists to run. Swordfish drives the active cowboy seat, ein implements and submits candidates,
 gates return findings, and ein revises — keeping its conversational and implementation context the entire time,
-which is the thing a fresh-context agent cannot do.
+which is the thing a fresh-context cowboy cannot do.
 
 ## What you can expect
 
@@ -10,7 +10,9 @@ which is the thing a fresh-context agent cannot do.
   is the authoritative record of where a bounty is.
 - **Ein keeps its context.** Findings from review, CI, and QA come back to the same seat that wrote the code, so
   revision is a continuation rather than a re-explanation.
-- **An explicit completion protocol.** Ein reports `candidate_ready`, `blocked`, or `continue`. A seat that falls
+- **One role-aware action interface.** Ein invokes `candidate-ready`, `continue`, `set-blocked`, or `reopen-spec`;
+  jet invokes `review-complete`, and faye invokes `qa-complete`. A human controller gets the same actions through
+  slash commands or authenticated `sf` commands. A seat that falls
   idle without reporting is re-prompted once; repeated failure becomes `needs_attention` rather than a hang.
 - **Only a real submission counts.** A candidate is tied to exactly one commit SHA, and a harness going quiet is
   not a candidate. Swordfish checks the commit exists, is reachable, carries the current spec revision, and left
@@ -46,9 +48,12 @@ previous results), and **28** (a QA failure returns to ein and restarts the full
 - [Every commit invalidates every downstream result (ADR 0016)](../adr/0016-every-commit-invalidates-every-downstream-result.md)
   — revision loops are expensive by construction, and that is the intended pressure.
 - [Flaky gates are not auto-retried (ADR 0031)](../adr/0031-flaky-gates-are-not-auto-retried.md) — a human
-  extends the exhausted constraint, because hiding flakiness is what the ledger exists to prevent.
+  explicitly reruns a failed gate; constraint exhaustion is resumed separately, because hiding flakiness is what
+  the ledger exists to prevent.
 - [Code moves to a package on its second consumer (ADR 0007)](../adr/0007-code-moves-to-a-package-on-its-second-consumer.md)
   — why the transition core is shared rather than written twice.
+- [One controller drives one active cowboy (ADR 0037)](../adr/0037-one-controller-drives-one-active-cowboy.md)
+- [Workflow actions have role-aware adapters (ADR 0038)](../adr/0038-workflow-actions-have-role-aware-adapters.md)
 
 ## Still open
 

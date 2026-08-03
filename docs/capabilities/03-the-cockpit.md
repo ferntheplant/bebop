@@ -6,24 +6,35 @@ inspectable than a local one — you can see the harness output, read the logs, 
 
 ## What you can expect
 
-- **A status pane** Swordfish renders: bounty and repository identity, bebop connection freshness, workflow
-  stage, workflow controller, active cowboy and seat, branch and candidate SHA, gate statuses, constraint
-  consumption, preview URLs, recent events, and takeover or handoff progress when control is moving.
-- **Seat panes** — the actual OpenCode TUIs for ein, jet, and faye, visible whenever those seats exist. Not a
-  chat transcript reassembled from an API.
+- **The active cowboy first.** SSH lands on the active cowboy's full-screen OpenCode seat, with no default split
+  competing for a laptop-sized terminal. During a deterministic stage with no active cowboy, it lands in an
+  ordinary shell after printing one fresh `sf status` snapshot.
+- **One named window per seat attempt.** Ein's durable seat and every fresh jet or faye attempt remain directly
+  inspectable as real OpenCode TUIs rather than reconstructed transcripts. A newly active cowboy gets a window,
+  but Swordfish never steals an attached client's focus.
+- **Essential state in the tmux status line.** Stage, workflow controller, active cowboy, Bebop connection
+  health, and attention are always visible. While Swordfish controls the active seat, the line says to run
+  `sf takeover` from a shell. Detailed state and exact recovery commands live in bare `sf` or `sf status`.
+- **Status on demand.** Swordfish creates no dedicated status window. `sf status --watch` remains available as a
+  simple locally polled redraw when an operator chooses to dedicate a pane to it.
 - **Free shell panes.** Ordinary shells for exploring the VM: dev servers, log files, processes, Git state.
   Nothing about supervision restricts these, and they are the intended way to find out what is really going on.
-- **Service log panes** generated from the `services` list a repository declares.
+- **Logs without layout policy.** Swordfish captures each managed service's stdout and stderr in a stable named
+  file. Status prints the exact `tail -F` command; the operator decides where that command runs.
+- **Operator-shaped tmux.** Swordfish owns the session, managed seat windows, landing shell, and workflow status
+  line. It never splits, joins, resizes, renumbers, or removes operator-created panes and windows.
 - **Steering through one interface.** Cowboy tools, human slash commands, and authenticated `sf` commands invoke
-  the same workflow actions. Seat panes whose lease Swordfish holds have keyboard input disabled.
+  the same workflow actions. The plugin rejects a human model prompt while Swordfish controls the seat; an
+  unexpected TUI shell, abort, revert, or unrevert is recorded as an intrusion and enters `needs_attention`.
 - **Honest connection state.** A disconnected Swordfish is shown as disconnected, never as still working because
   its last event said so.
 
 ## Where it stands
 
-**Designed.** No cockpit exists yet. A prototype established that tmux's `select-pane -d` disables input while
-the pane keeps rendering, and — importantly — that any pane in the session can clear it, so the tmux layer is UX
-rather than protection. The `sf` surface is settled; the layout remains open.
+**Designed.** No cockpit exists yet. The operator-shaped cockpit prototype confirmed that managed seat windows
+can be added without changing focus or operator-created layout. A pinned OpenCode probe confirmed that shell,
+abort, revert, and unrevert actions have distinct event signatures, so the cockpit does not use tmux input
+disabling. The `sf` surface and MVP layout are settled.
 
 ## Acceptance criteria
 
@@ -32,15 +43,11 @@ a healthy bebop connection).
 
 ## Decisions
 
-- [The four-layer control lease (ADR 0009)](../adr/0009-the-control-lease-is-enforced-in-four-layers.md) — why
-  the tmux input lock is one layer of four and cannot be the only one.
+- [The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](../adr/0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md)
+  — why the seat remains keyboard-enabled and unexpected seat mutations are detected instead.
 - [The VM is the sandbox (ADR 0012)](../adr/0012-the-vm-is-the-sandbox.md) — why free shell panes are fine.
 - [One controller drives one active cowboy (ADR 0037)](../adr/0037-one-controller-drives-one-active-cowboy.md)
 - [Workflow actions have role-aware adapters (ADR 0038)](../adr/0038-workflow-actions-have-role-aware-adapters.md)
 
 Herdr is not the MVP cockpit and cockpit v2 on the OpenCode web UI is out of scope for this effort; both are
 recorded on [the map](../../.scratch/bebop-mvp/map.md).
-
-## Still open
-
-- [What does the cockpit look like, and where do log panes come from?](../../.scratch/bebop-mvp/issues/08-cockpit-layout-and-log-panes.md)

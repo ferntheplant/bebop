@@ -25,12 +25,14 @@ Prototypes are excluded from `vp run test` and are run on demand. Each one recor
 `README.md`, and any assumption it invalidates is reflected in [`docs/adr/`](./docs/adr/) before implementation
 continues.
 
-| Prototype                    | Proves                                                       | Needs                     |
-| ---------------------------- | ------------------------------------------------------------ | ------------------------- |
-| `prototypes/lease-guard`     | The OpenCode plugin can refuse prompts on a leased seat      | `opencode` 1.18.5 on PATH |
-| `prototypes/persistence`     | Effect round-trips durable state through Postgres and SQLite | a running Docker daemon   |
-| `prototypes/tmux-input-lock` | tmux locks input to one pane without hiding its output       | `tmux` on PATH            |
-| `prototypes/effect-runtime`  | Effect HTTP, SSE, WebSocket, and CLI run as processes on Bun | nothing beyond loopback   |
+| Prototype                                  | Proves                                                       | Needs                     |
+| ------------------------------------------ | ------------------------------------------------------------ | ------------------------- |
+| `prototypes/cockpit`                       | Managed seat windows preserve operator-shaped tmux layout    | a running Docker daemon   |
+| `prototypes/effect-runtime`                | Effect HTTP, SSE, WebSocket, and CLI run as processes on Bun | nothing beyond loopback   |
+| `prototypes/lease-guard`                   | The OpenCode plugin can refuse prompts on a leased seat      | `opencode` 1.18.5 on PATH |
+| `prototypes/opencode-seat-mutation-events` | Unmatched shell, abort, revert, and unrevert are observable  | network on first run      |
+| `prototypes/persistence`                   | Effect round-trips durable state through Postgres and SQLite | a running Docker daemon   |
+| `prototypes/tmux-input-lock`               | tmux locks input to one pane without hiding its output       | `tmux` on PATH            |
 
 ```bash
 vp run @bebop/prototype-persistence#prototype

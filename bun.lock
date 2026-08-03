@@ -99,6 +99,14 @@
         "vite-plus": "catalog:",
       },
     },
+    "prototypes/cockpit": {
+      "name": "@bebop/prototype-cockpit",
+      "version": "0.0.0",
+      "devDependencies": {
+        "typescript": "catalog:",
+        "vite-plus": "catalog:",
+      },
+    },
     "prototypes/effect-runtime": {
       "name": "@bebop/prototype-effect-runtime",
       "version": "0.0.0",
@@ -115,6 +123,14 @@
       "devDependencies": {
         "@opencode-ai/plugin": "catalog:",
         "@opencode-ai/sdk": "catalog:",
+        "typescript": "catalog:",
+        "vite-plus": "catalog:",
+      },
+    },
+    "prototypes/opencode-seat-mutation-events": {
+      "name": "@bebop/prototype-opencode-seat-mutation-events",
+      "version": "0.0.0",
+      "devDependencies": {
         "typescript": "catalog:",
         "vite-plus": "catalog:",
       },
@@ -172,9 +188,13 @@
 
     "@bebop/opencode-plugin": ["@bebop/opencode-plugin@workspace:apps/bebop-opencode-plugin"],
 
+    "@bebop/prototype-cockpit": ["@bebop/prototype-cockpit@workspace:prototypes/cockpit"],
+
     "@bebop/prototype-effect-runtime": ["@bebop/prototype-effect-runtime@workspace:prototypes/effect-runtime"],
 
     "@bebop/prototype-lease-guard": ["@bebop/prototype-lease-guard@workspace:prototypes/lease-guard"],
+
+    "@bebop/prototype-opencode-seat-mutation-events": ["@bebop/prototype-opencode-seat-mutation-events@workspace:prototypes/opencode-seat-mutation-events"],
 
     "@bebop/prototype-persistence": ["@bebop/prototype-persistence@workspace:prototypes/persistence"],
 

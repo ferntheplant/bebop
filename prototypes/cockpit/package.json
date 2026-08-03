@@ -1,0 +1,13 @@
+{
+  "name": "@bebop/prototype-cockpit",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prototype": "sh run-in-docker.sh"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

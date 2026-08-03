@@ -1,5 +1,7 @@
 # The control lease is enforced in four independent layers
 
+> Superseded by [The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](./0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md).
+
 Only one actor — `human` or `swordfish` — may submit prompts to a seat, and that is enforced four times over: tmux disables input to leased seat panes (UX); the bebop plugin rejects prompt submission on a leased seat (authoritative for model turns); Swordfish spawns each seat's OpenCode server with a random per-boot `OPENCODE_SERVER_PASSWORD` and a private `OPENCODE_DB` (transport); and Swordfish records any message or tool execution it did not originate as an intrusion (detection).
 
 The design began with two layers and the [lease-guard prototype](../../prototypes/lease-guard/README.md) proved that insufficient against pinned OpenCode 1.18.5. Throwing from `chat.message` or `command.execute.before` does abort a turn before the model provider is contacted — but `POST /session/:id/shell` executes in a leased seat without invoking any plugin hook, and `opencode serve --pure` skips project-local plugins entirely, so a second instance in the same directory drove a leased seat with no guard loaded.

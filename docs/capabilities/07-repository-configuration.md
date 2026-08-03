@@ -56,7 +56,8 @@ artifacts: copy into $BEBOP_ARTIFACT_DIR
 Exit code is authoritative; stdout and stderr are captured as logs.
 
 `config.yml` declares dependency and environment requirements, services with their ports, health checks, and
-preview labels (also used to generate cockpit log panes), seed data, timeouts, and additional privileged globs.
+preview labels, seed data, timeouts, and additional privileged globs. Swordfish captures managed service output
+in stable files and reports exact follow commands without making repository configuration control tmux layout.
 
 ## Where it stands
 

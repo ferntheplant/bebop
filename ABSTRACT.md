@@ -224,7 +224,7 @@ The MVP will not:
 │                                                               │
 │  ┌─────────────────────────────────────────────────────────┐  │
 │  │ Cockpit (Swordfish-owned tmux)                          │  │
-│  │ status pane + seat panes (ein/jet/faye) + shell panes   │  │
+│  │ active seat + workflow status line + operator panes     │  │
 │  └─────────────────────────────────────────────────────────┘  │
 │                                                               │
 │  Swordfish daemon (`sf`) + SQLite                              │
@@ -299,7 +299,7 @@ The MVP is acceptable when this end-to-end flow succeeds:
 9. `/set-spec` produces a structured effective spec.
 10. The user confirms the spec.
 11. `/handoff` transfers workflow control to Swordfish without changing stage.
-12. Ein's pane remains visible but does not accept user input.
+12. Ein's pane remains visible, but a human prompt is rejected while Swordfish controls it.
 13. A prompt submitted to a leased seat by any other route is rejected by the plugin.
 14. Swordfish can prompt and observe OpenCode through its server API.
 15. An idle seat without a workflow signal is re-prompted once.
@@ -344,7 +344,8 @@ The design commits to:
 - **full commitment to OpenCode — no harness abstraction; the bebop plugin is a first-class module;**
 - **OpenCode's server API and SSE stream as Swordfish's integration seam;**
 - **API-first: Effect-Schema contracts generate OpenAPI; the CLI is a thin client; SSE events ship in the MVP for future GUI/Linear clients;**
-- **a visible tmux cockpit with four-layer control-lease enforcement and free shell panes; Herdr waits for authoritative pane locking;**
+- **a visible, operator-shaped tmux cockpit whose plugin blocks mixed model turns and whose event stream exposes
+  unexpected seat mutations;**
 - **a deterministic Swordfish with local SQLite state;**
 - **clean-room, SHA-pinned verification worktrees;**
 - **local validation, then CI (polled) and review in parallel, then QA;**

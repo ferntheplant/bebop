@@ -58,5 +58,6 @@ Bounded shutdown behaviour and the connection-lifetime constraints behind it are
 ## Still open
 
 - [Should the scheduled Effect loops be virtualized with `TestClock`?](../../.scratch/bebop-mvp/issues/15-testclock-for-the-scheduled-loops.md)
+- [What happens when bebop declares a bounty's runtime manifest defective?](../../.scratch/bebop-mvp/issues/19-runtime-manifest-defect-recovery.md)
 - **The end-to-end protocol under real failure** and **release qualification** — both still fog on
   [the map](../../.scratch/bebop-mvp/map.md).

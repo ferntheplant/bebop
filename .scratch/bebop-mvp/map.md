@@ -86,6 +86,11 @@ prototypes rather than tickets.
   `GET /rules/branches/{branch}`, which lets bebop verify protection instead of assuming it. Two constraints
   fall out: the merge target must be public or on a paid plan, and a SHA-pinned merge only reports the
   diagnostic `409 Head branch was modified` once `mergeable` is non-null — before that it is an ambiguous `405`.
+- [The runtime manifest is the bounty software release unit (ADR 0035)](../../docs/adr/0035-the-runtime-manifest-is-the-bounty-software-release-unit.md),
+  from [How is the OpenCode pin enforced, and what qualifies an upgrade?](./issues/14-opencode-version-pin-and-upgrade-qualification.md)
+  — OpenCode is pinned inside an immutable Swordfish release rather than overridden independently. Every upgrade
+  passes the hermetic contract suite, the candidate-image suite, and an explicit direct-provider smoke before
+  merge makes that runtime manifest the default for new bounties.
 
 ## Not yet specified
 

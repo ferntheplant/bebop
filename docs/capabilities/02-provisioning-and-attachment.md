@@ -1,13 +1,14 @@
 # Provisioning and attachment
 
-Every bounty gets its own computer, built fresh from a versioned base image, and you get a way in. The point of
+Every bounty gets its own computer, built fresh from a runtime manifest, and you get a way in. The point of
 a whole VM per bounty is that it is disposable: the bounty can be destroyed without leaving residue, and nothing
 it does can reach another bounty.
 
 ## What you can expect
 
-- **A fresh VM per bounty**, from a pinned base image carrying OpenCode and the bebop plugin, Swordfish, tmux,
-  Playwright browsers, and common runtimes.
+- **A fresh VM per bounty**, from a runtime manifest naming the exact image digest and Swordfish release. That
+  release pins OpenCode and the bebop plugin as internal dependencies alongside tmux, Playwright browsers, and
+  common runtimes.
 - **The assigned branch** `bounty/<bounty-id>` created before the VM needs it.
 - **Integrations attached, credentials not.** The VM receives a repository-scoped GitHub integration, model
   access through exe.dev's LLM integration, and whichever context integrations you selected — but no reusable
@@ -41,6 +42,8 @@ returned), and **7** (ein's seat running with its context MCPs).
   needs no reachable address.
 - [The master runs on exe.dev (ADR 0019)](../adr/0019-the-master-runs-on-exe-dev-with-mandatory-off-vm-backups.md)
   — convenience today, deployment-neutral seams, and when to leave.
+- [The runtime manifest is the bounty software release unit (ADR 0035)](../adr/0035-the-runtime-manifest-is-the-bounty-software-release-unit.md)
+  — why OpenCode is qualified and changed with Swordfish rather than overridden inside a live bounty.
 
 ## Still open
 
@@ -48,4 +51,3 @@ returned), and **7** (ein's seat running with its context MCPs).
 - [What does exe.dev's provisioning API actually offer, and where does it fail?](../../.scratch/bebop-mvp/issues/04-exe-dev-provisioning-api-surface.md)
 - [Can the exe.dev LLM integration serve ein and jet through the connected ChatGPT subscription?](../../.scratch/bebop-mvp/issues/01-exe-dev-llm-integration-for-ein-and-jet.md)
 - [Can the exe.dev HTTP Proxy serve OpenCode Go to faye with an injected credential?](../../.scratch/bebop-mvp/issues/02-exe-dev-http-proxy-for-opencode-go.md)
-- [How is the OpenCode pin enforced, and what qualifies an upgrade?](../../.scratch/bebop-mvp/issues/14-opencode-version-pin-and-upgrade-qualification.md)

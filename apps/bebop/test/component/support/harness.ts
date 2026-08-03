@@ -65,7 +65,7 @@ export interface Harness {
   readonly close: () => Promise<void>;
 }
 
-function testConfig(databaseUrl: string, label: string): Promise<BebopConfig> {
+function testConfig(databaseUrl: string, label: string, httpIdleTimeout: string): Promise<BebopConfig> {
   const environment = {
     BEBOP_HOST: "127.0.0.1",
     // Overridden by the server layer, which asks the operating system for a free port so
@@ -87,9 +87,7 @@ function testConfig(databaseUrl: string, label: string): Promise<BebopConfig> {
     BEBOP_JOB_LEASE_DURATION: "500 millis",
     BEBOP_JOB_RETRY_DELAY: "1 milli",
     BEBOP_BOUNTY_PAGE_SIZE: "50",
-    // Long enough not to drop a streaming assertion, short enough that a restart does not
-    // sit waiting on a keep-alive connection some earlier test left pooled.
-    BEBOP_HTTP_IDLE_TIMEOUT: "2 seconds",
+    BEBOP_HTTP_IDLE_TIMEOUT: httpIdleTimeout,
   };
   return Effect.runPromise(
     loadBebopConfig(ConfigProvider.fromEnv({ env: environment }).pipe(ConfigProvider.constantCase)),
@@ -102,10 +100,17 @@ export async function startHarness(
     readonly failProvisionAttempts?: number;
     readonly failProvisionAfterEffectAttempts?: number;
     readonly failDestroyAttempts?: number;
+    /**
+     * Bun closes any connection idle for longer than this, including an SSE subscription
+     * with nothing to say. Generous by default so a starved CI runner cannot turn a slow
+     * request into a dropped socket; a test that is *about* the idle window sets it small.
+     */
+    readonly httpIdleTimeout?: string;
   },
 ): Promise<Harness> {
   const database: DisposableDatabase = await createDisposableDatabase(label);
-  const config = await testConfig(database.url, label);
+  const { httpIdleTimeout = "30 seconds", ...providerOptions } = options ?? {};
+  const config = await testConfig(database.url, label, httpIdleTimeout);
   const provisioned: Array<ProvisionRecord> = [];
   let provisionAttempts = 0;
 
@@ -118,7 +123,8 @@ export async function startHarness(
         fakeLifecycleProviderLayer({
           onProvision: (record) => provisioned.push(record),
           onProvisionAttempt: () => (provisionAttempts += 1),
-          ...options,
+          // `httpIdleTimeout` is server configuration, not provider behaviour.
+          ...providerOptions,
         }),
       ),
     ),

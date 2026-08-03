@@ -247,11 +247,16 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
         const at = timestampToIso(message.occurredAt);
         const event = message.event;
         switch (event.type) {
+          // The role is rewritten on conflict, not just the timestamp. The reducer rejects a role change for the
+          // seat it currently holds, but it keeps no seat history, so an activation reusing a long-deactivated
+          // seat ID under another role is invisible to it. Leaving the old role here would make this table
+          // disagree with `activeCowboy`, and the next status read would fail `SfStatusSnapshot` validation
+          // because no row matches the active cowboy's role and ID together.
           case "cowboy_activated":
             return sql`
             INSERT INTO seats (seat_id, role, created_at, updated_at)
             VALUES (${event.seatId}, ${event.seat}, ${at}, ${at})
-            ON CONFLICT (seat_id) DO UPDATE SET updated_at = excluded.updated_at
+            ON CONFLICT (seat_id) DO UPDATE SET role = excluded.role, updated_at = excluded.updated_at
           `.pipe(Effect.asVoid);
           case "effective_spec_set":
             return sql`

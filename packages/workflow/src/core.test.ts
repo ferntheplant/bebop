@@ -201,6 +201,80 @@ describe("workflow core", () => {
     });
   });
 
+  test("reopening the spec is not a way out of an attention record", () => {
+    // `effective_spec_set` is legal from any stage under human control, and it used to empty attention
+    // unconditionally — so `reopen-spec` cleared reasons whose only permitted exit is `cancel`, bypassing the
+    // resolution rule entirely (ADR 0038).
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+    state = apply(state, 3, { type: "control_changed", controller: "human", reason: "takeover" });
+    state = apply(state, 4, { type: "attention_required", kind: "environment", reason: "the VM is unreachable" });
+
+    state = apply(state, 5, { type: "effective_spec_set", spec: { ...spec, revision: 2 } });
+
+    // The new spec applies, but the reason it stopped survives and the work stays suspended behind it.
+    expect(state.effectiveSpec?.revision).toBe(2);
+    expect(state.stage).toBe("needs_attention");
+    expect(state.suspendedStage).toBe("implementing");
+    expect(state.attention.map((record) => record.kind)).toEqual(["environment"]);
+
+    // Only the resolution its kind permits releases it, and then the reopened spec is what resumes.
+    state = apply(state, 6, { type: "attention_cleared", resolution: "cancel" });
+    expect(state.stage).toBe("implementing");
+  });
+
+  test("reopening the spec with nothing outstanding resumes immediately", () => {
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+    state = apply(state, 3, { type: "control_changed", controller: "human", reason: "takeover" });
+    state = apply(state, 4, { type: "effective_spec_set", spec: { ...spec, revision: 2 } });
+
+    expect(state.stage).toBe("implementing");
+    expect(state.suspendedStage).toBeNull();
+    expect(state.attention).toEqual([]);
+  });
+
+  test("a terminal transition stands the active cowboy down", () => {
+    // Nothing drives a bounty whose loop has ended, and this is the last chance to record it: every event is
+    // refused once the stage is terminal, so a later deactivation could never repair the state and `sf status`
+    // would mark the seat active forever.
+    let state = throughPushedCandidate();
+    state = apply(state, 5, { ...ciPassed });
+    state = apply(state, 6, { type: "cowboy_activated", seat: "jet", seatId: "seat-jet-1" });
+    expect(state.activeCowboy).not.toBeNull();
+
+    state = apply(state, 7, { type: "stage_changed", stage: "cancelling" });
+    state = apply(state, 8, { type: "stage_changed", stage: "cancelled" });
+    expect(state.stage).toBe("cancelled");
+    expect(state.activeCowboy).toBeNull();
+
+    // And the same on the failure path.
+    let failing = throughPushedCandidate();
+    failing = apply(failing, 5, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+    failing = apply(failing, 6, { type: "stage_changed", stage: "failed" });
+    expect(failing.activeCowboy).toBeNull();
+  });
+
+  test("a seat ID cannot change role while it is the active cowboy", () => {
+    // A seat belongs to one cowboy for its whole life. Accepting a role change would leave the reducer
+    // disagreeing with the role already recorded against that seat ID in Swordfish's seat table, and the next
+    // status read would fail validation for having no matching row.
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "cowboy_activated", seat: "ein", seatId: "seat-shared" });
+
+    const reassigned = applyWorkflowEvent(
+      state,
+      message(3, { type: "cowboy_activated", seat: "jet", seatId: "seat-shared" }),
+    );
+    expect(reassigned).toMatchObject({
+      ok: false,
+      error: { type: "cowboy_already_active", active: "ein", requested: "jet" },
+    });
+  });
+
   test("clearing attention nobody raised is refused", () => {
     let state = initial();
     state = apply(state, 1, { type: "effective_spec_set", spec });

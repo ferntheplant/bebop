@@ -153,16 +153,20 @@ function changesFor(
           error: { type: "spec_revision_mismatch", expected, received: event.spec.revision },
         };
       }
+      // Reopening the spec is legitimate work, not a resolution. It does not answer an unreachable VM or an
+      // intrusion, so outstanding reasons survive it and keep the workflow suspended — otherwise `reopen-spec`
+      // would be a way to clear any attention record without the resolution its kind requires, including kinds
+      // whose only permitted exit is `cancel`.
+      const suspended = state.attention.length > 0;
       return {
         ok: true,
         changes: {
-          stage: "implementing",
-          suspendedStage: null,
+          stage: suspended ? "needs_attention" : "implementing",
+          suspendedStage: suspended ? "implementing" : null,
           effectiveSpec: event.spec,
           candidate: null,
           gates: initialGates(),
           readinessClaim: null,
-          attention: [],
         },
       };
     }
@@ -331,11 +335,20 @@ function changesFor(
       if (event.stage === "cancelling" && !isTerminal(state.stage)) {
         return { ok: true, changes: { stage: "cancelling" } };
       }
+      // Terminal transitions stand the active cowboy down. Nothing is driving a bounty whose loop has ended, and
+      // this is the last chance to say so: `applyWorkflowEvent` refuses every event once the stage is terminal,
+      // so a later `cowboy_deactivated` cannot repair it and status would mark a seat active forever.
       if (event.stage === "cancelled" && state.stage === "cancelling") {
-        return { ok: true, changes: { stage: "cancelled", suspendedStage: null, attention: [] } };
+        return {
+          ok: true,
+          changes: { stage: "cancelled", suspendedStage: null, attention: [], activeCowboy: null },
+        };
       }
       if (event.stage === "failed" && state.stage !== "cancelled") {
-        return { ok: true, changes: { stage: "failed", suspendedStage: null, attention: [] } };
+        return {
+          ok: true,
+          changes: { stage: "failed", suspendedStage: null, attention: [], activeCowboy: null },
+        };
       }
       // `needs_attention` is deliberately unreachable here: it is entered by `attention_required` and left by
       // `attention_cleared`, so every suspension carries a reason and every resumption names the action that
@@ -373,6 +386,12 @@ function changesFor(
       // Re-announcing the seat already active is how ein's durable seat is reused across attempts; a *different*
       // seat while one is active would be a second concurrent cowboy, which is the thing ADR 0037 forbids.
       if (active !== null && active.seatId !== event.seatId) {
+        return { ok: false, error: { type: "cowboy_already_active", active: active.role, requested: event.seat } };
+      }
+      // A seat belongs to one cowboy for its whole life, so the same ID arriving under a different role is a
+      // defect rather than a reassignment. Accepting it would leave the reducer's role disagreeing with the one
+      // already recorded against that seat ID in Swordfish's seat table.
+      if (active !== null && active.role !== event.seat) {
         return { ok: false, error: { type: "cowboy_already_active", active: active.role, requested: event.seat } };
       }
       return { ok: true, changes: { activeCowboy: { role: event.seat, seatId: event.seatId } } };

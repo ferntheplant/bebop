@@ -152,6 +152,28 @@ describe("Swordfish SQLite authority", () => {
     }
   });
 
+  test("a reused seat id keeps its row consistent with the active cowboy", async () => {
+    // The reducer refuses a role change for the seat it currently holds, but it keeps no seat history, so an
+    // activation reusing a long-deactivated seat ID under another role reaches the table unchallenged. If the
+    // row kept the old role it would disagree with `activeCowboy`, and status would fail validation for having
+    // no row matching the active cowboy's role and ID together.
+    harness = await startSwordfishHarness("seat-role-reuse");
+    const status = await harness.run(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowService;
+        yield* workflow.append(decodeEvent({ type: "cowboy_activated", seat: "ein", seatId: "seat-shared" }));
+        yield* workflow.append(decodeEvent({ type: "cowboy_deactivated", seat: "ein", seatId: "seat-shared" }));
+        yield* workflow.append(decodeEvent({ type: "cowboy_activated", seat: "jet", seatId: "seat-shared" }));
+        return yield* workflow.status;
+      }),
+    );
+
+    // Decoding the snapshot at all is the assertion: `SfStatusSnapshot` requires the active cowboy to match a
+    // listed seat by role and ID together.
+    expect(status.activeCowboy).toMatchObject({ role: "jet", seatId: "seat-shared" });
+    expect(status.seats).toEqual([{ role: "jet", seatId: "seat-shared" }]);
+  });
+
   test("rolls back a workflow append when the outbox insert aborts, then retries it once", async () => {
     harness = await startSwordfishHarness("append-atomicity");
     const event = decodeEvent({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });

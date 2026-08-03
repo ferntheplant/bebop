@@ -18,8 +18,9 @@ until you confirm it. Nothing autonomous starts without one.
   repeated failure leaves the bounty interactive and marks it as needing attention rather than guessing.
 - **The spec is versioned.** Later revisions carry a new number, and gate results are bound to the revision that
   was current when they ran.
-- **Handing back can revise it.** After a takeover, ein determines whether the conversation changed the effective
-  spec; a changed spec is proposed to you and needs confirmation before autonomous work resumes.
+- **Handing back can revise it.** After a takeover, you explicitly declare whether the conversation changed the
+  effective spec. An unchanged spec resumes only after reconciliation; a changed spec keeps human control until
+  you confirm a new revision through `set_spec`.
 
 ## Where it stands
 
@@ -43,6 +44,8 @@ control to Swordfish).
   — why `set_spec` revokes as part of the same transition.
 - [Every commit invalidates every downstream result (ADR 0016)](../adr/0016-every-commit-invalidates-every-downstream-result.md)
   — gate results are bound to the spec revision as well as the SHA.
+- [Control passes through a quiescent handoff (ADR 0036)](../adr/0036-control-passes-through-a-quiescent-handoff.md)
+  — why the human declares whether handback resumes or revises the effective spec.
 
 ## Still open
 

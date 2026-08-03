@@ -8,7 +8,7 @@ inspectable than a local one — you can see the harness output, read the logs, 
 
 - **A status pane** Swordfish renders: bounty and repository identity, bebop connection freshness, workflow
   stage, active seat, lease owner, branch and candidate SHA, gate statuses, constraint consumption, preview URLs,
-  and recent events.
+  recent events, and takeover or handback progress when control is moving.
 - **Seat panes** — the actual OpenCode TUIs for ein, jet, and faye, visible whenever those seats exist. Not a
   chat transcript reassembled from an API.
 - **Free shell panes.** Ordinary shells for exploring the VM: dev servers, log files, processes, Git state.

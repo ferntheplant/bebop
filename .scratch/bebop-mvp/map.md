@@ -51,6 +51,8 @@ prototypes rather than tickets.
 - [The four-layer control lease (ADR 0009)](../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md)
   — settled by [the lease-guard prototype](../../prototypes/lease-guard/README.md), which found that the plugin
   alone cannot hold the lease: `POST /session/:id/shell` invokes no hook and `--pure` skips the plugin entirely.
+  Its tmux layer was later superseded by
+  [The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](../../docs/adr/0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md).
 - [Seat credentials die with the lease (ADR 0010)](../../docs/adr/0010-no-human-held-seat-credential-survives-a-control-release.md)
   — rotation on every control release, or the lease is advisory after the first takeover.
 - [`.bebop/**` is permanently privileged (ADR 0011)](../../docs/adr/0011-the-bebop-directory-is-permanently-privileged.md)
@@ -102,6 +104,11 @@ prototypes rather than tickets.
   are orthogonal, at most one cowboy seat is active, and cowboy tools, human slash commands, and authenticated
   `sf` commands invoke one typed transition implementation. Mutating local commands require a per-bounty
   operator credential; external authority remains bebop-side.
+- [The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](../../docs/adr/0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md),
+  from [What does the cockpit look like, and where do log panes come from?](./issues/08-cockpit-layout-and-log-panes.md)
+  — attachment starts with one full-screen active seat and a workflow status line; Swordfish preserves
+  operator-created tmux layout and exposes service logs as files rather than panes. The plugin blocks mixed model
+  turns while unexpected shell, abort, revert, or unrevert actions are detected as intrusions.
 
 ## Not yet specified
 

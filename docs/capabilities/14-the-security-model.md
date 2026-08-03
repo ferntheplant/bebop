@@ -93,7 +93,7 @@ sandbox cannot update the protected merge target).
   trusted the claim, the sandbox would effectively hold merge authority.
 - [Bebop owns authority, Swordfish owns the loop (ADR 0002)](../adr/0002-bebop-owns-authority-swordfish-owns-the-loop.md)
   — the split follows the trust line, not the convenience line.
-- [The four-layer control lease (ADR 0009)](../adr/0009-the-control-lease-is-enforced-in-four-layers.md)
+- [The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](../adr/0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md)
 - [Swordfish tokens are bounty-scoped (ADR 0014)](../adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)
   — a leaked token is bounded by its bounty's lifetime.
 - [Swordfish connects outbound only (ADR 0013)](../adr/0013-swordfish-connects-outbound-only.md) — private

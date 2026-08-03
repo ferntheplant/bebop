@@ -84,7 +84,8 @@ _Reserved._ A future builder subagent that ein can invoke for complex subtasks. 
 ## Control
 
 **cockpit**:
-The attachment interface to a bounty — today a Swordfish-owned tmux over SSH, with a status pane, locked seat panes, and free shell panes.
+The attachment interface to a bounty — today a Swordfish-owned tmux over SSH, with managed seat windows, a
+workflow status line, and operator-shaped shell panes and windows.
 _Avoid_: terminal, dashboard, console.
 
 **attach**:

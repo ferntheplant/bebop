@@ -1,0 +1,13 @@
+{
+  "name": "@bebop/prototype-opencode-seat-mutation-events",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prototype": "bun run.ts"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

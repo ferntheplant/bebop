@@ -6,14 +6,15 @@ exactly one actor may drive the active seat at a time.
 
 ## What you can expect
 
-- **Observation always, input never by accident.** You can read any seat pane at any time. A seat whose lease
-  Swordfish holds will not accept your keystrokes, and a prompt reaching it by any other route is rejected.
+- **Observation always, mixed model turns never.** You can read and interact with any seat pane at any time, but
+  the plugin rejects a human model prompt while Swordfish controls that seat. An unexpected TUI shell, abort,
+  revert, or unrevert is recorded as an intrusion and suspends the stage rather than silently mixing actors.
 - **Takeover is explicit and recorded.** `sf takeover` infers the sole active cowboy seat, leaves stage unchanged,
-  claims workflow control and the seat lease immediately, then enables input
+  claims workflow control and the seat lease immediately, then grants human workflow authority
   only after a quiescent handoff. Swordfish asks OpenCode to abort and automatically kills and restarts the seat
   after a configurable grace period; `--force` skips that grace period.
-- **Progress is visible.** While input remains disabled, status names the seat and unchanged current stage, shows the
-  graceful or forced path and its deadline, and says whether human access is ready or degraded.
+- **Progress is visible.** During takeover, status names the seat and unchanged current stage, shows the graceful
+  or forced path and its deadline, and says whether human authority is ready or degraded.
 - **A second client if you want one.** `sf attach` obtains the active seat credential internally and execs an
   attached OpenCode client without printing the secret.
 - **Handoff is explicit too.** `/handoff` and `sf handoff` release control without changing stage. Swordfish never
@@ -43,20 +44,20 @@ exactly one actor may drive the active seat at a time.
 
 **Partial.** Takeover and lease ownership are modelled as durable events and `sf` exists as a control client, but
 handoff, the orthogonal controller, the settled command surface, and operator authentication are not implemented.
-The current reducer still represents `human_controlled` as a stage. None of the four enforcement layers or
-role-aware action adapters is built.
+The current reducer still represents `human_controlled` as a stage. Prompt denial, isolated seat transport,
+unexpected-mutation detection, and role-aware action adapters are not built.
 
 ## Acceptance criteria
 
-Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criteria **12** (ein's pane visible but refusing input), **13** (a
-prompt by any other route is rejected by the plugin), **31** (the user can take over from the cockpit), **32**
+Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criteria **12** (ein's pane stays visible while an unauthorized human
+prompt is refused), **13** (a prompt by any other route is rejected by the plugin), **31** (the user can take over from the cockpit), **32**
 (takeover provenance is recorded), and **33** (handoff returns the current stage to Swordfish).
 
 ## Decisions
 
-- [The four-layer control lease (ADR 0009)](../adr/0009-the-control-lease-is-enforced-in-four-layers.md) — tmux
-  for UX, the plugin for model turns, transport for the routes the plugin cannot see, detection for everything
-  else. Bypass by a determined operator with a shell is accepted; accidental bypass is not.
+- [The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](../adr/0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md)
+  — the plugin guards model turns, transport isolates the seat, and unexpected TUI mutations are detected; tmux
+  does not pretend to make a cockpit with free shells read-only.
 - [Seat credentials die with the lease (ADR 0010)](../adr/0010-no-human-held-seat-credential-survives-a-control-release.md)
   — without rotation, the first takeover makes every later lease advisory.
 - [The VM is the sandbox (ADR 0012)](../adr/0012-the-vm-is-the-sandbox.md)

@@ -63,15 +63,12 @@ const initial = Effect.gen(function* () {
       PRIMARY KEY (commit_sha, spec_revision)
     )
   `;
-  yield* sql`
-    CREATE TABLE constraint_ledger (
-      constraint_key      text PRIMARY KEY,
-      consumed            integer NOT NULL,
-      limit_value         integer NOT NULL,
-      extensions_granted  integer NOT NULL,
-      updated_at          text NOT NULL
-    )
-  `;
+  // There is deliberately no constraint ledger table. Attempts, turns, and wall clock are derived from the
+  // event stream by the same reducer Bebop's projection runs, so they live in the workflow snapshot
+  // ("Constraint exhaustion is computed, not announced" (ADR 0042)) — a second copy in its own table is exactly
+  // the derived state the architectural rules forbid storing, and the first missed update would leave it
+  // permanently wrong. The table this replaces was also keyed by a flat constraint name with no scope, so
+  // nothing in it ever reset at a build cycle or a candidate.
   yield* sql`
     CREATE TABLE validator_outcomes (
       sequence       integer PRIMARY KEY REFERENCES workflow_events (sequence),

@@ -2,7 +2,7 @@ import { Schema } from "effect";
 
 import { PrivatePreviewAttachments } from "./attachments.ts";
 import { Candidate } from "./candidate.ts";
-import { ExtendConstraintCommand, RetryStageCommand, StopCommand, TakeoverCommand } from "./commands.ts";
+import { ContinueCommand, RerunCommand, ResumeCommand, StopCommand, TakeoverCommand } from "./commands.ts";
 import {
   EvidenceUploadCommittedMessage,
   EvidenceUploadFinalizeMessage,
@@ -27,12 +27,14 @@ import {
 import { schemaLimits } from "./settings.ts";
 import { EffectiveSpec } from "./spec.ts";
 import {
+  AttemptOutcome,
   AttentionKind,
   CandidateGate,
   CandidateInvalidationReason,
   ControlChangeReason,
   Controller,
   GateOutcome,
+  RerunTarget,
   SeatRole,
   SwordfishStage,
   WorkflowResolution,
@@ -152,10 +154,69 @@ export const AttentionRequiredEvent = Schema.Struct({
  *
  * The reducer refuses a resolution the raised kind does not permit, which is what stops a generic `resume` from
  * clearing a budget exhaustion.
+ *
+ * `target` rides here rather than on an event of its own, because a recovery grant is not a separate thing that
+ * happens — it is what resolving a `constraint_exhausted` by `rerun` *means*
+ * ("Constraint exhaustion is computed, not announced" (ADR 0042)). It is required for `rerun` and forbidden
+ * otherwise: a rerun with no target names neither the scope it grants an attempt in nor the record it clears
+ * (ADR 0043), and a target on any other resolution would grant nothing while implying it had.
  */
-export const AttentionClearedEvent = Schema.Struct({
+const AttentionClearedEventBase = Schema.Struct({
   type: Schema.Literal("attention_cleared"),
   resolution: WorkflowResolution,
+  target: Schema.optionalKey(RerunTarget),
+});
+export const AttentionClearedEvent = AttentionClearedEventBase.pipe(
+  Schema.check(
+    Schema.makeFilter<typeof AttentionClearedEventBase.Type>((event) => {
+      if (event.resolution === "rerun") {
+        return event.target === undefined
+          ? { path: ["target"], issue: "Expected a rerun to name its target" }
+          : undefined;
+      }
+      return event.target === undefined
+        ? undefined
+        : { path: ["target"], issue: `Expected no target on a ${event.resolution} resolution` };
+    }),
+  ),
+);
+
+/**
+ * One Swordfish-controlled cowboy assignment began.
+ *
+ * It carries nothing. The scope is the active cowboy's role, the ordinal is the reducer's own count, and the
+ * start instant is the message's `occurredAt`, so every field this could have declared is one the reducer
+ * already knows and would have had to check. What it does assert is that a cowboy is active: an attempt is one
+ * cowboy assignment, so the reducer rejects this event when there is nobody to assign.
+ */
+export const AttemptStartedEvent = Schema.Struct({
+  type: Schema.Literal("attempt_started"),
+});
+
+/**
+ * One model step finished.
+ *
+ * A completed step consumes a turn whether it requested tools or finished with prose; provider transport retries
+ * and failed requests are not steps and produce no event. Turns are the budget dimension with no timing gap,
+ * because every increment is itself an event — which is why only wall clock needs a wake-up
+ * ("Constraint exhaustion is computed, not announced" (ADR 0042)).
+ */
+export const TurnCompletedEvent = Schema.Struct({
+  type: Schema.Literal("turn_completed"),
+});
+
+/**
+ * The attempt finished, and whether it produced anything.
+ *
+ * An attempt that exhausted its watchdogs while allowance remains ends here and the next one starts
+ * automatically. The *final* allowed attempt is not ended: it is preserved in its seat behind
+ * `needs_attention` so that `continue` has something to revive
+ * (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+ */
+export const AttemptEndedEvent = Schema.Struct({
+  type: Schema.Literal("attempt_ended"),
+  outcome: AttemptOutcome,
+  detail: Schema.optionalKey(ProtocolMessage),
 });
 
 export const AttachmentsUpdatedEvent = Schema.Struct({
@@ -220,6 +281,9 @@ export const SwordfishEvent = Schema.Union([
   AttachmentsUpdatedEvent,
   GateCompletedEvent,
   CandidateInvalidatedEvent,
+  AttemptStartedEvent,
+  TurnCompletedEvent,
+  AttemptEndedEvent,
 ]);
 export type SwordfishEvent = typeof SwordfishEvent.Type;
 
@@ -268,14 +332,15 @@ export const ExternalCiCompletedCommand = Schema.Struct({
 
 // Re-exported so a consumer of the protocol does not need to know which payloads are
 // shared with the local `sf` socket. `commands.ts` records what that sharing costs.
-export { ExtendConstraintCommand, RetryStageCommand, StopCommand, TakeoverCommand };
+export { ContinueCommand, RerunCommand, ResumeCommand, StopCommand, TakeoverCommand };
 
 export const BebopCommand = Schema.Union([
   StopCommand,
   TakeoverCommand,
   HandoffCommand,
-  ExtendConstraintCommand,
-  RetryStageCommand,
+  ContinueCommand,
+  RerunCommand,
+  ResumeCommand,
   ApproveConfigCommand,
   ExternalCiCompletedCommand,
 ]);

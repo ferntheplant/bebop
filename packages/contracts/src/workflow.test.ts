@@ -18,7 +18,9 @@ import {
   bountyStatuses,
   Controller,
   controllers,
+  kindForRerunTarget,
   resolutionsForAttention,
+  rerunTargets,
   seatRoles,
   swordfishStages,
   verificationStages,
@@ -98,6 +100,29 @@ describe("workflow vocabulary", () => {
     expect(resolutionsForAttention.constraint_exhausted).not.toContain("resume");
     expect(resolutionsForAttention.constraint_exhausted).toContain("continue");
     expect(resolutionsForAttention.constraint_exhausted).toContain("rerun");
+  });
+
+  test("every rerun target names a kind that permits rerun", () => {
+    // The map is what stops a targeted `rerun` from clearing a record nobody addressed
+    // ("A rerun resolves the kind its target names" (ADR 0043)). A target pointing at a kind that does not
+    // permit `rerun` would name a record the reducer then refuses to clear — a command that can never succeed.
+    for (const target of rerunTargets) {
+      const kind = kindForRerunTarget[target];
+      expect(attentionKinds).toContain(kind);
+      expect(resolutionsForAttention[kind]).toContain("rerun");
+    }
+    // Exactly the two kinds that permit `rerun` are reachable, so no kind offering the exit is unresolvable.
+    expect(new Set(Object.values(kindForRerunTarget))).toEqual(new Set(["constraint_exhausted", "uncertain_gate"]));
+  });
+
+  test("only a validation rerun answers an uncertain gate", () => {
+    // An uncertain *seat* is a separate kind that permits no rerun at all, which is what makes the target-to-kind
+    // map total rather than ambiguous for the three cowboy scopes.
+    expect(kindForRerunTarget.validation).toBe("uncertain_gate");
+    expect(resolutionsForAttention.uncertain_seat).not.toContain("rerun");
+    for (const scope of ["building", "review", "qa"] as const) {
+      expect(kindForRerunTarget[scope]).toBe("constraint_exhausted");
+    }
   });
 
   test("rejects unknown and differently cased values", () => {

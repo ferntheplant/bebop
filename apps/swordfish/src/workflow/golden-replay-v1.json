@@ -30,6 +30,19 @@
     "seatId": "seat-ein"
   },
   {
+    "type": "attempt_started"
+  },
+  {
+    "type": "turn_completed"
+  },
+  {
+    "type": "turn_completed"
+  },
+  {
+    "type": "attempt_ended",
+    "outcome": "completed"
+  },
+  {
     "type": "candidate_submitted",
     "candidate": {
       "commitSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -70,6 +83,16 @@
     "seatId": "seat-jet-1"
   },
   {
+    "type": "attempt_started"
+  },
+  {
+    "type": "turn_completed"
+  },
+  {
+    "type": "attempt_ended",
+    "outcome": "completed"
+  },
+  {
     "type": "gate_completed",
     "gate": "code_review",
     "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -89,6 +112,16 @@
     "type": "cowboy_activated",
     "seat": "faye",
     "seatId": "seat-faye-1"
+  },
+  {
+    "type": "attempt_started"
+  },
+  {
+    "type": "turn_completed"
+  },
+  {
+    "type": "attempt_ended",
+    "outcome": "completed"
   },
   {
     "type": "gate_completed",

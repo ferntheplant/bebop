@@ -6,6 +6,7 @@ import { describe, expect, test } from "vite-plus/test";
 import {
   makeInitialBebopSwordfishProjection,
   reduceBebopSwordfishProjection,
+  unreportedBudgetOverrun,
   type BebopSwordfishProjection,
 } from "#src/domain/swordfish-projection.ts";
 
@@ -424,5 +425,69 @@ describe("Bebop Swordfish projection reducer", () => {
     });
     state = apply(state, 8, { type: "attention_cleared", resolution: "resume" });
     expect(state).toMatchObject({ stage: "pushed_candidate", suspendedStage: null, controller: "human" });
+  });
+});
+
+describe("daemon budget cross-check", () => {
+  const graceMs = 60_000;
+  const iso = (minutes: number) => new Date(Date.parse(timestamp) + minutes * 60_000).toISOString();
+  const at = (minutes: number) => Schema.decodeUnknownSync(Timestamp)(iso(minutes));
+
+  /** A projection with one ein attempt running, which is the only shape the wall-clock check has anything to say about. */
+  function withRunningAttempt(): BebopSwordfishProjection {
+    let state = initialProjection();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+    return apply(state, 3, { type: "attempt_started" });
+  }
+
+  test("says nothing about an attempt that is still inside its budget", () => {
+    expect(unreportedBudgetOverrun(withRunningAttempt(), at(80), graceMs)).toEqual([]);
+  });
+
+  test("discounts the grace margin before calling a budget overrun a defect", () => {
+    // At 90 minutes and 30 seconds the daemon is barely past its watchdog and Bebop's own view is a heartbeat
+    // behind it. Reporting there would turn ordinary projection lag into a defect signal.
+    const state = withRunningAttempt();
+    expect(unreportedBudgetOverrun(state, at(90.5), graceMs)).toEqual([]);
+    expect(unreportedBudgetOverrun(state, at(92), graceMs)).toEqual([
+      { constraint: "wall_clock", scope: "building", consumed: 91 * 60_000, allowed: 90 * 60_000 },
+    ]);
+  });
+
+  test("says nothing once the daemon has reported the exhaustion itself", () => {
+    // This is the whole distinction: a daemon that raised the attention is working, and only a daemon that is
+    // long past budget and silent is the defect ("Constraint exhaustion is computed, not announced" (ADR 0042)).
+    // The claim has to be one the projection's own arithmetic supports, so the event lands 91 minutes in.
+    const running = withRunningAttempt();
+    const raised = reduceBebopSwordfishProjection(running, {
+      type: "event_received",
+      connectionId,
+      message: Schema.decodeUnknownSync(EventMessage)({
+        type: "event",
+        protocolVersion: 1,
+        bountyId,
+        vmId,
+        sequence: 4,
+        occurredAt: iso(91),
+        event: {
+          type: "attention_required",
+          kind: "constraint_exhausted",
+          reason: "the ein attempt ran out of wall clock",
+        },
+      }),
+      observedAt,
+    });
+    expect(raised.ok).toBe(true);
+    if (!raised.ok) return;
+    expect(unreportedBudgetOverrun(raised.state, at(200), graceMs)).toEqual([]);
+  });
+
+  test("says nothing while a human is driving, however long they take", () => {
+    // Human-controlled work is unconstrained, and the clock stopped at the takeover, so the hours that follow
+    // are not an overrun anybody failed to report.
+    let state = withRunningAttempt();
+    state = apply(state, 4, { type: "control_changed", controller: "human", reason: "takeover" });
+    expect(unreportedBudgetOverrun(state, at(600), graceMs)).toEqual([]);
   });
 });

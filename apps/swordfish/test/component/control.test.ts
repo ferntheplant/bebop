@@ -316,21 +316,32 @@ describe("Swordfish local control", () => {
         expect(handoff.result.snapshot.controller).toBe("swordfish");
       }
 
-      const extend = await send("sf-cmd-extend", { type: "extend_constraint", constraint: "primary_turns" });
-      expect(extend.type).toBe("success");
-      if (extend.type === "success") {
-        expect(
-          extend.result.snapshot.constraints.find((entry) => entry.constraint === "primary_turns")?.extensionsGranted,
-        ).toBe(1);
+      // Every recovery verb is refused with nothing outstanding to recover from. That is the whole admissibility
+      // rule: a grant answers an attention record, so with no record there is nothing to grant against and
+      // `continue` cannot be used to hand an attempt more budget than the profile allows.
+      for (const command of [
+        { type: "continue" },
+        { type: "rerun", target: "building" },
+        { type: "resume" },
+      ] as const) {
+        const refused = await send(`sf-cmd-${command.type}-${"target" in command ? command.target : "none"}`, command);
+        expect(refused.type).toBe("error");
+        if (refused.type === "error") expect(refused.error.code).toBe("recovery_not_available");
       }
 
-      const extended = await send("sf-cmd-extend-again", { type: "extend_constraint", constraint: "primary_turns" });
-      expect(extended.type).toBe("error");
-      if (extended.type === "error") expect(extended.error.code).toBe("constraint_extension_not_allowed");
-
-      const retry = await send("sf-cmd-retry", { type: "retry_stage", stage: "local_validation" });
-      expect(retry.type).toBe("error");
-      if (retry.type === "error") expect(retry.error.code).toBe("stage_retry_not_allowed");
+      const status = await send("sf-cmd-ledger", { type: "status" });
+      expect(status.type).toBe("success");
+      if (status.type === "success") {
+        // The ledger is served from the workflow state, so a bounty that has run no attempts reports a full
+        // allowance for every scope rather than rows from a table nobody wrote to.
+        expect(status.result.snapshot.constraints).toEqual([
+          { scope: "building", attempts: { consumed: 0, base: 3, granted: 0 } },
+          { scope: "review", attempts: { consumed: 0, base: 2, granted: 0 } },
+          { scope: "qa", attempts: { consumed: 0, base: 2, granted: 0 } },
+        ]);
+        expect(status.result.snapshot.validatedCandidates).toEqual({ consumed: 0, base: 3, granted: 0 });
+        expect(status.result.snapshot.exhausted).toEqual([]);
+      }
 
       const approve = await send("sf-cmd-approve", { type: "approve_config" });
       expect(approve.type).toBe("error");

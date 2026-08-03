@@ -110,6 +110,16 @@ describe("Swordfish workflow reducer", () => {
     // ever followed CI ("CI gates cowboy review" (ADR 0040)).
     expect(state.activeCowboy).toBeNull();
     expect(state.controller).toBe("swordfish");
+
+    // It carries the attempt lifecycle too, so a clean run spends exactly one attempt in each scope and one of
+    // the spec's validated-candidate slots, and finishes with nothing outstanding.
+    expect(state.attempt).toBeNull();
+    expect(state.ledgers).toEqual({
+      building: { attemptsConsumed: 1, attemptsGranted: 0 },
+      review: { attemptsConsumed: 1, attemptsGranted: 0 },
+      qa: { attemptsConsumed: 1, attemptsGranted: 0 },
+    });
+    expect(state.validatedCandidatesConsumed).toBe(1);
   });
 
   test("applies the legal pipeline to an exact-SHA readiness claim", () => {

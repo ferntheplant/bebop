@@ -5,7 +5,6 @@ import type {
   BebopCommand,
   CommandId,
   CommandResultMessage,
-  ConstraintKey,
   EvidenceBundleManifest,
   EventMessage,
   EventSequence,
@@ -13,9 +12,9 @@ import type {
   Timestamp,
 } from "@bebop/contracts";
 import {
+  attemptAllowance,
   CommandResultMessage as CommandResultMessageSchema,
-  constraintKeys,
-  defaultConstraintProfile,
+  constraintScopes,
   EvidenceBundleManifest as EvidenceBundleManifestSchema,
   EventMessage as EventMessageSchema,
   PrivatePreviewAttachments,
@@ -23,7 +22,7 @@ import {
   SfStatusSnapshot as SfStatusSnapshotSchema,
   SwordfishEvent as SwordfishEventSchema,
 } from "@bebop/contracts";
-import { eventFingerprint } from "@bebop/workflow";
+import { attemptBudget, clockRuns, eventFingerprint, exhaustedConstraints } from "@bebop/workflow";
 import { Context, Data, Effect, Layer, Schema } from "effect";
 import type { SqlError } from "effect/unstable/sql";
 import { SqlClient } from "effect/unstable/sql";
@@ -123,8 +122,6 @@ export interface SwordfishStoreService {
     detail: string | undefined,
     at: Timestamp,
   ) => Effect.Effect<void, SqlError.SqlError>;
-  readonly consumeConstraint: (constraint: ConstraintKey, at: Timestamp) => Effect.Effect<boolean, SqlError.SqlError>;
-  readonly extendConstraint: (constraint: ConstraintKey, at: Timestamp) => Effect.Effect<boolean, SqlError.SqlError>;
   readonly reconcileLocalState: (at: Timestamp) => Effect.Effect<ReconciliationSummary, SqlError.SqlError>;
 }
 
@@ -161,19 +158,6 @@ function optionalText(row: Row, key: string): string | undefined {
 
 function commandHash(command: BebopCommand): string {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
-}
-
-function constraintDefaults(): Readonly<Record<ConstraintKey, number>> {
-  return {
-    primary_turns: defaultConstraintProfile.primary.maxTurnsPerAttempt,
-    primary_wall_clock: defaultConstraintProfile.primary.maxWallClockMinutesPerAttempt,
-    review_rounds: defaultConstraintProfile.review.maxRounds,
-    review_turns: defaultConstraintProfile.review.maxTurnsPerAttempt,
-    review_wall_clock: defaultConstraintProfile.review.maxWallClockMinutesPerAttempt,
-    qa_rounds: defaultConstraintProfile.qa.maxRounds,
-    qa_turns: defaultConstraintProfile.qa.maxTurnsPerAttempt,
-    qa_wall_clock: defaultConstraintProfile.qa.maxWallClockMinutesPerAttempt,
-  };
 }
 
 export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.SqlClient | SwordfishConfiguration> =
@@ -217,14 +201,6 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
               if (configured !== stored) {
                 return yield* Effect.fail(new AuthorityIdentityError({ field, configured, stored }));
               }
-            }
-            const defaults = constraintDefaults();
-            for (const constraint of constraintKeys) {
-              yield* sql`
-              INSERT OR IGNORE INTO constraint_ledger
-                (constraint_key, consumed, limit_value, extensions_granted, updated_at)
-              VALUES (${constraint}, 0, ${defaults[constraint]}, 0, ${timestampToIso(at)})
-            `;
             }
           }),
         );
@@ -380,10 +356,9 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
         sql.withTransaction(
           Effect.gen(function* () {
             const workflow = yield* loadWorkflow;
-            const [metadataRows, seatRows, constraintRows, eventRows, gateRows] = yield* Effect.all([
+            const [metadataRows, seatRows, eventRows, gateRows] = yield* Effect.all([
               sql`SELECT * FROM daemon_metadata WHERE singleton = 1`,
               sql`SELECT role, seat_id FROM seats ORDER BY created_at, role`,
-              sql`SELECT * FROM constraint_ledger ORDER BY constraint_key`,
               sql`SELECT sequence, occurred_at, payload FROM workflow_events ORDER BY sequence DESC LIMIT 50`,
               sql`
             SELECT gate, count(*) AS attempts, max(occurred_at) AS updated_at
@@ -422,6 +397,12 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
             // takes a fresh seat — and only one of them is being driven (ADR 0037).
             const activeCowboy = workflow.state.activeCowboy;
             const attention = workflow.state.attention;
+            // The whole ledger comes from the workflow state, which is derived from the event stream by the same
+            // reducer Bebop runs. Nothing here reads a counter table, because there is no counter table to
+            // disagree with the events (ADR 0042).
+            const state = workflow.state;
+            const attempt = state.attempt;
+            const attemptBudgets = attempt === null ? null : attemptBudget(state, attempt);
             return decodeStatus({
               stateRevision: workflow.stateRevision,
               observedAt: timestampToIso(observedAt),
@@ -444,11 +425,48 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
               seats,
               ...(candidate === null ? {} : { candidateSha: candidate.commitSha }),
               gates,
-              constraints: constraintRows.map((row) => ({
-                constraint: text(row as Row, "constraint_key"),
-                consumed: number(row as Row, "consumed"),
-                limit: number(row as Row, "limit_value"),
-                extensionsGranted: number(row as Row, "extensions_granted"),
+              ...(attempt === null || attemptBudgets === null
+                ? {}
+                : {
+                    attempt: {
+                      scope: attempt.scope,
+                      role: attempt.role,
+                      seatId: attempt.seatId,
+                      ordinal: attempt.ordinal,
+                      startedAt: timestampToIso(attempt.startedAt),
+                      turns: {
+                        consumed: attempt.turns,
+                        base: attemptBudgets.turns - attempt.turnsGranted,
+                        granted: attempt.turnsGranted,
+                      },
+                      wallClockMs: {
+                        consumed: attempt.elapsedMs,
+                        base: attemptBudgets.wallClockMs - attempt.wallClockGrantedMs,
+                        granted: attempt.wallClockGrantedMs,
+                      },
+                      running: clockRuns(state),
+                    },
+                  }),
+              constraints: constraintScopes.map((scope) => ({
+                scope,
+                attempts: {
+                  consumed: state.ledgers[scope].attemptsConsumed,
+                  base: attemptAllowance(state.constraints, scope),
+                  granted: state.ledgers[scope].attemptsGranted,
+                },
+              })),
+              validatedCandidates: {
+                consumed: state.validatedCandidatesConsumed,
+                base: state.constraints.validatedCandidatesPerSpec,
+                // Always zero: another validated-candidate allowance is earned by `reopen-spec`, which replaces
+                // the allowance rather than adding to it.
+                granted: 0,
+              },
+              exhausted: exhaustedConstraints(state).map((entry) => ({
+                constraint: entry.constraint,
+                ...(entry.scope === null ? {} : { scope: entry.scope }),
+                consumed: entry.consumed,
+                allowed: entry.allowed,
               })),
               bebopConnection: {
                 state: number(metadata, "connected") === 1 ? "connected" : "disconnected",
@@ -536,39 +554,6 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
           WHERE record_id = ${recordId}
         `.pipe(Effect.asVoid);
 
-      const consumeConstraint = (constraint: ConstraintKey, at: Timestamp) =>
-        sql.withTransaction(
-          Effect.gen(function* () {
-            const updated = yield* sql`
-              UPDATE constraint_ledger
-              SET consumed = consumed + 1, updated_at = ${timestampToIso(at)}
-              WHERE constraint_key = ${constraint} AND consumed < limit_value
-              RETURNING constraint_key
-            `;
-            if (updated.length === 0) return false;
-            yield* bumpRevision(at);
-            return true;
-          }),
-        );
-
-      const extendConstraint = (constraint: ConstraintKey, at: Timestamp) =>
-        sql.withTransaction(
-          Effect.gen(function* () {
-            const rows = yield* sql`
-            SELECT extensions_granted FROM constraint_ledger WHERE constraint_key = ${constraint}
-          `;
-            const row = rows[0] as Row | undefined;
-            if (row === undefined || number(row, "extensions_granted") >= 1) return false;
-            yield* sql`
-            UPDATE constraint_ledger
-            SET limit_value = limit_value + 1, extensions_granted = 1, updated_at = ${timestampToIso(at)}
-            WHERE constraint_key = ${constraint}
-          `;
-            yield* bumpRevision(at);
-            return true;
-          }),
-        );
-
       const reconcileLocalState = (at: Timestamp) =>
         Effect.gen(function* () {
           yield* sql`
@@ -641,8 +626,6 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
         recordLocalArtifact,
         startReconciliation,
         completeReconciliation,
-        consumeConstraint,
-        extendConstraint,
         reconcileLocalState,
       };
     }),

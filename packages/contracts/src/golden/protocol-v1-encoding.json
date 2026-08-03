@@ -208,6 +208,54 @@
       }
     },
     {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 13,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "attention_cleared",
+        "resolution": "rerun",
+        "target": "building"
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 14,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "attempt_started"
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 15,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "turn_completed"
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 16,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "attempt_ended",
+        "outcome": "exhausted",
+        "detail": "The wall-clock watchdog ran out."
+      }
+    },
+    {
       "type": "command_result",
       "protocolVersion": 1,
       "bountyId": "bty-01jz8j3d9f4x",
@@ -327,8 +375,7 @@
       "commandId": "cmd-04",
       "issuedAt": "2026-07-26T12:34:56.000Z",
       "command": {
-        "type": "extend_constraint",
-        "constraint": "primary_turns"
+        "type": "continue"
       }
     },
     {
@@ -339,8 +386,19 @@
       "commandId": "cmd-05",
       "issuedAt": "2026-07-26T12:34:56.000Z",
       "command": {
-        "type": "retry_stage",
-        "stage": "local_validation"
+        "type": "rerun",
+        "target": "validation"
+      }
+    },
+    {
+      "type": "command",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "commandId": "cmd-4a",
+      "issuedAt": "2026-07-26T12:34:56.000Z",
+      "command": {
+        "type": "resume"
       }
     },
     {

@@ -248,7 +248,7 @@ describe("Swordfish outbound protocol", () => {
           vmId: "vm-component",
           commandId: "cmd-duplicate",
           issuedAt: "2026-07-29T00:00:01.000Z",
-          command: { type: "extend_constraint", constraint: "primary_turns" },
+          command: { type: "resume" },
         });
         socket.send(command);
         socket.send(command);
@@ -325,7 +325,9 @@ describe("Swordfish outbound protocol", () => {
           bountyId: "bty-component",
           vmId: "vm-component",
           commandId: "cmd-duplicate",
-          status: "completed",
+          // Rejected, and identically so every time: nothing is outstanding for a `resume` to clear, and a
+          // redelivery replays the recorded answer rather than deciding again.
+          status: "rejected",
         });
       }
       const eventSequences = peer.received.filter((message) => message.type === "event").map((event) => event.sequence);
@@ -342,20 +344,19 @@ describe("Swordfish outbound protocol", () => {
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const store = yield* SwordfishStore;
-          const commands = yield* sql`SELECT count(*) AS count FROM applied_commands`;
-          const constraint = yield* sql`
-            SELECT extensions_granted FROM constraint_ledger WHERE constraint_key = 'primary_turns'
-          `;
-          return {
-            delivery: yield* store.deliveryState,
-            commandCount: commands[0]?.["count"],
-            extensions: constraint[0]?.["extensions_granted"],
-          };
+          const commands = yield* sql`SELECT command_id, result_payload FROM applied_commands`;
+          return { delivery: yield* store.deliveryState, commands };
         }),
       );
       expect(durable.delivery.acknowledgedThrough).toBe(1);
-      expect(durable.commandCount).toBe(1);
-      expect(durable.extensions).toBe(1);
+      // The redelivered command is applied once and answered twice from its recorded result. That the recorded
+      // result is a rejection is the point: nothing is outstanding for a `resume` to clear, and the second
+      // delivery must replay that answer rather than re-deciding it.
+      expect(durable.commands).toHaveLength(1);
+      expect(JSON.parse(String(durable.commands[0]?.["result_payload"]))).toMatchObject({
+        commandId: "cmd-duplicate",
+        status: "rejected",
+      });
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
       peer.stop();

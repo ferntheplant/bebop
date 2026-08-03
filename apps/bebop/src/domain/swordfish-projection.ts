@@ -18,7 +18,11 @@ import type {
 } from "@bebop/contracts";
 import {
   applyWorkflowEvent,
+  exhaustedConstraints,
   initialWorkflowCoreState,
+  isSuspended,
+  isTerminal,
+  type ConstraintExhaustion,
   type WorkflowCoreState,
   type WorkflowError,
   type WorkflowSkipReason,
@@ -136,6 +140,40 @@ function observed(at: Timestamp, heartbeatSentAt?: Timestamp): SwordfishFreshnes
   return heartbeatSentAt === undefined
     ? { status: "connected", lastObservedAt: at }
     : { status: "connected", lastObservedAt: at, lastHeartbeatSentAt: heartbeatSentAt };
+}
+
+/**
+ * Budgets this projection reads as long past their limit while Swordfish has reported nothing.
+ *
+ * This is a **defect signal about the daemon**, not an exhaustion, and Bebop acts on it by saying so rather than
+ * by suspending anything. The ledger is Swordfish's state and Bebop cannot write workflow events
+ * ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)); what Bebop can do is apply the same reducer to
+ * the same events and notice a disagreement, the way it already re-verifies a readiness claim
+ * ("Readiness is a claim" (ADR 0003)).
+ *
+ * `graceMs` is subtracted from the observation instant rather than added to the budget, so the answer is "past
+ * budget even discounting the margin". The margin is required because the projection lags the daemon by at least
+ * the delivery of one event — tolerable for a defect signal, and disqualifying for a primary detector, which is
+ * why the enforcing watchdog runs on the Swordfish side ("Constraint exhaustion is computed, not announced"
+ * (ADR 0042)).
+ */
+export function unreportedBudgetOverrun(
+  state: BebopSwordfishProjection,
+  observedAt: Timestamp,
+  graceMs: number,
+): ReadonlyArray<ConstraintExhaustion> {
+  // A daemon that has already said so is not a daemon that failed to.
+  if (state.attention.some((record) => record.kind === "constraint_exhausted")) return [];
+  if (state.controller !== "swordfish" || isSuspended(state.stage) || isTerminal(state.stage)) return [];
+
+  const attempt = state.attempt;
+  if (attempt === null) return exhaustedConstraints(state);
+  const since = attempt.runningSince;
+  const elapsedMs =
+    since === null
+      ? attempt.elapsedMs
+      : attempt.elapsedMs + Math.max(0, DateTime.toEpochMillis(observedAt) - graceMs - DateTime.toEpochMillis(since));
+  return exhaustedConstraints({ ...state, attempt: { ...attempt, elapsedMs } });
 }
 
 export function reduceBebopSwordfishProjection(

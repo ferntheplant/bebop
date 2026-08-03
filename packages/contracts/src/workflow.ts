@@ -111,6 +111,46 @@ export const WorkflowResolution = Schema.Literals(workflowResolutions);
 export type WorkflowResolution = typeof WorkflowResolution.Type;
 
 /**
+ * What a `rerun` starts again ("Continue preserves an attempt; rerun replaces it" (ADR 0041)).
+ *
+ * The three cowboy targets each grant one attempt in their scope; `validation` repeats a deterministic operation
+ * on the same SHA and consumes no attempt at all, which is why it is a target here rather than a constraint
+ * scope.
+ */
+export const rerunTargets = ["building", "validation", "review", "qa"] as const;
+export const RerunTarget = Schema.Literals(rerunTargets);
+export type RerunTarget = typeof RerunTarget.Type;
+
+/**
+ * The one attention kind each `rerun` target answers
+ * ("A rerun resolves the kind its target names" (ADR 0043)).
+ *
+ * Both `constraint_exhausted` and `uncertain_gate` permit `rerun`, and a resolution otherwise clears every
+ * outstanding record that permits it — so `rerun building` issued while an uncertain gate stood would have
+ * cleared a reason nobody addressed. The target already distinguishes them: `validation` is the only
+ * deterministic operation a human reruns, and an uncertain *seat* is a separate kind that permits no rerun at
+ * all. Held here so the raise site, the status that prints exits, and the reducer cannot disagree.
+ */
+export const kindForRerunTarget: Readonly<Record<RerunTarget, AttentionKind>> = {
+  building: "constraint_exhausted",
+  review: "constraint_exhausted",
+  qa: "constraint_exhausted",
+  validation: "uncertain_gate",
+};
+
+/**
+ * How a Swordfish-controlled cowboy attempt finished.
+ *
+ * `completed` is the only outcome that produced a valid role completion. The other two are both "no result", and
+ * the distinction between them is whether the reducer's own accounting says the budget ran out: an `exhausted`
+ * claim it cannot support is rejected as an illegal transition
+ * ("Constraint exhaustion is computed, not announced" (ADR 0042)).
+ */
+export const attemptOutcomes = ["completed", "exhausted", "no_result"] as const;
+export const AttemptOutcome = Schema.Literals(attemptOutcomes);
+export type AttemptOutcome = typeof AttemptOutcome.Type;
+
+/**
  * The permitted exits for each kind of attention.
  *
  * Held here rather than at each raise site so that the answer cannot drift between the seat that raises the

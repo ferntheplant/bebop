@@ -138,6 +138,13 @@ const session = (onRegistered: Effect.Effect<void>) =>
     yield* drain(delivery.lastProduced);
 
     const heartbeat = Effect.gen(function* () {
+      // The constraint wake-up rides the heartbeat rather than a timer of its own. Swordfish already wakes on
+      // `heartbeatInterval`, and seconds of cadence is far finer resolution than budgets measured in tens of
+      // minutes ("Constraint exhaustion is computed, not announced" (ADR 0042)). It runs here, where the
+      // heartbeat is produced rather than where it is received, because the ledger is Swordfish's state and
+      // Swordfish keeps enforcing it through a disconnection — which is exactly when a Bebop-side detector would
+      // stop.
+      yield* workflow.evaluateConstraints;
       const current = yield* store.deliveryState;
       const sentAt = yield* identity.now;
       yield* send({

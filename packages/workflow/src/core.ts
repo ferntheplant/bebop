@@ -12,11 +12,43 @@
 
 import { createHash } from "node:crypto";
 
-import type { AttentionKind, CandidateGate, EventMessage, SeatRole, SwordfishStage } from "@bebop/contracts";
-import { EventMessage as EventMessageSchema, resolutionsForAttention, toEventSequence } from "@bebop/contracts";
+import type {
+  AttentionKind,
+  CandidateGate,
+  ConstraintScope,
+  EventMessage,
+  SeatRole,
+  SwordfishStage,
+} from "@bebop/contracts";
+import {
+  constraintScopeForRole,
+  EventMessage as EventMessageSchema,
+  kindForRerunTarget,
+  resolutionsForAttention,
+  scopeForRerunTarget,
+  toEventSequence,
+} from "@bebop/contracts";
 import { Schema } from "effect";
 
-import { fingerprintWindow, initialGates, type GateStates, type WorkflowCoreState } from "#src/state.ts";
+import {
+  accrueAttemptClock,
+  attemptBudget,
+  attemptsAllowed,
+  exhaustedConstraints,
+  markAttemptClock,
+  watchdogGrant,
+} from "#src/ledger.ts";
+import {
+  fingerprintWindow,
+  initialGates,
+  isSuspended,
+  isTerminal,
+  resetScopes,
+  type AttemptState,
+  type AttentionState,
+  type GateStates,
+  type WorkflowCoreState,
+} from "#src/state.ts";
 
 export type WorkflowError =
   | { readonly type: "sequence_gap"; readonly expected: number; readonly received: number }
@@ -30,7 +62,21 @@ export type WorkflowError =
   | { readonly type: "cowboy_already_active"; readonly active: SeatRole; readonly requested: SeatRole }
   | { readonly type: "cowboy_not_active"; readonly requested: SeatRole }
   | { readonly type: "no_attention_raised" }
-  | { readonly type: "resolution_not_permitted"; readonly kind: AttentionKind; readonly resolution: string };
+  | { readonly type: "resolution_not_permitted"; readonly kind: AttentionKind; readonly resolution: string }
+  | { readonly type: "attention_kind_not_raised"; readonly kind: AttentionKind }
+  | { readonly type: "attempt_already_active"; readonly scope: ConstraintScope; readonly ordinal: number }
+  | { readonly type: "attempt_not_active"; readonly eventType: string }
+  | {
+      readonly type: "attempts_exhausted";
+      readonly scope: ConstraintScope;
+      readonly consumed: number;
+      readonly allowed: number;
+    }
+  /**
+   * The daemon claimed a budget ran out and the reducer's own arithmetic disagrees
+   * ("Constraint exhaustion is computed, not announced" (ADR 0042)).
+   */
+  | { readonly type: "exhaustion_unsupported"; readonly claim: string };
 
 /**
  * Why an event changed nothing. The distinction is load-bearing rather than diagnostic: it
@@ -59,26 +105,6 @@ export type WorkflowResult<S> =
 export function eventFingerprint(message: EventMessage): string {
   const encoded = JSON.stringify(Schema.encodeSync(EventMessageSchema)(message));
   return createHash("sha256").update(encoded).digest("hex").slice(0, 32);
-}
-
-/**
- * Stages during which the workflow is suspended: progress is recorded as the stage to
- * resume into rather than applied to `stage` directly.
- *
- * `cancelling` is in this set because in-flight hooks and CI polls legitimately land after
- * a stop command. Without it a late `gate_completed` moved a cancelling run to `revision`
- * and the cancellation was lost.
- *
- * Human control is deliberately absent. A human driving a stage is not a suspension of it — that is what
- * `controller` records, orthogonally ("One controller drives one active cowboy" (ADR 0037)) — so work reported
- * during a human-control episode lands on `stage` like any other.
- */
-function isSuspended(stage: SwordfishStage | null): boolean {
-  return stage === "needs_attention" || stage === "cancelling";
-}
-
-function isTerminal(stage: SwordfishStage | null): boolean {
-  return stage === "cancelled" || stage === "failed";
 }
 
 function stageChanges(state: WorkflowCoreState, nextStage: SwordfishStage): Partial<WorkflowCoreState> {
@@ -167,6 +193,14 @@ function changesFor(
           candidate: null,
           gates: initialGates(),
           readinessClaim: null,
+          // A confirmed spec revision is the one thing that creates a fresh validated-candidate allowance, and it
+          // creates fresh scoped attempt ledgers with it. The allowance is earned by the revision, not by the
+          // stage resuming — an outstanding intrusion keeps the bounty suspended above, and the ledger must not
+          // wait on a stage that is stopped for a reason the spec change did not answer.
+          ledgers: resetScopes(state.ledgers, ["building", "review", "qa"]),
+          validatedCandidatesConsumed: 0,
+          // A suspended attempt against the previous spec has nothing left to do.
+          attempt: null,
         },
       };
     }
@@ -192,6 +226,11 @@ function changesFor(
           candidate: event.candidate,
           gates: { ...initialGates(), local_validation: { status: "pending" } },
           readinessClaim: null,
+          // Jet and faye are allowed attempts *per candidate*, so a new candidate is where those two ledgers
+          // reset. Building's is not: a candidate that fails local validation or CI returns feedback to ein
+          // inside the same build cycle, and resetting here would give ein an unbounded supply of attempts by
+          // the simple expedient of submitting something that fails.
+          ledgers: resetScopes(state.ledgers, ["review", "qa"]),
         },
       };
     }
@@ -234,7 +273,20 @@ function changesFor(
         [event.gate]: { status: event.outcome, completedAt: message.occurredAt },
       };
       if (event.outcome === "failed") {
-        return { ok: true, changes: { gates, ...stageChanges(state, "revision"), readinessClaim: null } };
+        // A blocking review or QA result is a valid role completion that starts a *new* ein build cycle, so
+        // building's attempt ledger resets. A local-validation or CI failure is feedback inside the current
+        // cycle and deliberately does not reset it: those are exactly the loops the three-attempt allowance
+        // exists to bound.
+        const endsBuildCycle = event.gate === "code_review" || event.gate === "qa";
+        return {
+          ok: true,
+          changes: {
+            gates,
+            ...stageChanges(state, "revision"),
+            readinessClaim: null,
+            ...(endsBuildCycle ? { ledgers: resetScopes(state.ledgers, ["building"]) } : {}),
+          },
+        };
       }
       if (event.gate === "local_validation") {
         return { ok: true, changes: { gates } };
@@ -248,6 +300,11 @@ function changesFor(
           changes: {
             gates: { ...gates, code_review: { status: "pending" } },
             ...stageChanges(state, gateStage(gates)),
+            // Passing CI is what makes a candidate a *validated* candidate, so this is where one of the spec's
+            // slots is spent. It is charged once per candidate that reaches here, under either controller: the
+            // allowance bounds how many distinct SHAs a spec may put in front of a reviewer, and who produced
+            // them does not change that (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+            validatedCandidatesConsumed: state.validatedCandidatesConsumed + 1,
           },
         };
       }
@@ -341,13 +398,13 @@ function changesFor(
       if (event.stage === "cancelled" && state.stage === "cancelling") {
         return {
           ok: true,
-          changes: { stage: "cancelled", suspendedStage: null, attention: [], activeCowboy: null },
+          changes: { stage: "cancelled", suspendedStage: null, attention: [], activeCowboy: null, attempt: null },
         };
       }
       if (event.stage === "failed" && state.stage !== "cancelled") {
         return {
           ok: true,
-          changes: { stage: "failed", suspendedStage: null, attention: [], activeCowboy: null },
+          changes: { stage: "failed", suspendedStage: null, attention: [], activeCowboy: null, attempt: null },
         };
       }
       // `needs_attention` is deliberately unreachable here: it is entered by `attention_required` and left by
@@ -375,7 +432,17 @@ function changesFor(
       // Stage is untouched on purpose: a handoff returns the same work to Swordfish, which then starts fresh
       // work for that stage rather than resuming an aborted turn ("Control passes through a quiescent handoff"
       // (ADR 0036)).
-      return { ok: true, changes: { controller: event.controller } };
+      //
+      // The attempt is not untouched, and the asymmetry is the point. Taking over stops the autonomous clock
+      // without refunding the attempt that started, so the attempt survives and simply stops accruing — that
+      // falls out of `clockRuns` with nothing recorded here. Handing back starts a *new* attempt and consumes
+      // its next slot (ADR 0041), so the old one ends here; leaving it would let the returning `attempt_started`
+      // be rejected for an attempt already active and would restart a clock that belongs to work nobody is
+      // doing.
+      return {
+        ok: true,
+        changes: { controller: event.controller, ...(event.reason === "handoff" ? { attempt: null } : {}) },
+      };
     }
 
     case "cowboy_activated": {
@@ -404,13 +471,121 @@ function changesFor(
       if (active === null || active.role !== event.seat || active.seatId !== event.seatId) {
         return { ok: false, error: { type: "cowboy_not_active", requested: event.seat } };
       }
+      // An attempt is one cowboy assignment, so standing the cowboy down while one is in flight would leave an
+      // attempt whose seat no longer exists — accruing wall clock against nobody. The attempt ends first.
+      if (state.attempt !== null) {
+        return {
+          ok: false,
+          error: { type: "attempt_already_active", scope: state.attempt.scope, ordinal: state.attempt.ordinal },
+        };
+      }
       return { ok: true, changes: { activeCowboy: null } };
+    }
+
+    case "attempt_started": {
+      const cowboy = state.activeCowboy;
+      // An attempt is one Swordfish-controlled cowboy assignment: no cowboy and no Swordfish control both mean
+      // there is no attempt to be had. Human-controlled work is unconstrained and deliberately unmeasured.
+      if (cowboy === null || state.controller !== "swordfish" || isSuspended(state.stage)) {
+        return { ok: false, error: illegal(state, event.type) };
+      }
+      if (state.attempt !== null) {
+        return {
+          ok: false,
+          error: { type: "attempt_already_active", scope: state.attempt.scope, ordinal: state.attempt.ordinal },
+        };
+      }
+      // The slot is consumed here, before the first prompt, and the reducer owns whether one is available. A
+      // daemon that starts a fourth attempt against a three-attempt allowance is not granted a fourth — a grant
+      // is a human `rerun`, and this is the transition that says so.
+      const scope = constraintScopeForRole[cowboy.role];
+      const consumed = state.ledgers[scope].attemptsConsumed;
+      const allowed = attemptsAllowed(state, scope);
+      if (consumed >= allowed) {
+        return { ok: false, error: { type: "attempts_exhausted", scope, consumed, allowed } };
+      }
+      const attempt: AttemptState = {
+        scope,
+        role: cowboy.role,
+        seatId: cowboy.seatId,
+        ordinal: consumed + 1,
+        startedAt: message.occurredAt,
+        turns: 0,
+        turnsGranted: 0,
+        elapsedMs: 0,
+        wallClockGrantedMs: 0,
+        // Left stopped here and started by `markAttemptClock` once the whole event has applied, so one rule
+        // decides when the clock runs rather than each site that touches an attempt.
+        runningSince: null,
+      };
+      return {
+        ok: true,
+        changes: {
+          attempt,
+          ledgers: { ...state.ledgers, [scope]: { ...state.ledgers[scope], attemptsConsumed: consumed + 1 } },
+        },
+      };
+    }
+
+    case "turn_completed": {
+      const attempt = state.attempt;
+      if (attempt === null) {
+        return { ok: false, error: { type: "attempt_not_active", eventType: event.type } };
+      }
+      // Turns are only counted while Swordfish is driving and the work is running. A turn reported under human
+      // control or against a suspended stage means the daemon kept prompting after it gave up control or
+      // stopped, which is a defect worth one loud failure rather than a silently uncounted turn.
+      if (state.controller !== "swordfish" || isSuspended(state.stage)) {
+        return { ok: false, error: illegal(state, event.type) };
+      }
+      return { ok: true, changes: { attempt: { ...attempt, turns: attempt.turns + 1 } } };
+    }
+
+    case "attempt_ended": {
+      const attempt = state.attempt;
+      if (attempt === null) {
+        return { ok: false, error: { type: "attempt_not_active", eventType: event.type } };
+      }
+      // The one claim in this event that the reducer can check, and therefore does. `no_result` covers an idle
+      // or seat-local failure and asserts nothing about a budget; `exhausted` asserts that this attempt's
+      // watchdogs ran out, and the arithmetic above is what decides that (ADR 0042).
+      if (event.outcome === "exhausted") {
+        const budget = attemptBudget(state, attempt);
+        if (attempt.turns < budget.turns && attempt.elapsedMs < budget.wallClockMs) {
+          return {
+            ok: false,
+            error: {
+              type: "exhaustion_unsupported",
+              claim: `attempt ${attempt.ordinal} in ${attempt.scope} is at ${attempt.turns}/${budget.turns} turns and ${attempt.elapsedMs}/${budget.wallClockMs}ms`,
+            },
+          };
+        }
+      }
+      return { ok: true, changes: { attempt: null } };
     }
 
     case "attachments_updated":
       return { ok: true, changes: { previews: event.previews } };
 
     case "attention_required": {
+      // The one attention kind that is an arithmetic claim rather than an observation. Everything else Swordfish
+      // raises is something only it can see — a wedged process, an unreachable VM, an agent saying it is stuck.
+      // A budget is not: the reducer has every event and every timestamp, so a daemon whose watchdog fires
+      // against accounting that says the attempt is still within budget has a bug, and this is where that bug
+      // becomes visible instead of a silently strangled attempt (ADR 0042).
+      if (event.kind === "constraint_exhausted" && exhaustedConstraints(state).length === 0) {
+        const attempt = state.attempt;
+        return {
+          ok: false,
+          error: {
+            type: "exhaustion_unsupported",
+            claim:
+              attempt === null
+                ? "no attempt is active and every scoped allowance has slots remaining"
+                : `attempt ${attempt.ordinal} in ${attempt.scope} is at ${attempt.turns} turns and ${attempt.elapsedMs}ms`,
+          },
+        };
+      }
       const raised = { kind: event.kind, reason: event.reason, raisedAt: message.occurredAt };
       // Reasons accumulate rather than replacing each other, so a later laxer reason cannot widen the exits of
       // an outstanding stricter one. A second reason of the same kind is a restatement and replaces it.
@@ -434,30 +609,82 @@ function changesFor(
       if (state.attention.length === 0) {
         return { ok: false, error: { type: "no_attention_raised" } };
       }
-      // A resolution clears every outstanding reason that permits it, and only those. This is the rule that
-      // makes an attention kind mean something: `resume` cannot clear an exhausted budget, because reviving an
-      // attempt is a grant and grants are explicit (ADR 0038, ADR 0041). It is also why reasons are a list — a
-      // `resume` arriving while both an operational reason and an exhausted budget are outstanding clears the
-      // operational one and leaves the budget suspended, rather than reviving work nobody granted.
-      const cleared = state.attention.filter((record) => {
+      // A `rerun` addresses exactly the one record its target names, and nothing else. Every other resolution
+      // clears every outstanding reason that permits it, and only those — which is the rule that makes an
+      // attention kind mean something: `resume` cannot clear an exhausted budget, because reviving an attempt is
+      // a grant and grants are explicit (ADR 0038, ADR 0041). It is also why reasons are a list: a `resume`
+      // arriving while both an operational reason and an exhausted budget are outstanding clears the operational
+      // one and leaves the budget suspended, rather than reviving work nobody granted.
+      //
+      // `rerun` is the exception because it is the resolution that carries a grant. Two kinds permit it, and
+      // granting an ein attempt is no answer at all to a gate whose outcome is unknown, so the target picks the
+      // record ("A rerun resolves the kind its target names" (ADR 0043)).
+      const targetKind = event.target === undefined ? null : kindForRerunTarget[event.target];
+      if (event.resolution === "rerun" && targetKind === null) {
+        return { ok: false, error: illegal(state, event.type) };
+      }
+      const addressed = (record: AttentionState): boolean => {
         const permitted: ReadonlyArray<string> = resolutionsForAttention[record.kind];
-        return !permitted.includes(event.resolution);
-      });
+        if (!permitted.includes(event.resolution)) return false;
+        return targetKind === null || record.kind === targetKind;
+      };
+
+      const cleared = state.attention.filter((record) => !addressed(record));
       const outstanding = state.attention[0];
       if (outstanding !== undefined && cleared.length === state.attention.length) {
-        return {
-          ok: false,
-          error: { type: "resolution_not_permitted", kind: outstanding.kind, resolution: event.resolution },
-        };
+        return targetKind === null
+          ? {
+              ok: false,
+              error: { type: "resolution_not_permitted", kind: outstanding.kind, resolution: event.resolution },
+            }
+          : { ok: false, error: { type: "attention_kind_not_raised", kind: targetKind } };
       }
+
+      // Recovery grants are what these two resolutions *are*, so they are applied in the same transition that
+      // clears the reason rather than announced by an event of their own (ADR 0042). Both are unlimited and
+      // neither is implicit: every one of them is an authenticated human command that leaves a durable record.
+      let grants: Partial<WorkflowCoreState> = {};
+      if (event.resolution === "continue") {
+        const attempt = state.attempt;
+        // `continue` revives a suspended attempt. With nothing suspended there is nothing to revive, and what
+        // the operator wants is `rerun` — the two are distinct verbs precisely so this cannot be guessed at.
+        if (attempt === null) {
+          return { ok: false, error: { type: "attempt_not_active", eventType: event.type } };
+        }
+        const grant = watchdogGrant(state, attempt.scope);
+        grants = {
+          attempt: {
+            ...attempt,
+            turnsGranted: attempt.turnsGranted + grant.turns,
+            wallClockGrantedMs: attempt.wallClockGrantedMs + grant.wallClockMs,
+          },
+        };
+      } else if (event.target !== undefined) {
+        const scope = scopeForRerunTarget(event.target);
+        // `rerun validation` repeats a deterministic operation against the same SHA. It grants no attempt and
+        // abandons none, because no cowboy attempt was ever involved in the gate it reruns.
+        if (scope !== null) {
+          const ledger = state.ledgers[scope];
+          grants = {
+            ledgers: { ...state.ledgers, [scope]: { ...ledger, attemptsGranted: ledger.attemptsGranted + 1 } },
+            attempt: null,
+          };
+        }
+      }
+
       // The workflow resumes only once nothing is outstanding, and clearing a reason raised during cancellation
       // never revives the run.
       if (cleared.length > 0 || state.stage !== "needs_attention") {
-        return { ok: true, changes: { attention: cleared } };
+        return { ok: true, changes: { ...grants, attention: cleared } };
       }
       return {
         ok: true,
-        changes: { stage: state.suspendedStage ?? "interactive", suspendedStage: null, attention: cleared },
+        changes: {
+          ...grants,
+          stage: state.suspendedStage ?? "interactive",
+          suspendedStage: null,
+          attention: cleared,
+        },
       };
     }
   }
@@ -514,7 +741,13 @@ export function applyWorkflowEvent<S extends WorkflowCoreState>(state: S, messag
     return { ok: false, error: illegal(state, message.event.type) };
   }
 
-  const outcome = changesFor(state, message);
+  // Wall clock is folded in before the event is interpreted and re-marked after, so every rule reads an attempt
+  // that is already accurate as of this instant and no rule has to remember to advance it. That ordering is what
+  // charges the interval to the conditions that held *during* it: a takeover charges everything up to the
+  // takeover and nothing after, and an exhaustion check sees the time that had actually elapsed when the daemon
+  // claimed it (ADR 0042).
+  const accrued = accrueAttemptClock(state, message.occurredAt);
+  const outcome = changesFor(accrued, message);
   if (!outcome.ok) {
     return { ok: false, error: outcome.error };
   }
@@ -524,18 +757,16 @@ export function applyWorkflowEvent<S extends WorkflowCoreState>(state: S, messag
     message.sequence,
   );
 
-  return {
-    ok: true,
-    applied: true,
-    // The core writes only core fields, and never writes null to `stage`, so an app that
-    // narrows `stage` to non-null keeps that guarantee. TypeScript cannot see this because
-    // the core's own `stage` is the wider nullable type.
-    state: {
-      ...state,
-      ...outcome.changes,
-      lastAppliedSequence: toEventSequence(message.sequence),
-      appliedEventFingerprints: fingerprints,
-      fingerprintFloor: floor,
-    } as unknown as S,
-  };
+  // The core writes only core fields, and never writes null to `stage`, so an app that
+  // narrows `stage` to non-null keeps that guarantee. TypeScript cannot see this because
+  // the core's own `stage` is the wider nullable type.
+  const applied = {
+    ...accrued,
+    ...outcome.changes,
+    lastAppliedSequence: toEventSequence(message.sequence),
+    appliedEventFingerprints: fingerprints,
+    fingerprintFloor: floor,
+  } as unknown as S;
+
+  return { ok: true, applied: true, state: markAttemptClock(applied, message.occurredAt) };
 }

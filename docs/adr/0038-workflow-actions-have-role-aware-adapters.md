@@ -21,6 +21,11 @@ actions (`resume`, `rerun`, `takeover`, `attach`, `handoff`, and `cancel`) remai
 legitimate reason to invoke them. External authority such as config approval, merge, CI control, VM stop, and
 destruction remains Bebop-side only.
 
+`continue` is actor-aware without letting a cowboy mint budget: a cowboy may request another prompt within its
+current watchdogs, while only an authenticated human may revive an exhausted final attempt. The recovery
+distinction is recorded in
+[Continue preserves an attempt; rerun replaces it (ADR 0041)](./0041-continue-preserves-an-attempt-rerun-replaces-it.md).
+
 Reason-specific attention cannot be cleared by a generic resume: each attention record declares its permitted
 resolution actions. A human workflow action requires an existing human-control episode whenever a cowboy is
 active; if no cowboy is active, an authenticated action such as `reopen-spec` may establish human control while

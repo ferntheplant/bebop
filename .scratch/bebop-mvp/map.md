@@ -109,6 +109,12 @@ prototypes rather than tickets.
   — attachment starts with one full-screen active seat and a workflow status line; Swordfish preserves
   operator-created tmux layout and exposes service logs as files rather than panes. The plugin blocks mixed model
   turns while unexpected shell, abort, revert, or unrevert actions are detected as intrusions.
+- [CI gates cowboy review (ADR 0040)](../../docs/adr/0040-ci-gates-cowboy-review.md) and
+  [Continue preserves an attempt; rerun replaces it (ADR 0041)](../../docs/adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md),
+  from [What are the default constraints, and what happens when one is exhausted?](./issues/09-default-constraints-and-exhaustion.md)
+  — a base-revision repository profile bounds autonomous attempts and each spec's CI-passed candidates. CI now
+  precedes jet; exhaustion preserves a final attempt for `continue`, while `rerun` explicitly starts another.
+  Human recoveries are unlimited but authenticated and recorded.
 
 ## Not yet specified
 

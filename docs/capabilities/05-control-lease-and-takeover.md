@@ -25,17 +25,17 @@ exactly one actor may drive the active seat at a time.
   client left attached in another terminal stops working the moment control returns.
 - **Steering is honest in the record.** Human-steered review and QA results stay valid but are marked
   `human_steered` in their evidence provenance.
-- **Attention is actionable.** When a bounty enters `needs_attention`, status prints the exact `resume`, `rerun`,
-  takeover, or bebop-side command that can resolve it.
+- **Attention is actionable.** When a bounty enters `needs_attention`, status prints the exact `resume`,
+  `continue`, `rerun`, takeover, or bebop-side command that can resolve it.
 - **Local mutations prove operator authority.** Every mutating or access-granting `sf` command requires hidden
   interactive entry of a per-bounty operator credential retrieved through an authenticated Bebop client; cowboy
   tools use a separate role-bound adapter.
 - **Every action remains headless.** The same typed operations are available through authenticated Bebop HTTP
   routes and its thin CLI; local `sf` is the cockpit adapter, not the only route.
-- **Resume, rerun, and cancel say exactly what changes.** `resume` clears only attention reasons that explicitly
-  permit generic resumption and never bypasses config approval, intrusion, or uncertain recovery; `rerun` repeats
-  one local gate on the same candidate with downstream invalidation and fresh execution context; `cancel`
-  terminates the inner loop but leaves the cockpit and VM alive.
+- **Resume, continue, rerun, and cancel say exactly what changes.** `resume` clears only a safe non-budget
+  suspension and changes no allowance; `continue` preserves the suspended final attempt and resets its turn/time
+  watchdogs; `rerun` starts a fresh stage attempt or deterministic validation operation; `cancel` terminates the
+  inner loop but leaves the cockpit and VM alive.
 - **Every attention reason names its exits.** Config changes point to SHA-pinned Bebop approval; intrusion and
   uncertain seat state point to takeover and reconciled handoff or cancel; uncertain gates point to rerun; an
   unreconcilable environment points to cancel or Bebop's runtime-manifest recovery path.
@@ -67,7 +67,5 @@ prompt is refused), **13** (a prompt by any other route is rejected by the plugi
   — control is orthogonal to stage and follows manual transitions.
 - [Workflow actions have role-aware adapters (ADR 0038)](../adr/0038-workflow-actions-have-role-aware-adapters.md)
   — why human CLI mutations need an operator credential while cowboy tools do not.
-
-## Still open
-
-- [What are the default constraints, and what happens when one is exhausted?](../../.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md)
+- [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
+  — the recovery command names whether the operator is preserving context or starting again.

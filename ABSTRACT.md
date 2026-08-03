@@ -39,7 +39,8 @@ The normal workflow is:
 interactive clarification
 → autonomous implementation
 → deterministic validation
-→ external CI and independent code review
+→ external CI
+→ independent code review
 → clean-environment QA
 → human inspection
 → bebop-authorized merge (the bounty is caught)
@@ -47,7 +48,10 @@ interactive clarification
 
 The user begins by creating and attaching to a bounty. They talk directly to the primary cowboy (**ein**) until the task is clear. A system-provided `/set-spec` workflow distills the conversation into a lightweight effective specification and asks the user to confirm it. The user then runs `/handoff` to give workflow control to **Swordfish**, the supervisor.
 
-Swordfish then drives ein's seat autonomously, executes repository-defined validators against a clean worktree, activates the independent review cowboy (**jet**) in a fresh seat, activates the QA cowboy (**faye**) in another fresh seat against a clean development environment, and returns findings to ein for revision. Ein retains its conversational and implementation context throughout this loop.
+Swordfish then drives ein's seat autonomously, executes repository-defined validators against a clean worktree,
+waits for external CI to pass, activates the independent review cowboy (**jet**) in a fresh seat, activates the QA
+cowboy (**faye**) in another fresh seat against a clean development environment, and returns findings to ein for
+revision. Ein retains its conversational and implementation context throughout this loop.
 
 The user can observe every seat, take control of the active cowboy, steer it, invoke role-valid workflow actions, and explicitly hand control to Swordfish. The system never merges code without an explicit user command.
 
@@ -159,7 +163,7 @@ The MVP must:
 - authoritatively reject human prompts to a Swordfish-controlled seat via the bebop OpenCode plugin;
 - detect both explicit workflow signals and harness idle/completion events;
 - run authoritative repository validators from a clean, SHA-pinned worktree;
-- run pull-request CI and independent code review;
+- run pull-request CI before independent code review;
 - run QA only after CI and review pass;
 - prepare a clean, repository-defined QA environment;
 - return review, CI, and QA findings to ein's original seat;
@@ -309,7 +313,7 @@ The MVP is acceptable when this end-to-end flow succeeds:
 19. A change under `.bebop/` (or a configured privileged glob) enters `needs_attention`, and `approve-config` for that exact SHA resumes the pipeline.
 20. The candidate is pushed with normal Git commands through exe.dev's integration.
 21. Bebop creates or updates a draft pull request.
-22. External CI (observed by polling) and jet's read-only review run.
+22. External CI is observed by polling and must pass before jet's read-only review starts.
 23. A blocking CI or review result returns to ein's seat.
 24. A new commit invalidates all previous results.
 25. After CI and review pass, faye starts QA in a clean environment.
@@ -317,7 +321,8 @@ The MVP is acceptable when this end-to-end flow succeeds:
 27. Faye saves structured results and visual or recorded evidence.
 28. A QA failure returns to ein and restarts the full pipeline.
 29. Constraint exhaustion enters `needs_attention`.
-30. A human resume extends only the exhausted constraint.
+30. A human can explicitly continue the suspended final attempt or rerun one fresh attempt without resetting
+    unrelated allowances.
 31. The user can take over the active cowboy from the cockpit.
 32. Human takeover provenance is recorded.
 33. Handoff explicitly returns the current stage to Swordfish; spec revision is a separate workflow action.
@@ -348,11 +353,12 @@ The design commits to:
   unexpected seat mutations;**
 - **a deterministic Swordfish with local SQLite state;**
 - **clean-room, SHA-pinned verification worktrees;**
-- **local validation, then CI (polled) and review in parallel, then QA;**
+- **local validation, then CI (polled), then review, then QA;**
 - **full downstream invalidation after every commit;**
 - **role-specific models, context, and permission profiles — the VM is the sandbox, ein runs allow-all;**
 - **`.bebop/**` permanently privileged plus repo-configured globs, with SHA-pinned human approval;**
-- **configurable constraints that escalate to human attention, one extra life per exhausted constraint;**
+- **base-revision repository constraints on autonomous attempts, turns, wall clock, and CI-passed candidates;
+  every human continuation or rerun is explicit and recorded;**
 - **squash-only merges, crew authorship, conflict-gated base drift resolved by merging base back in;**
 - **evidence uploaded from Swordfish to bebop, first published as a PR comment;**
 - **a raw filesystem CAS behind a backend-neutral blob contract; no single-node MinIO;**

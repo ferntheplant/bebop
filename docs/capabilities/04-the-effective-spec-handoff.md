@@ -13,9 +13,10 @@ Swordfish. Nothing autonomous starts without both actions.
   shows it, and revises until you confirm. It must declare at least one acceptance criterion, because every gate
   downstream assesses the work against them.
 - **Confirmation changes work, not control.** `set-spec` persists the revision, records your confirmation,
-  invalidates any previous candidate and gates, and enters `building`. Human control follows that transition.
+  invalidates any previous candidate and gates, creates a fresh validated-candidate allowance for the revision,
+  and enters `building`. Human control follows that transition.
 - **Handoff is separate and explicit.** `/handoff` releases control without changing stage; Swordfish then starts
-  a fresh ein operation in `building`.
+  the first constrained ein attempt in `building`.
 - **It never builds without a spec.** `candidate-ready` and every later action are invalid until a confirmed spec
   revision exists.
 - **The spec is versioned.** Later revisions carry a new number, and gate results are bound to the revision that
@@ -52,6 +53,8 @@ transfers control to Swordfish).
   — why human access is revoked before control returns.
 - [One controller drives one active cowboy (ADR 0037)](../adr/0037-one-controller-drives-one-active-cowboy.md)
   — why spec transitions and control transfer are separate.
+- [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
+  — why constraints begin at autonomous handoff rather than during human-guided spec creation.
 
 ## Still open
 

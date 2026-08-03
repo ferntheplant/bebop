@@ -8,6 +8,9 @@ decision.
 
 - **A real pull request, early.** Bebop creates a draft PR after the first pushed diff, so your normal CI runs on
   draft creation and synchronisation rather than waiting for the PR to be marked ready.
+- **CI before cowboy review.** Bebop polls required checks for the exact candidate SHA. A clean failure returns
+  feedback to ein without activating jet; only a CI-passed SHA consumes a validated-candidate slot and enters
+  independent review.
 - **Normal Git inside the VM.** Agents push with ordinary Git commands through a repository-scoped integration;
   the reusable GitHub credential never lands on the machine.
 - **Readiness is re-verified, never trusted.** Swordfish may claim a commit is ready; before offering merge,
@@ -58,6 +61,8 @@ with feedback so ein merges base back in), **38** (the sandbox cannot update the
   polled rather than pushed to bebop.
 - [The merge target must enforce rulesets (ADR 0034)](../adr/0034-the-merge-target-must-enforce-rulesets.md) —
   why the target repository's plan and visibility are Bebop's business.
+- [CI gates cowboy review (ADR 0040)](../adr/0040-ci-gates-cowboy-review.md) — why CI latency is paid before
+  independent model turns.
 
 A compromised sandbox can modify unprotected refs in its allowed repository; that is accepted, and the ruleset
 on the merge target is the mitigation. It is the _only_ mitigation: an installation token cannot be scoped to

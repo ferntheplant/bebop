@@ -44,11 +44,50 @@ _Avoid_: requirements, PRD, ticket description. "Spec" unqualified always means 
 An explicit submission by ein, tied to exactly one commit SHA. Only a candidate can enter authoritative verification; a harness falling idle is not a candidate.
 _Avoid_: build, submission, attempt.
 
+**validated candidate**:
+A candidate that passed local validation and external CI and is admitted to jet's review. Candidates rejected
+by local validation or CI consume ein attempts but not the effective spec's validated-candidate allowance;
+rerunning a gate against the same SHA does not create another validated candidate.
+_Avoid_: candidate (includes submissions that have not passed validation and CI), approved candidate.
+
+**build cycle**:
+Ein's work from receiving a confirmed spec or downstream rejection until one candidate passes local validation
+and external CI. A build cycle may contain multiple ein attempts and candidates rejected by either gate. A
+review or QA rejection starts a new build cycle under the same effective spec revision.
+_Avoid_: candidate (does not exist until submitted), revision (the effective spec may be unchanged).
+
 **stage**:
 Where a bounty sits in Swordfish's inner workflow — `creating_spec`, `building`, `validating`, `reviewing`, `qa`,
 `publishing_evidence`, `ready`, and exceptional stages such as `needs_attention`. Stage says what work is
 happening, not who controls it; Swordfish is authoritative and bebop holds a projection.
 _Avoid_: state, status, phase. (**status** is the compact, derived summary bebop shows to a client.)
+
+**attempt**:
+One Swordfish-controlled activation of one cowboy for one stage assignment. It starts with Swordfish's first
+prompt and includes idle re-prompts and process restarts. `set-blocked` followed by `resume`, or an exhausted
+attempt revived by human `continue`, preserves the attempt while attention time pauses its wall clock. It ends
+when the cowboy completes or transfers the assignment, control passes to a human, human `rerun` abandons it, or
+the workflow cancels or fails. Ein may have many attempts in its durable seat; every jet and faye attempt gets a
+fresh seat. Handoff after takeover starts a new attempt.
+_Avoid_: seat (the durable OpenCode session), turn (one model interaction within an attempt), run.
+
+**turn**:
+One completed model step within an autonomous cowboy attempt. A response that requests tools and a response that
+finishes with prose or a workflow action each consume one turn; provider transport retries and failed requests
+do not. One Swordfish prompt may produce many turns.
+_Avoid_: prompt, provider request.
+
+**attempt wall clock**:
+Real elapsed time from Swordfish's first prompt until the attempt ends, including tools, retries, idle grace, and
+process downtime recovered after restart. Human control, deterministic gates, external waits, and time in
+`needs_attention` are outside an attempt wall clock.
+_Avoid_: model time, active compute time.
+
+**constraint profile**:
+The repository-owned limits on validated candidates per effective spec, attempts per cowboy assignment, and
+turns and wall clock per attempt. Swordfish reads the profile from the base revision and freezes it for the
+bounty; omitted values use Bebop defaults. Candidate changes cannot enlarge their own profile.
+_Avoid_: effective-spec constraints (describe the desired work), runtime manifest (identifies software), budget.
 
 ## The crew
 

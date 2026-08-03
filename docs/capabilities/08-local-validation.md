@@ -17,6 +17,11 @@ been working in for the last hour.
   artifact paths, and the candidate SHA.
 - **Failures come back structured**, aggregated into the feedback packet ein receives, rather than as a wall of
   log output.
+- **One authoritative operation per submission.** A clean failure consumes the ein attempt that produced the
+  candidate and continues the same build cycle; it is never retried automatically. An uncertain operation
+  requires human `rerun validation` against the same SHA.
+- **CI is the second cheap gate.** Passing local validation does not yet consume a validated-candidate slot or
+  activate jet. The candidate must be pushed and pass external CI first.
 
 ## Where it stands
 
@@ -36,6 +41,8 @@ and **18** (base-revision repository validators execute independently).
 - [Every commit invalidates every downstream result (ADR 0016)](../adr/0016-every-commit-invalidates-every-downstream-result.md)
 - [`.bebop/**` is permanently privileged (ADR 0011)](../adr/0011-the-bebop-directory-is-permanently-privileged.md)
   — why validators load from base.
+- [Flaky gates are not auto-retried (ADR 0031)](../adr/0031-flaky-gates-are-not-auto-retried.md)
+- [CI gates cowboy review (ADR 0040)](../adr/0040-ci-gates-cowboy-review.md)
 
 The hook contract itself lives in [repository configuration](./07-repository-configuration.md).
 

@@ -62,19 +62,28 @@ status print the exact command that resolves it, as
 
 ## Scope
 
-**This PR — the orthogonal model.**
+**First PR — the orthogonal model. Shipped.**
 
 - Contracts: stage enum, `Controller`, `AttentionKind`, `WorkflowResolution`, and the control, seat, and
   attention events.
 - Core: `controller`, `activeCowboy`, and `attention` replace `leases` and `attentionReason`; CI strictly
   precedes review; takeover and handoff leave stage unchanged.
-- Swordfish: snapshot, and the takeover/handback commands that currently write a `human_controlled` stage.
+- Swordfish: snapshot, and the takeover/handoff commands that used to write a `human_controlled` stage.
 - Bebop: projection, snapshot, `deriveBountyStatus`, the HTTP detail contract, and CLI rendering.
-- Both golden fixtures, and the capability docs whose "where it stands" this invalidates.
+- Both golden fixtures, and the capability docs whose "where it stands" this invalidated.
 
-**Next PR — the constraint ledger (ADR 0041).** Attempts per scope, the turn/wall-clock watchdog pair, human
-grants, and the validated-candidate allowance, with `continue`/`rerun`/`resume` acting on them. Split out
-because the orthogonal model is what an attempt suspension has to attach to. Its shape is settled by
+Two things changed during review and are worth knowing before reading the code. **Attention is a list**, not one
+record: a later, laxer reason must not widen the exits of an outstanding stricter one, so reasons accumulate at
+most one per kind, and a resolution clears every outstanding record permitting it — the workflow resumes only
+once none remain. And **seats are keyed by seat ID, not role**, because every jet and faye attempt takes a fresh
+seat; repeated roles in the seat list are the normal case, and `activeCowboy` identifies by ID.
+
+**Next PR — the constraint ledger (ADR 0041). Not started.** Attempts per scope, the turn/wall-clock watchdog
+pair, human grants, and the validated-candidate allowance, with `continue`/`rerun`/`resume` acting on them.
+Split out because the orthogonal model is what an attempt suspension has to attach to. Read
+[ticket 09's answer](../bebop-mvp/issues/09-default-constraints-and-exhaustion.md) first — it is the
+specification, down to the default numbers and what does and does not consume an attempt. Its shape is settled
+by
 [Constraint exhaustion is computed, not announced (ADR 0042)](../../docs/adr/0042-constraint-exhaustion-is-computed-not-announced.md):
 
 - Contracts: `ConstraintProfile` takes the shape ticket 09 settled — `validatedCandidatesPerSpec`, and a
@@ -92,8 +101,35 @@ because the orthogonal model is what an attempt suspension has to attach to. Its
 - Bebop: cross-check elapsed time in the heartbeat handler with a grace margin, reporting a daemon defect rather
   than an exhaustion.
 
+Two questions the ledger has to answer that nothing upstream settles:
+
+1. **How a targeted `rerun` names the record it resolves.** `constraint_exhausted` and `uncertain_gate` both
+   permit `rerun`, and a resolution currently clears every record permitting it, so `rerun building` issued while
+   an uncertain gate is outstanding would clear a reason nobody addressed. Either match the target against the
+   kind, or have `attention_cleared` name the kind directly. ADR 0042 records the edge; neither it nor ticket 09
+   decides it.
+2. **Where the frozen profile lives.** Ticket 09 has Swordfish freeze the base revision's profile for the bounty
+   and fill omissions from Bebop defaults, but `.bebop/config.yml` has never been read against a real repository
+   — that is fog on [the map](../bebop-mvp/map.md) under "Repository configuration in practice". The ledger can
+   be built against the frozen profile as a value without settling where it is parsed.
+
 **Not in scope.** The `sf` command surface and its operator credential, plugin intrusion detection, tmux cockpit
 layout, and the runtime manifest. Those are separate efforts that consume this model.
+
+## Testing
+
+Bebop's component suites skip unless `BEBOP_TEST_DATABASE_URL` is set, so a green `vp run ready` on a machine
+without one proves less than it appears to — a stale gateway fixture survived the first PR's local gate and
+failed in CI. Run with the database:
+
+```
+docker compose up -d --wait postgres
+export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
+vp run ready
+```
+
+The full suite is 38 files with nothing skipped. The ledger touches the projection and the gateway, so those are
+exactly the suites that matter here.
 
 ## Done when
 

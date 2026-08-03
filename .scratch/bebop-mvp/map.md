@@ -122,6 +122,11 @@ prototypes rather than tickets.
   ledger adds no timer; Bebop re-verifies elapsed time as a defect signal about the daemon rather than as an
   exhaustion of its own.
 
+These six ADRs are being built out under [the orthogonal control model](../workflow-control-model/brief.md).
+Its first slice — stage, controller, and attention as independent dimensions, one active cowboy, and CI before
+review — has shipped; the constraint ledger has not. That brief's scope section is the handoff, and carries the
+settled event vocabulary along with the contract retirements the ledger implies.
+
 ## Not yet specified
 
 In scope, not yet sharp enough to ticket. Graduates as the frontier advances.

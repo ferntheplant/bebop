@@ -34,6 +34,14 @@ The constraint ledger introduces no timing mechanism. `attempt_started`, `turn_c
 are the only new events, and the recovery grants ride on `attention_cleared` as resolutions rather than as event
 types of their own.
 
+That last part has an unresolved edge, introduced after this decision was taken: attention became a list of
+outstanding reasons, and a resolution clears every record permitting it. Both `constraint_exhausted` and
+`uncertain_gate` permit `rerun`, so a `rerun building` issued while an uncertain gate is also outstanding would
+clear a reason nobody addressed. Implementing the ledger has to decide how a targeted `rerun` names the record
+it resolves — most likely by matching the target against the kind, or by having `attention_cleared` name the
+kind directly — and neither this ADR nor
+[the constraint ticket](../../.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md) settles it.
+
 Bebop's projection applies the same reducer, so it can compute the same elapsed time from the same events with
 no change to `HeartbeatMessage` — it already carries `sentAt`, and the projection already holds the attempt,
 controller, and stage. A projection that reads an attempt as long past budget while Swordfish has raised no

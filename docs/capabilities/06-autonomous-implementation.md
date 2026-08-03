@@ -22,6 +22,11 @@ which is the thing a fresh-context cowboy cannot do.
   and the second is a detectable error with a reason attached.
 - **Every new commit restarts the pipeline.** Local validation, CI, review, QA, readiness, and commit-bound
   evidence all die with the commit they described.
+- **Autonomy is bounded at the scope that can loop.** A base-revision repository profile limits ein attempts per
+  build cycle, jet/faye attempts per candidate, turns and wall clock per attempt, and CI-passed candidates per
+  spec. Human work is unconstrained; every extra autonomous continuation or attempt is explicit and recorded.
+- **Cheap gates run before cowboys.** A candidate must pass local validation and external CI before it consumes a
+  validated-candidate slot or activates jet. Review must pass before faye starts QA.
 - **Compaction cannot lose the thread.** Durable workflow truth — spec revisions, candidates, feedback packets —
   lives in Swordfish's database rather than in a context window, and Swordfish restates the effective spec and
   the current stage in every autonomous prompt. A seat that compacts mid-bounty picks up where it was without
@@ -31,8 +36,9 @@ which is the thing a fresh-context cowboy cannot do.
 
 **Partial.** The pure transition core is real, shared between bebop's projection and Swordfish's reducer, and
 tested separately from persistence and I/O — one module rather than two drifting copies. Swordfish persists
-stages, candidates, and its constraint ledger over SQLite. What does not exist is everything touching OpenCode:
-prompting a seat, observing its event stream, idle detection, and the plugin's workflow signals.
+stages, candidates, and a provisional flat constraint ledger over SQLite; that ledger does not implement the
+settled per-spec, per-cycle, per-candidate, and per-attempt scopes. Everything touching OpenCode also remains
+unbuilt: prompting a seat, observing its event stream, idle detection, and the plugin's workflow signals.
 
 ## Acceptance criteria
 
@@ -54,10 +60,12 @@ previous results), and **28** (a QA failure returns to ein and restarts the full
   — why the transition core is shared rather than written twice.
 - [One controller drives one active cowboy (ADR 0037)](../adr/0037-one-controller-drives-one-active-cowboy.md)
 - [Workflow actions have role-aware adapters (ADR 0038)](../adr/0038-workflow-actions-have-role-aware-adapters.md)
+- [CI gates cowboy review (ADR 0040)](../adr/0040-ci-gates-cowboy-review.md) — deterministic and external checks
+  reject a candidate before model turns are spent on independent review.
+- [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
 
 ## Still open
 
 - [Which model does each seat run, and what happens when it can't be reached?](../../.scratch/bebop-mvp/issues/05-seat-models-and-provider-failure.md)
-- [What are the default constraints, and what happens when one is exhausted?](../../.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md)
 - **What ein is actually told** — fog on [the map](../../.scratch/bebop-mvp/map.md), and probably the single
   biggest determinant of whether this loop works at all.

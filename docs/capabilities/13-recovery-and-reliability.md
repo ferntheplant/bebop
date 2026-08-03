@@ -24,6 +24,9 @@ merge.
 - **A lost VM is not a lost bounty.** Bebop can build a replacement from the assigned branch and the master-side
   effective spec; the bounty identity, branch, and artifacts survive. Continuing the lost model context is
   explicitly not promised.
+- **Constraint exhaustion parks work, not the VM.** Swordfish quiesces the final attempt and stops its watchdogs,
+  but the VM, repository services, cockpit, and durable seat state remain immediately inspectable. Status shows
+  the attention age, complete scoped ledger, last outcome, and only valid recovery commands.
 - **Nightly off-VM backups**, with failure alerts and a monthly sampled restore test.
 
 ## Where it stands
@@ -35,8 +38,9 @@ happened is the two of them running as separate processes across a network that 
 ## Acceptance criteria
 
 Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criteria **29** (constraint exhaustion enters `needs_attention`),
-**30** (a human resume extends only the exhausted constraint), **40** (a client can follow the whole flow over
-SSE without polling), and **42** (restarting Swordfish or bebop does not duplicate VMs, prompts, PRs, or merges).
+**30** (a human explicitly continues the final attempt or reruns fresh work without resetting unrelated
+allowances), **40** (a client can follow the whole flow over SSE without polling), and **42** (restarting
+Swordfish or bebop does not duplicate VMs, prompts, PRs, or merges).
 
 ## Decisions
 
@@ -51,6 +55,7 @@ SSE without polling), and **42** (restarting Swordfish or bebop does not duplica
 - [The bounty primitive (ADR 0001)](../adr/0001-the-bounty-primitive.md) — why a replacement VM is possible at
   all.
 - [The master runs on exe.dev (ADR 0019)](../adr/0019-the-master-runs-on-exe-dev-with-mandatory-off-vm-backups.md)
+- [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
 
 Bounded shutdown behaviour and the connection-lifetime constraints behind it are in
 [`docs/gotchas.md`](../gotchas.md#process-lifecycle).

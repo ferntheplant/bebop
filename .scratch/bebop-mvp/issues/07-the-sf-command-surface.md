@@ -190,3 +190,9 @@ credential for entry at the hidden `sf` prompt, and can rotate it if lost or exp
 the plaintext in attachment metadata, the VM environment, or logs. A cowboy legitimately invokes shared
 workflow actions through its role-bound OpenCode tool adapter, which preserves cowboy, seat, and stage identity.
 It never needs to invoke the human CLI adapter and cannot use that adapter to bypass role authorization.
+
+## Superseded details
+
+The recovery-command meanings and `rerun` stage set in this answer were later refined by
+[What are the default constraints, and what happens when one is exhausted?](./09-default-constraints-and-exhaustion.md).
+That later decision is authoritative for `resume`, `continue`, and `rerun`.

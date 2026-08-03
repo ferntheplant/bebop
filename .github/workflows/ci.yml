@@ -35,6 +35,13 @@ jobs:
 
     env:
       BEBOP_TEST_DATABASE_URL: postgres://bebop:bebop@127.0.0.1:5432/bebop
+      # Vite Task schedules `@bebop/contracts#build` more than once per `vp run ready`
+      # (once via `ready → check → root#build`, once per smoke `dependsOn: { task: "build",
+      # from: [...] }`). Run concurrently, the second `vp pack` empties `packages/contracts/dist`
+      # while a smoke child is importing it, surfacing as `Cannot find module '@bebop/contracts'`
+      # inside the packed artifacts. Run serially, the second pack always completes first. The
+      # latent duplicate-scheduling bug is upstream in vite-plus; this is the no-code workaround.
+      VP_RUN_CONCURRENCY_LIMIT: "1"
 
     steps:
       - name: Checkout

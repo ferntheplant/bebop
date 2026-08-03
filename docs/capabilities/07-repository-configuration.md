@@ -12,7 +12,7 @@ This is the whole configuration surface of the product.
   for ein's worktree, a dependencies-only clean room for verification, and a QA environment with services and
   seed data. Runtime hooks validate a candidate, start and reset QA services, and collect extra artifacts.
 - **A declarative `config.yml`** for services, ports, health checks, preview labels, seed data, timeouts,
-  environment requirements, and additional privileged globs.
+  autonomous constraint profiles, environment requirements, and additional privileged globs.
 - **Structured results are optional.** A hook may write JSON findings and drop artifacts in a directory Bebop
   provides, but its exit code is what counts. You never have to produce structured output to be useful.
 - **Hooks run inside the sandbox and get no bebop credentials.** They may produce results and local artifacts;
@@ -29,7 +29,7 @@ Everything below is what a repository codes against. Which hook runs when belong
 
 ```text
 .bebop/
-  config.yml          # services, ports, preview labels, timeouts,
+  config.yml          # services, ports, preview labels, timeouts, constraints,
                       # env requirements, privilegedPaths (extra globs)
   setup/
     primary           # full dev env for ein's worktree
@@ -55,9 +55,11 @@ artifacts: copy into $BEBOP_ARTIFACT_DIR
 
 Exit code is authoritative; stdout and stderr are captured as logs.
 
-`config.yml` declares dependency and environment requirements, services with their ports, health checks, and
-preview labels, seed data, timeouts, and additional privileged globs. Swordfish captures managed service output
-in stable files and reports exact follow commands without making repository configuration control tmux layout.
+`config.yml` declares dependency and environment requirements, services with their ports, health checks and
+preview labels, seed data, timeouts, autonomous constraints, and additional privileged globs. Swordfish freezes
+the constraint profile from the base revision for the bounty; a candidate cannot enlarge the allowance judging
+itself. Swordfish captures managed service output in stable files and reports exact follow commands without
+making repository configuration control tmux layout.
 
 ## Where it stands
 

@@ -236,7 +236,9 @@ suite("Swordfish gateway", () => {
       vmId: bounty.vmId,
       sequence: 2,
       occurredAt: at(1),
-      event: { type: "stage_changed", stage: "needs_attention", reason: "ordered" },
+      // Attention is entered by its own event, not by a bare stage change: every suspension carries a reason,
+      // and the reason names the commands that clear it (ADR 0038).
+      event: { type: "attention_required", kind: "operational", reason: "ordered" },
     });
 
     await waitForMessageCount(peer, "event_acknowledged", 2);
@@ -361,7 +363,7 @@ suite("Swordfish gateway", () => {
       vmId: bounty.vmId,
       sequence: 1,
       occurredAt: at(1),
-      event: { type: "stage_changed", stage: "needs_attention", reason: "different" },
+      event: { type: "attention_required", kind: "operational", reason: "different" },
     });
     expect((await peer.next<{ code: string }>("protocol_error")).code).toBe("invalid_message");
     expect(peer.received.filter((message) => message["type"] === "event_acknowledged")).toHaveLength(1);

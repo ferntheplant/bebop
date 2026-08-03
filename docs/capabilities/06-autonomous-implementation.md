@@ -36,9 +36,13 @@ which is the thing a fresh-context cowboy cannot do.
 
 **Partial.** The pure transition core is real, shared between bebop's projection and Swordfish's reducer, and
 tested separately from persistence and I/O — one module rather than two drifting copies. Swordfish persists
-stages, candidates, and a provisional flat constraint ledger over SQLite; that ledger does not implement the
-settled per-spec, per-cycle, per-candidate, and per-attempt scopes. Everything touching OpenCode also remains
-unbuilt: prompting a seat, observing its event stream, idle detection, and the plugin's workflow signals.
+stages, candidates, and the constraint ledger over SQLite, at the settled per-spec, per-cycle, per-candidate, and
+per-attempt scopes: the reducer accrues turns and wall clock from the event stream, owns the exhaustion
+predicate, and refuses a `constraint_exhausted` claim its own arithmetic does not support. The profile it judges
+against is still the built-in default, because `.bebop/config.yml` has never been read against a real
+repository. Everything touching OpenCode also remains unbuilt: prompting a seat, observing its event stream,
+idle detection, and the plugin's workflow signals — so the attempt and turn events the ledger counts have no
+producer yet outside tests.
 
 ## Acceptance criteria
 
@@ -66,6 +70,8 @@ previous results), and **28** (a QA failure returns to ein and restarts the full
 - [Constraint exhaustion is computed, not announced (ADR 0042)](../adr/0042-constraint-exhaustion-is-computed-not-announced.md)
   — the reducer decides whether an attempt is over budget, so a daemon whose clock disagrees fails loudly rather
   than strangling healthy work.
+- [A rerun resolves the kind its target names (ADR 0043)](../adr/0043-a-rerun-resolves-the-kind-its-target-names.md)
+  — the one resolution that carries a grant clears one record, not every record that happens to permit it.
 
 ## Still open
 

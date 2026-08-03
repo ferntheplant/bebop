@@ -66,7 +66,9 @@ making repository configuration control tmux layout.
 **Designed.** The layout, the hook contract, the environment variables, and the trust rule are all settled and
 written down, but nothing has run against a real repository. The shape of the failure modes — a hook that hangs,
 a service that never becomes healthy, a port that collides — is expected to decide how much of the contract has
-to change.
+to change. The constraint profile is the one part with a built implementation behind it: its schema is a
+contract, the ledger enforces it, and a bounty freezes it as a value at construction — so the remaining question
+is where that value is parsed from, not what it means.
 
 ## Acceptance criteria
 

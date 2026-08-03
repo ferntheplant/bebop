@@ -122,10 +122,13 @@ prototypes rather than tickets.
   ledger adds no timer; Bebop re-verifies elapsed time as a defect signal about the daemon rather than as an
   exhaustion of its own.
 
-These six ADRs are being built out under [the orthogonal control model](../workflow-control-model/brief.md).
+These seven ADRs have been built out under [the orthogonal control model](../workflow-control-model/brief.md).
 Its first slice — stage, controller, and attention as independent dimensions, one active cowboy, and CI before
-review — has shipped; the constraint ledger has not. That brief's scope section is the handoff, and carries the
-settled event vocabulary along with the contract retirements the ledger implies.
+review — shipped first; the constraint ledger followed, adding
+[A rerun resolves the kind its target names (ADR 0043)](../../docs/adr/0043-a-rerun-resolves-the-kind-its-target-names.md)
+for the one edge ADR 0042 left open. What the ledger still lacks is a producer: no cowboy has yet started an
+attempt outside a test, and the profile it judges against is the built-in default rather than a repository's,
+which is the fog under "Repository configuration in practice" below.
 
 ## Not yet specified
 
@@ -139,7 +142,9 @@ In scope, not yet sharp enough to ticket. Graduates as the frontier advances.
 - **Repository configuration in practice.** `.bebop/config.yml`, the setup and hook contracts, and the
   clean-room worktree are designed but have never been run against a real repository. The shape of the failure
   modes — a hook that hangs, a service that never becomes healthy, a port that collides — will decide how much
-  of the contract needs to change.
+  of the contract needs to change. The constraint profile is the narrowest piece of it and the readiest: the
+  schema and the ledger enforcing it are built, and a bounty freezes the profile as a value at construction, so
+  what is missing is only where that value is parsed from.
 - **What ein is actually told.** Prompt construction, spec restatement after compaction, how stage feedback is
   presented, and what a re-prompt says to an idle seat. Nothing here is decided, and it is probably the single
   biggest determinant of whether the loop works.

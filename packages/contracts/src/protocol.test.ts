@@ -155,7 +155,7 @@ describe("Swordfish to Bebop protocol", () => {
 const commands: ReadonlyArray<typeof BebopCommand.Encoded> = [
   { type: "stop", reason: "User requested stop." },
   { type: "takeover", seat: "ein", force: false },
-  { type: "handback", seat: "ein" },
+  { type: "handoff" },
   { type: "extend_constraint", constraint: "primary_turns" },
   { type: "retry_stage", stage: "local_validation" },
   { type: "approve_config", candidateSha: "b".repeat(40) },

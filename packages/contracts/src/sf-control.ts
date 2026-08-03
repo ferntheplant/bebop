@@ -21,20 +21,29 @@ import {
   WorkflowRevision,
 } from "./scalars.ts";
 import { schemaLimits } from "./settings.ts";
-import { CandidateGate, GateStatus, LeaseOwner, SeatRole, SwordfishStage } from "./workflow.ts";
+import {
+  AttentionKind,
+  CandidateGate,
+  Controller,
+  GateStatus,
+  resolutionsForAttention,
+  SeatRole,
+  SwordfishStage,
+  WorkflowResolution,
+} from "./workflow.ts";
 
 export const currentSfControlVersion = 1 as const;
 export const SfControlVersion = Schema.Literal(currentSfControlVersion);
 export type SfControlVersion = typeof SfControlVersion.Type;
 
 export const SfStatusCommand = Schema.Struct({ type: Schema.Literal("status") });
-export const SfHandbackCommand = Schema.Struct({ type: Schema.Literal("handback") });
+export const SfHandoffCommand = Schema.Struct({ type: Schema.Literal("handoff") });
 export const SfApproveConfigCommand = Schema.Struct({ type: Schema.Literal("approve_config") });
 export const SfControlCommand = Schema.Union([
   SfStatusCommand,
   StopCommand,
   TakeoverCommand,
-  SfHandbackCommand,
+  SfHandoffCommand,
   ExtendConstraintCommand,
   RetryStageCommand,
   SfApproveConfigCommand,
@@ -49,12 +58,38 @@ export const SfControlRequest = Schema.Struct({
 });
 export type SfControlRequest = typeof SfControlRequest.Type;
 
+/**
+ * One seat Swordfish knows about.
+ *
+ * A seat no longer carries a lease owner. Who is driving is one workflow-wide value (`controller`), and which
+ * seat is being driven is `activeCowboy`; a per-seat owner was a third representation of the same fact and could
+ * disagree with both ("One controller drives one active cowboy" (ADR 0037)). Inactive seats stay listed because
+ * they remain inspectable provenance.
+ *
+ * A role repeats across seats, and that is the normal case rather than an anomaly: every jet and faye attempt
+ * gets a fresh seat, so a second review attempt legitimately produces two `jet` rows. Only the seat ID is
+ * unique.
+ */
 export const SfSeatSnapshot = Schema.Struct({
   role: SeatRole,
   seatId: SeatId,
-  leaseOwner: LeaseOwner,
 });
 export type SfSeatSnapshot = typeof SfSeatSnapshot.Type;
+
+/** The one seat being driven, identified by ID because the role alone no longer picks a single seat out. */
+export const SfActiveCowboy = Schema.Struct({
+  role: SeatRole,
+  seatId: SeatId,
+});
+export type SfActiveCowboy = typeof SfActiveCowboy.Type;
+
+/** One reason the bounty stopped, with the exact commands that clear it (`docs/capabilities/05-control-lease-and-takeover.md`). */
+export const SfAttentionSnapshot = Schema.Struct({
+  kind: AttentionKind,
+  reason: Schema.String,
+  resolutions: Schema.Array(WorkflowResolution).pipe(Schema.check(Schema.isMinLength(1))),
+});
+export type SfAttentionSnapshot = typeof SfAttentionSnapshot.Type;
 
 export const SfGateSnapshot = Schema.Struct({
   gate: CandidateGate,
@@ -105,8 +140,11 @@ const SfStatusSnapshotBase = Schema.Struct({
   repository: RepositorySlug,
   assignedBranch: GitRef,
   stage: SwordfishStage,
+  controller: Controller,
+  suspendedStage: Schema.optionalKey(SwordfishStage),
+  attention: Schema.Array(SfAttentionSnapshot),
   effectiveSpecRevision: Schema.optionalKey(SpecRevision),
-  activeSeat: Schema.optionalKey(SeatRole),
+  activeCowboy: Schema.optionalKey(SfActiveCowboy),
   seats: Schema.Array(SfSeatSnapshot),
   candidateSha: Schema.optionalKey(GitSha),
   gates: Schema.Array(SfGateSnapshot),
@@ -119,13 +157,37 @@ const SfStatusSnapshotBase = Schema.Struct({
 export const SfStatusSnapshot = SfStatusSnapshotBase.pipe(
   Schema.check(
     Schema.makeFilter<typeof SfStatusSnapshotBase.Type>((snapshot) => {
-      const seatRoles = new Set(snapshot.seats.map((seat) => seat.role));
+      // Seat IDs are unique; roles deliberately are not. A second jet or faye attempt requires a fresh seat, so
+      // repeated roles are what a normal retry looks like in this list (ADR 0037).
       const seatIds = new Set(snapshot.seats.map((seat) => seat.seatId));
-      if (seatRoles.size !== snapshot.seats.length || seatIds.size !== snapshot.seats.length) {
-        return "Expected unique Swordfish seat roles and IDs";
+      if (seatIds.size !== snapshot.seats.length) {
+        return "Expected unique Swordfish seat IDs";
       }
-      if (snapshot.activeSeat !== undefined && !seatRoles.has(snapshot.activeSeat)) {
-        return "Expected the active seat to exist in the seat snapshot";
+      const activeCowboy = snapshot.activeCowboy;
+      if (
+        activeCowboy !== undefined &&
+        !snapshot.seats.some((seat) => seat.seatId === activeCowboy.seatId && seat.role === activeCowboy.role)
+      ) {
+        return "Expected the active cowboy to exist in the seat snapshot";
+      }
+      // A stopped bounty always states why, so the cockpit can print the commands that restart it. The converse
+      // is weaker than it looks: a reason raised after a stop command is retained through `cancelling` without
+      // reviving the run, so attention outlives `needs_attention` on the cancellation path.
+      if (snapshot.stage === "needs_attention" && snapshot.attention.length === 0) {
+        return "Expected the needs_attention stage to state at least one reason";
+      }
+      if (snapshot.attention.length > 0 && snapshot.stage !== "needs_attention" && snapshot.stage !== "cancelling") {
+        return "Expected outstanding attention only while suspended or cancelling";
+      }
+      const kinds = new Set(snapshot.attention.map((record) => record.kind));
+      if (kinds.size !== snapshot.attention.length) {
+        return "Expected at most one outstanding reason per attention kind";
+      }
+      for (const record of snapshot.attention) {
+        const permitted: ReadonlyArray<WorkflowResolution> = resolutionsForAttention[record.kind];
+        if (record.resolutions.some((resolution) => !permitted.includes(resolution))) {
+          return "Expected every offered resolution to be permitted by the attention kind";
+        }
       }
       const gates = new Set(snapshot.gates.map((gate) => gate.gate));
       if (gates.size !== snapshot.gates.length) {

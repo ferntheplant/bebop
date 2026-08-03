@@ -119,8 +119,13 @@ export const applyProjectionInput = Effect.fnUntraced(function* (options: {
         });
       }
 
+      // Controller is part of the derived status ("One controller drives one active cowboy" (ADR 0037)), so a
+      // takeover that changes nothing else still changes what clients see. Omitting it here would leave a
+      // taken-over bounty reporting `autonomous` on the event stream until some unrelated stage change happened
+      // to republish it.
       if (
         change.before.stage !== change.after.stage ||
+        change.before.controller !== change.after.controller ||
         change.before.freshness.status !== change.after.freshness.status
       ) {
         const bounty = yield* bounties.get(bountyId);
@@ -128,9 +133,15 @@ export const applyProjectionInput = Effect.fnUntraced(function* (options: {
           const previous = deriveBountyStatus(
             bounty.lifecycleState,
             change.before.stage,
+            change.before.controller,
             change.before.freshness.status,
           );
-          const next = deriveBountyStatus(bounty.lifecycleState, change.after.stage, change.after.freshness.status);
+          const next = deriveBountyStatus(
+            bounty.lifecycleState,
+            change.after.stage,
+            change.after.controller,
+            change.after.freshness.status,
+          );
           if (previous !== next) {
             yield* events.append({
               bountyId,

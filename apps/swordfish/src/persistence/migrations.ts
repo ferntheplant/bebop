@@ -33,14 +33,19 @@ const initial = Effect.gen(function* () {
   `;
   yield* sql`CREATE INDEX bebop_outbox_pending_idx ON bebop_outbox (sequence) WHERE acknowledged = 0`;
 
+  // Keyed by seat, not by role. Ein's seat is reused for context continuity, but every jet and faye attempt
+  // gets a fresh one, and the finished ones stay listed as inspectable provenance ("One controller drives one
+  // active cowboy" (ADR 0037)) — a role-keyed table overwrote exactly that history. There is no lease owner
+  // column because who is driving is one workflow-wide value, not a property of each seat.
   yield* sql`
     CREATE TABLE seats (
-      role          text PRIMARY KEY,
-      seat_id       text NOT NULL UNIQUE,
-      lease_owner   text NOT NULL,
+      seat_id       text PRIMARY KEY,
+      role          text NOT NULL,
+      created_at    text NOT NULL,
       updated_at    text NOT NULL
     )
   `;
+  yield* sql`CREATE INDEX seats_role_idx ON seats (role, created_at)`;
   yield* sql`
     CREATE TABLE effective_specs (
       revision      integer PRIMARY KEY,

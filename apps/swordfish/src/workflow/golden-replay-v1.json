@@ -8,11 +8,26 @@
       "context": [],
       "constraints": [],
       "nonGoals": [],
-      "acceptanceCriteria": [{ "id": "ac-1", "description": "Duplicate events are no-ops." }],
-      "suggestedQaScenarios": [{ "description": "Reconnect", "expectedOutcome": "No duplicate state change." }],
+      "acceptanceCriteria": [
+        {
+          "id": "ac-1",
+          "description": "Duplicate events are no-ops."
+        }
+      ],
+      "suggestedQaScenarios": [
+        {
+          "description": "Reconnect",
+          "expectedOutcome": "No duplicate state change."
+        }
+      ],
       "createdFromSeatId": "seat-ein",
       "createdAt": "2026-07-26T12:34:56.000Z"
     }
+  },
+  {
+    "type": "cowboy_activated",
+    "seat": "ein",
+    "seatId": "seat-ein"
   },
   {
     "type": "candidate_submitted",
@@ -27,13 +42,21 @@
     }
   },
   {
+    "type": "cowboy_deactivated",
+    "seat": "ein",
+    "seatId": "seat-ein"
+  },
+  {
     "type": "gate_completed",
     "gate": "local_validation",
     "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "specRevision": 1,
     "outcome": "passed"
   },
-  { "type": "stage_changed", "stage": "pushed_candidate" },
+  {
+    "type": "stage_changed",
+    "stage": "pushed_candidate"
+  },
   {
     "type": "gate_completed",
     "gate": "pr_ci",
@@ -42,19 +65,42 @@
     "outcome": "passed"
   },
   {
+    "type": "cowboy_activated",
+    "seat": "jet",
+    "seatId": "seat-jet-1"
+  },
+  {
     "type": "gate_completed",
     "gate": "code_review",
     "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "specRevision": 1,
     "outcome": "passed"
   },
-  { "type": "stage_changed", "stage": "qa_running" },
+  {
+    "type": "cowboy_deactivated",
+    "seat": "jet",
+    "seatId": "seat-jet-1"
+  },
+  {
+    "type": "stage_changed",
+    "stage": "qa_running"
+  },
+  {
+    "type": "cowboy_activated",
+    "seat": "faye",
+    "seatId": "seat-faye-1"
+  },
   {
     "type": "gate_completed",
     "gate": "qa",
     "candidateSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "specRevision": 1,
     "outcome": "passed"
+  },
+  {
+    "type": "cowboy_deactivated",
+    "seat": "faye",
+    "seatId": "seat-faye-1"
   },
   {
     "type": "gate_completed",

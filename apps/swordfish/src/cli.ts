@@ -45,11 +45,26 @@ function printStatus(snapshot: SfStatusSnapshot): string {
     `repository  ${snapshot.repository}`,
     `branch      ${snapshot.assignedBranch}`,
     `stage       ${snapshot.stage}`,
+    `control     ${snapshot.controller}`,
     `bebop       ${snapshot.bebopConnection.state}`,
     `ack         ${snapshot.bebopConnection.acknowledgedThrough}`,
     `outbox      ${snapshot.bebopConnection.pendingEventCount}`,
   ];
-  for (const seat of snapshot.seats) lines.push(`seat        ${seat.role} ${seat.seatId} (${seat.leaseOwner})`);
+  // A stopped bounty prints what will restart it. Reading a reason and then having to work out which command
+  // applies was the step `docs/capabilities/05-control-lease-and-takeover.md` asks us to remove. Each reason
+  // gets its own exits, because clearing one may leave another outstanding.
+  for (const attention of snapshot.attention) {
+    lines.push(`attention   ${attention.kind}: ${attention.reason}`);
+    lines.push(`resolve     ${attention.resolutions.join(", ")}`);
+  }
+  if (snapshot.suspendedStage !== undefined) {
+    lines.push(`suspended   ${snapshot.suspendedStage}`);
+  }
+  // Matched by seat ID, since a retried role has more than one seat in this list.
+  for (const seat of snapshot.seats) {
+    const active = seat.seatId === snapshot.activeCowboy?.seatId ? " (active)" : "";
+    lines.push(`seat        ${seat.role} ${seat.seatId}${active}`);
+  }
   for (const constraint of snapshot.constraints) {
     lines.push(
       `constraint  ${constraint.constraint} ${constraint.consumed}/${constraint.limit} (${constraint.extensionsGranted} extended)`,
@@ -114,7 +129,7 @@ const execute = Effect.fnUntraced(function* (options: {
 
 const status = Command.make("status", common, (options) => execute({ ...options, command: { type: "status" } }));
 const stop = Command.make("stop", common, (options) => execute({ ...options, command: { type: "stop" } }));
-const handback = Command.make("handback", common, (options) => execute({ ...options, command: { type: "handback" } }));
+const handoff = Command.make("handoff", common, (options) => execute({ ...options, command: { type: "handoff" } }));
 const approveConfig = Command.make("approve-config", common, (options) =>
   execute({ ...options, command: { type: "approve_config" } }),
 );
@@ -137,7 +152,7 @@ const retry = Command.make("retry", { ...common, stage: Argument.choice("stage",
 );
 
 const root = Command.make("sf", {}, () => Console.log("Run `sf --help`.")).pipe(
-  Command.withSubcommands([status, stop, takeover, handback, extend, retry, approveConfig]),
+  Command.withSubcommands([status, stop, takeover, handoff, extend, retry, approveConfig]),
 );
 
 function describeFailure(error: unknown): string {

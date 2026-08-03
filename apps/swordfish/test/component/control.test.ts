@@ -231,17 +231,64 @@ describe("Swordfish local control", () => {
     }
   });
 
-  test("drives takeover, handback, extend, retry, and approve-config over the socket", async () => {
+  test("takeover clears the attention that advertised it as the exit", async () => {
+    harness = await startSwordfishHarness("takeover-clears-attention");
+    await harness.run(
+      Effect.flatMap(WorkflowService, (workflow) =>
+        Effect.gen(function* () {
+          yield* workflow.append(
+            Schema.decodeUnknownSync(SwordfishEvent)({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" }),
+          );
+          yield* workflow.append(
+            Schema.decodeUnknownSync(SwordfishEvent)({
+              type: "attention_required",
+              kind: "intrusion",
+              reason: "Unexpected shell execution in the ein seat.",
+            }),
+          );
+        }),
+      ),
+    );
+
+    const before = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.status));
+    expect(before.stage).toBe("needs_attention");
+    expect(before.attention[0]?.resolutions).toContain("takeover");
+
+    const fiber = harness.fork(runControlSocket);
+    try {
+      await waitForSocket(harness.config.controlSocketPath);
+      const socketPath = harness.config.controlSocketPath;
+      const response = await Effect.runPromise(
+        requestControl(
+          socketPath,
+          controlRequest("sf-cmd-takeover-attention", { type: "takeover", seat: "ein", force: false }),
+        ).pipe(Effect.scoped),
+      );
+
+      expect(response.type).toBe("success");
+      if (response.type === "success") {
+        // Status must stop advertising an exit that a second attempt would now reject for control already
+        // being held (`docs/capabilities/05-control-lease-and-takeover.md`).
+        const snapshot = response.result.snapshot;
+        expect(snapshot.controller).toBe("human");
+        expect(snapshot.attention).toEqual([]);
+        expect(snapshot.stage).toBe("interactive");
+      }
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
+  test("drives takeover, handoff, extend, retry, and approve-config over the socket", async () => {
     harness = await startSwordfishHarness("commands");
-    // A seat can only be taken over once Swordfish holds its lease.
+    // There has to be an active cowboy to take over from ("One controller drives one active cowboy" (ADR 0037)).
     await harness.run(
       Effect.flatMap(WorkflowService, (workflow) =>
         workflow.append(
           Schema.decodeUnknownSync(SwordfishEvent)({
-            type: "lease_changed",
+            type: "cowboy_activated",
             seat: "ein",
             seatId: "seat-ein",
-            owner: "swordfish",
           }),
         ),
       ),
@@ -256,15 +303,17 @@ describe("Swordfish local control", () => {
       const takeover = await send("sf-cmd-takeover", { type: "takeover", seat: "ein", force: false });
       expect(takeover.type).toBe("success");
       if (takeover.type === "success") {
-        expect(takeover.result.snapshot.stage).toBe("human_controlled");
-        expect(takeover.result.snapshot.seats.find((seat) => seat.role === "ein")?.leaseOwner).toBe("human");
+        // Takeover changes who is driving, not what is being driven.
+        expect(takeover.result.snapshot.stage).toBe("interactive");
+        expect(takeover.result.snapshot.controller).toBe("human");
+        expect(takeover.result.snapshot.activeCowboy).toMatchObject({ role: "ein", seatId: "seat-ein" });
       }
 
-      const handback = await send("sf-cmd-handback", { type: "handback" });
-      expect(handback.type).toBe("success");
-      if (handback.type === "success") {
-        expect(handback.result.snapshot.stage).toBe("interactive");
-        expect(handback.result.snapshot.seats.find((seat) => seat.role === "ein")?.leaseOwner).toBe("swordfish");
+      const handoff = await send("sf-cmd-handoff", { type: "handoff" });
+      expect(handoff.type).toBe("success");
+      if (handoff.type === "success") {
+        expect(handoff.result.snapshot.stage).toBe("interactive");
+        expect(handoff.result.snapshot.controller).toBe("swordfish");
       }
 
       const extend = await send("sf-cmd-extend", { type: "extend_constraint", constraint: "primary_turns" });

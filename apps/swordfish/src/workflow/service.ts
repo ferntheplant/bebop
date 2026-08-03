@@ -13,6 +13,7 @@ import {
   CommandMessage as CommandMessageSchema,
   currentProtocolVersion,
   EventMessage as EventMessageSchema,
+  resolutionsForAttention,
   ProducedEventSequence,
   SwordfishEvent as SwordfishEventSchema,
   Timestamp as TimestampSchema,
@@ -104,6 +105,7 @@ export const WorkflowServiceLayer: Layer.Layer<
             yield* appendUnsafe(
               {
                 type: "attention_required",
+                kind: "operational",
                 reason: `Startup reconciliation found ${reconciliation.uncertainRecords} local operation(s) with unknown completion.`,
               },
               at,
@@ -155,53 +157,53 @@ export const WorkflowServiceLayer: Layer.Layer<
             }
             outcome = result(message, "completed", at);
             break;
+          // Takeover claims control of whichever cowboy is active; it does not select one. There is at most one
+          // ("One controller drives one active cowboy" (ADR 0037)), so a seat argument could only ever agree
+          // with the state or be wrong.
+          //
+          // It also clears any outstanding reason that names takeover as an exit, in the same transaction. A
+          // takeover that left the record standing would have status keep advertising `takeover` as the way to
+          // resolve it while a second attempt was rejected for control already being held, which is precisely
+          // what `docs/capabilities/05-control-lease-and-takeover.md` promises will not happen.
           case "takeover": {
-            const lease = workflow.state.leases[command.seat];
-            if (lease === undefined) {
-              outcome = result(message, "rejected", at, `The ${command.seat} seat is not available.`);
-              break;
-            }
-            const anotherHumanSeat = Object.entries(workflow.state.leases).find(
-              ([role, current]) => role !== command.seat && current?.owner === "human",
+            const active = workflow.state.activeCowboy;
+            const resolvable = workflow.state.attention.filter((record) =>
+              resolutionsForAttention[record.kind].includes("takeover"),
             );
-            if (anotherHumanSeat !== undefined) {
-              outcome = result(message, "rejected", at, `The ${anotherHumanSeat[0]} seat is already human-controlled.`);
+            if (workflow.state.controller === "human") {
+              outcome = result(message, "rejected", at, "Human control is already held.");
               break;
             }
-            if (workflow.state.stage !== "human_controlled") {
-              yield* appendUnsafe({ type: "stage_changed", stage: "human_controlled" }, at);
+            // With no cowboy running there is nothing to interrupt, so this is not a takeover in the sense
+            // ADR 0037 refuses — it is a human answering the attention that stopped the bounty, which
+            // ADR 0038 permits to establish control on its own.
+            if (active === null && resolvable.length === 0) {
+              outcome = result(message, "rejected", at, "No cowboy seat is active to take over.");
+              break;
             }
-            if (lease.owner !== "human") {
-              yield* appendUnsafe(
-                { type: "lease_changed", seat: command.seat, seatId: lease.seatId, owner: "human" },
-                at,
-              );
+            if (active !== null && command.seat !== active.role) {
+              outcome = result(message, "rejected", at, `The active cowboy is ${active.role}, not ${command.seat}.`);
+              break;
+            }
+            yield* appendUnsafe(
+              { type: "control_changed", controller: "human", reason: active === null ? "attention" : "takeover" },
+              at,
+            );
+            if (resolvable.length > 0) {
+              yield* appendUnsafe({ type: "attention_cleared", resolution: "takeover" }, at);
             }
             outcome = result(message, "completed", at);
             break;
           }
-          case "handback": {
-            const current = yield* store.loadWorkflow;
-            const lease = current.state.leases[command.seat];
-            if (lease === undefined || lease.owner !== "human") {
-              outcome = result(message, "rejected", at, `Human control does not hold the ${command.seat} seat.`);
+          // Handoff releases control from any stage and leaves the stage untouched; Swordfish then starts fresh
+          // work for it rather than resuming the aborted turn ("Control passes through a quiescent handoff"
+          // (ADR 0036)).
+          case "handoff": {
+            if (workflow.state.controller !== "human") {
+              outcome = result(message, "rejected", at, "Human control is not held.");
               break;
             }
-            yield* appendUnsafe(
-              { type: "lease_changed", seat: command.seat, seatId: lease.seatId, owner: "swordfish" },
-              at,
-            );
-            const afterLease = yield* store.loadWorkflow;
-            const anotherHumanLease = Object.values(afterLease.state.leases).some(
-              (current) => current?.owner === "human",
-            );
-            if (
-              !anotherHumanLease &&
-              afterLease.state.stage === "human_controlled" &&
-              afterLease.state.suspendedStage !== null
-            ) {
-              yield* appendUnsafe({ type: "stage_changed", stage: afterLease.state.suspendedStage }, at);
-            }
+            yield* appendUnsafe({ type: "control_changed", controller: "swordfish", reason: "handoff" }, at);
             outcome = result(message, "completed", at);
             break;
           }

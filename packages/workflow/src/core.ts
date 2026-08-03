@@ -12,8 +12,8 @@
 
 import { createHash } from "node:crypto";
 
-import type { EventMessage, SwordfishStage } from "@bebop/contracts";
-import { EventMessage as EventMessageSchema, toEventSequence } from "@bebop/contracts";
+import type { AttentionKind, CandidateGate, EventMessage, SeatRole, SwordfishStage } from "@bebop/contracts";
+import { EventMessage as EventMessageSchema, resolutionsForAttention, toEventSequence } from "@bebop/contracts";
 import { Schema } from "effect";
 
 import { fingerprintWindow, initialGates, type GateStates, type WorkflowCoreState } from "#src/state.ts";
@@ -25,7 +25,12 @@ export type WorkflowError =
   | { readonly type: "illegal_transition"; readonly stage: SwordfishStage | null; readonly eventType: string }
   | { readonly type: "spec_revision_mismatch"; readonly expected: number; readonly received: number }
   | { readonly type: "candidate_mismatch"; readonly expectedSha: string | null; readonly receivedSha: string }
-  | { readonly type: "gate_not_pending"; readonly gate: string; readonly status: string };
+  | { readonly type: "gate_not_pending"; readonly gate: string; readonly status: string }
+  | { readonly type: "gate_out_of_order"; readonly gate: CandidateGate; readonly blockedBy: CandidateGate }
+  | { readonly type: "cowboy_already_active"; readonly active: SeatRole; readonly requested: SeatRole }
+  | { readonly type: "cowboy_not_active"; readonly requested: SeatRole }
+  | { readonly type: "no_attention_raised" }
+  | { readonly type: "resolution_not_permitted"; readonly kind: AttentionKind; readonly resolution: string };
 
 /**
  * Why an event changed nothing. The distinction is load-bearing rather than diagnostic: it
@@ -63,9 +68,13 @@ export function eventFingerprint(message: EventMessage): string {
  * `cancelling` is in this set because in-flight hooks and CI polls legitimately land after
  * a stop command. Without it a late `gate_completed` moved a cancelling run to `revision`
  * and the cancellation was lost.
+ *
+ * Human control is deliberately absent. A human driving a stage is not a suspension of it — that is what
+ * `controller` records, orthogonally ("One controller drives one active cowboy" (ADR 0037)) — so work reported
+ * during a human-control episode lands on `stage` like any other.
  */
 function isSuspended(stage: SwordfishStage | null): boolean {
-  return stage === "human_controlled" || stage === "needs_attention" || stage === "blocked" || stage === "cancelling";
+  return stage === "needs_attention" || stage === "cancelling";
 }
 
 function isTerminal(stage: SwordfishStage | null): boolean {
@@ -76,25 +85,32 @@ function stageChanges(state: WorkflowCoreState, nextStage: SwordfishStage): Part
   return isSuspended(state.stage) ? { suspendedStage: nextStage } : { stage: nextStage };
 }
 
-function attentionChanges(state: WorkflowCoreState): Partial<WorkflowCoreState> {
-  if (state.stage === "human_controlled" || state.stage === "needs_attention") {
-    return {};
-  }
-  return { stage: "needs_attention", suspendedStage: state.suspendedStage ?? state.stage };
-}
+/**
+ * The gate that must pass before `gate` may be recorded at all.
+ *
+ * "CI gates cowboy review" (ADR 0040) replaced a parallel join with an order: a candidate passes local
+ * validation, is pushed, receives a polled CI result, and only then enters review. Encoding that as a
+ * prerequisite rather than as stage arithmetic is what makes the rule enforceable — the previous model computed
+ * a stage from whichever gates happened to have landed, so a `code_review` result arriving before CI was
+ * accepted and simply produced a different stage.
+ */
+const gatePrerequisite: Readonly<Partial<Record<CandidateGate, CandidateGate>>> = {
+  pr_ci: "local_validation",
+  code_review: "pr_ci",
+  qa: "code_review",
+  evidence_upload: "qa",
+};
 
+/** The stage a candidate sits in once `gates` have landed, given that gates land in order. */
 function gateStage(gates: GateStates): SwordfishStage {
   if (gates.pr_ci.status === "failed" || gates.code_review.status === "failed") {
     return "revision";
   }
-  if (gates.pr_ci.status === "passed" && gates.code_review.status === "passed") {
+  if (gates.code_review.status === "passed") {
     return "qa_preparing";
   }
   if (gates.pr_ci.status === "passed") {
     return "code_review";
-  }
-  if (gates.code_review.status === "passed") {
-    return "pr_ci";
   }
   return "pushed_candidate";
 }
@@ -121,7 +137,13 @@ function changesFor(
     case "effective_spec_set": {
       // Bebop's projection may still be at `null` because it has not heard from this
       // Swordfish yet; Swordfish itself is at `interactive`.
-      if (state.stage !== null && state.stage !== "interactive" && state.stage !== "human_controlled") {
+      //
+      // A human under control may reopen the spec from any stage: `reopen-spec` is a named workflow action
+      // ("Workflow actions have role-aware adapters" (ADR 0038)) and control follows it into the resulting
+      // stage. Swordfish may not, because an autonomous rewrite of the spec mid-run is exactly the drift the
+      // effective spec exists to prevent.
+      const reopenable = state.stage === null || state.stage === "interactive" || state.controller === "human";
+      if (!reopenable) {
         return { ok: false, error: illegal(state, event.type) };
       }
       const expected = (state.effectiveSpec?.revision ?? 0) + 1;
@@ -131,16 +153,20 @@ function changesFor(
           error: { type: "spec_revision_mismatch", expected, received: event.spec.revision },
         };
       }
+      // Reopening the spec is legitimate work, not a resolution. It does not answer an unreachable VM or an
+      // intrusion, so outstanding reasons survive it and keep the workflow suspended — otherwise `reopen-spec`
+      // would be a way to clear any attention record without the resolution its kind requires, including kinds
+      // whose only permitted exit is `cancel`.
+      const suspended = state.attention.length > 0;
       return {
         ok: true,
         changes: {
-          stage: "implementing",
-          suspendedStage: null,
+          stage: suspended ? "needs_attention" : "implementing",
+          suspendedStage: suspended ? "implementing" : null,
           effectiveSpec: event.spec,
           candidate: null,
           gates: initialGates(),
           readinessClaim: null,
-          attentionReason: null,
         },
       };
     }
@@ -195,6 +221,14 @@ function changesFor(
       if (current.status !== "pending") {
         return { ok: false, error: { type: "gate_not_pending", gate: event.gate, status: current.status } };
       }
+      // The gate order is a rule about what may be claimed, not a stage computation. A `code_review` result for
+      // a candidate whose CI has not passed means jet ran when it should not have, and recording it would make
+      // the validated-candidate allowance describe SHAs that never reached CI ("CI gates cowboy review"
+      // (ADR 0040)).
+      const prerequisite = gatePrerequisite[event.gate];
+      if (prerequisite !== undefined && state.gates[prerequisite].status !== "passed") {
+        return { ok: false, error: { type: "gate_out_of_order", gate: event.gate, blockedBy: prerequisite } };
+      }
       const gates: GateStates = {
         ...state.gates,
         [event.gate]: { status: event.outcome, completedAt: message.occurredAt },
@@ -205,7 +239,19 @@ function changesFor(
       if (event.gate === "local_validation") {
         return { ok: true, changes: { gates } };
       }
-      if (event.gate === "pr_ci" || event.gate === "code_review") {
+      // Passing CI is what opens review, so the review gate becomes claimable here rather than when the
+      // candidate was pushed. That is the whole of ADR 0040 in the state model: before this, both gates were
+      // opened together at push time and either could land first.
+      if (event.gate === "pr_ci") {
+        return {
+          ok: true,
+          changes: {
+            gates: { ...gates, code_review: { status: "pending" } },
+            ...stageChanges(state, gateStage(gates)),
+          },
+        };
+      }
+      if (event.gate === "code_review") {
         return { ok: true, changes: { gates, ...stageChanges(state, gateStage(gates)) } };
       }
       if (event.gate === "qa") {
@@ -260,11 +306,6 @@ function changesFor(
     }
 
     case "stage_changed": {
-      // Resuming the exact stage that was suspended clears the suspension and the reason
-      // that produced it.
-      if (isSuspended(state.stage) && state.suspendedStage === event.stage) {
-        return { ok: true, changes: { stage: event.stage, suspendedStage: null, attentionReason: null } };
-      }
       // The first event is Swordfish announcing its initial state. Swordfish starts at
       // `interactive`, while Bebop's projection starts at null; accepting the announcement
       // in both states lets the same durable event pass through both reducers.
@@ -275,12 +316,13 @@ function changesFor(
         return { ok: true, changes: { stage: "interactive" } };
       }
       if (event.stage === "pushed_candidate") {
+        // Only CI is opened here. Review opens when CI passes (ADR 0040).
         return state.stage === "local_validation" && state.gates.local_validation.status === "passed"
           ? {
               ok: true,
               changes: {
                 stage: "pushed_candidate",
-                gates: { ...state.gates, pr_ci: { status: "pending" }, code_review: { status: "pending" } },
+                gates: { ...state.gates, pr_ci: { status: "pending" } },
               },
             }
           : { ok: false, error: illegal(state, event.type) };
@@ -290,48 +332,134 @@ function changesFor(
           ? { ok: true, changes: { stage: "qa_running", gates: { ...state.gates, qa: { status: "pending" } } } }
           : { ok: false, error: illegal(state, event.type) };
       }
-      if (event.stage === "human_controlled" || event.stage === "needs_attention" || event.stage === "blocked") {
-        if (isTerminal(state.stage)) {
-          return { ok: false, error: illegal(state, event.type) };
-        }
-        const attentionReason =
-          event.stage === "needs_attention" ? (event.reason ?? state.attentionReason) : state.attentionReason;
-        // Leaving human control for attention or a block does not record a new stage to
-        // resume into: the one already recorded is still the work that was interrupted.
-        return state.stage === "human_controlled" && event.stage !== "human_controlled"
-          ? { ok: true, changes: { stage: event.stage, attentionReason } }
-          : {
-              ok: true,
-              changes: {
-                stage: event.stage,
-                suspendedStage: state.suspendedStage ?? state.stage,
-                attentionReason,
-              },
-            };
-      }
       if (event.stage === "cancelling" && !isTerminal(state.stage)) {
         return { ok: true, changes: { stage: "cancelling" } };
       }
+      // Terminal transitions stand the active cowboy down. Nothing is driving a bounty whose loop has ended, and
+      // this is the last chance to say so: `applyWorkflowEvent` refuses every event once the stage is terminal,
+      // so a later `cowboy_deactivated` cannot repair it and status would mark a seat active forever.
       if (event.stage === "cancelled" && state.stage === "cancelling") {
-        return { ok: true, changes: { stage: "cancelled", suspendedStage: null } };
+        return {
+          ok: true,
+          changes: { stage: "cancelled", suspendedStage: null, attention: [], activeCowboy: null },
+        };
       }
       if (event.stage === "failed" && state.stage !== "cancelled") {
-        return { ok: true, changes: { stage: "failed", suspendedStage: null } };
+        return {
+          ok: true,
+          changes: { stage: "failed", suspendedStage: null, attention: [], activeCowboy: null },
+        };
       }
+      // `needs_attention` is deliberately unreachable here: it is entered by `attention_required` and left by
+      // `attention_cleared`, so every suspension carries a reason and every resumption names the action that
+      // earned it. A bare stage change into attention could do neither.
       return { ok: false, error: illegal(state, event.type) };
     }
 
-    case "lease_changed":
-      return {
-        ok: true,
-        changes: { leases: { ...state.leases, [event.seat]: { seatId: event.seatId, owner: event.owner } } },
-      };
+    case "control_changed": {
+      if (isTerminal(state.stage)) {
+        return { ok: false, error: illegal(state, event.type) };
+      }
+      // Takeover needs something to take over. Attention establishes human control without one, because the
+      // bounty has already stopped and a human arriving to inspect it is the point (ADR 0037).
+      if (
+        (event.reason === "takeover" || event.reason === "forced_takeover") &&
+        state.activeCowboy === null &&
+        state.controller !== "human"
+      ) {
+        return { ok: false, error: illegal(state, event.type) };
+      }
+      if (event.reason === "handoff" && state.controller !== "human") {
+        return { ok: false, error: illegal(state, event.type) };
+      }
+      // Stage is untouched on purpose: a handoff returns the same work to Swordfish, which then starts fresh
+      // work for that stage rather than resuming an aborted turn ("Control passes through a quiescent handoff"
+      // (ADR 0036)).
+      return { ok: true, changes: { controller: event.controller } };
+    }
+
+    case "cowboy_activated": {
+      if (isTerminal(state.stage)) {
+        return { ok: false, error: illegal(state, event.type) };
+      }
+      const active = state.activeCowboy;
+      // Re-announcing the seat already active is how ein's durable seat is reused across attempts; a *different*
+      // seat while one is active would be a second concurrent cowboy, which is the thing ADR 0037 forbids.
+      if (active !== null && active.seatId !== event.seatId) {
+        return { ok: false, error: { type: "cowboy_already_active", active: active.role, requested: event.seat } };
+      }
+      // A seat belongs to one cowboy for its whole life, so the same ID arriving under a different role is a
+      // defect rather than a reassignment. Accepting it would leave the reducer's role disagreeing with the one
+      // already recorded against that seat ID in Swordfish's seat table.
+      if (active !== null && active.role !== event.seat) {
+        return { ok: false, error: { type: "cowboy_already_active", active: active.role, requested: event.seat } };
+      }
+      return { ok: true, changes: { activeCowboy: { role: event.seat, seatId: event.seatId } } };
+    }
+
+    case "cowboy_deactivated": {
+      const active = state.activeCowboy;
+      // Matching the seat ID, not just the role, is what stops a late deactivation from a finished jet attempt
+      // retiring the fresh jet seat that replaced it.
+      if (active === null || active.role !== event.seat || active.seatId !== event.seatId) {
+        return { ok: false, error: { type: "cowboy_not_active", requested: event.seat } };
+      }
+      return { ok: true, changes: { activeCowboy: null } };
+    }
 
     case "attachments_updated":
       return { ok: true, changes: { previews: event.previews } };
 
-    case "attention_required":
-      return { ok: true, changes: { ...attentionChanges(state), attentionReason: event.reason } };
+    case "attention_required": {
+      const raised = { kind: event.kind, reason: event.reason, raisedAt: message.occurredAt };
+      // Reasons accumulate rather than replacing each other, so a later laxer reason cannot widen the exits of
+      // an outstanding stricter one. A second reason of the same kind is a restatement and replaces it.
+      const attention = [...state.attention.filter((record) => record.kind !== event.kind), raised];
+      // Already suspended: record the reason but keep the stage that was interrupted. An attention raised while
+      // cancelling must not rewrite the cancellation as something resumable.
+      if (isSuspended(state.stage)) {
+        return { ok: true, changes: { attention } };
+      }
+      return {
+        ok: true,
+        changes: {
+          stage: "needs_attention",
+          suspendedStage: state.stage ?? "interactive",
+          attention,
+        },
+      };
+    }
+
+    case "attention_cleared": {
+      if (state.attention.length === 0) {
+        return { ok: false, error: { type: "no_attention_raised" } };
+      }
+      // A resolution clears every outstanding reason that permits it, and only those. This is the rule that
+      // makes an attention kind mean something: `resume` cannot clear an exhausted budget, because reviving an
+      // attempt is a grant and grants are explicit (ADR 0038, ADR 0041). It is also why reasons are a list — a
+      // `resume` arriving while both an operational reason and an exhausted budget are outstanding clears the
+      // operational one and leaves the budget suspended, rather than reviving work nobody granted.
+      const cleared = state.attention.filter((record) => {
+        const permitted: ReadonlyArray<string> = resolutionsForAttention[record.kind];
+        return !permitted.includes(event.resolution);
+      });
+      const outstanding = state.attention[0];
+      if (outstanding !== undefined && cleared.length === state.attention.length) {
+        return {
+          ok: false,
+          error: { type: "resolution_not_permitted", kind: outstanding.kind, resolution: event.resolution },
+        };
+      }
+      // The workflow resumes only once nothing is outstanding, and clearing a reason raised during cancellation
+      // never revives the run.
+      if (cleared.length > 0 || state.stage !== "needs_attention") {
+        return { ok: true, changes: { attention: cleared } };
+      }
+      return {
+        ok: true,
+        changes: { stage: state.suspendedStage ?? "interactive", suspendedStage: null, attention: cleared },
+      };
+    }
   }
 }
 

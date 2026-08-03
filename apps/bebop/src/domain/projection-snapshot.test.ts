@@ -81,10 +81,9 @@ function populatedProjection(): BebopSwordfishProjection {
     },
   });
   state = apply(state, 2, {
-    type: "lease_changed",
+    type: "cowboy_activated",
     seat: "ein",
     seatId: "seat-ein",
-    owner: "swordfish",
   });
   state = apply(state, 3, {
     type: "attachments_updated",
@@ -126,7 +125,7 @@ describe("workflow snapshot", () => {
     expect(after.effectiveSpec?.acceptanceCriteria).toHaveLength(1);
     expect(after.candidate?.commitSha).toBe(candidateSha);
     expect(after.gates.local_validation.status).toBe("passed");
-    expect(after.leases.ein?.owner).toBe("swordfish");
+    expect(after.activeCowboy).toMatchObject({ role: "ein", seatId: "seat-ein" });
     expect(after.previews).toHaveLength(1);
     expect(after.appliedEventFingerprints).toEqual(before.appliedEventFingerprints);
     expect(after.fingerprintFloor).toBe(before.fingerprintFloor);
@@ -175,7 +174,7 @@ describe("workflow snapshot", () => {
     const replay = reduceBebopSwordfishProjection(restored, {
       type: "event_received",
       connectionId,
-      message: eventMessage(2, { type: "lease_changed", seat: "ein", seatId: "seat-ein", owner: "swordfish" }),
+      message: eventMessage(2, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" }),
       observedAt,
     });
     expect(replay.ok && !replay.applied && replay.reason).toBe("already_applied");

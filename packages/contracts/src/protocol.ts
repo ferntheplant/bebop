@@ -27,12 +27,15 @@ import {
 import { schemaLimits } from "./settings.ts";
 import { EffectiveSpec } from "./spec.ts";
 import {
+  AttentionKind,
   CandidateGate,
   CandidateInvalidationReason,
+  ControlChangeReason,
+  Controller,
   GateOutcome,
-  LeaseOwner,
   SeatRole,
   SwordfishStage,
+  WorkflowResolution,
 } from "./workflow.ts";
 
 const ProtocolMessage = Schema.String.pipe(
@@ -84,11 +87,36 @@ export const StageChangedEvent = Schema.Struct({
   reason: Schema.optionalKey(ProtocolMessage),
 });
 
-export const LeaseChangedEvent = Schema.Struct({
-  type: Schema.Literal("lease_changed"),
+/**
+ * Control passed between Swordfish and a human ("Control passes through a quiescent handoff" (ADR 0036)).
+ *
+ * Deliberately carries no stage: takeover and handoff change who is responsible for the current work, not what
+ * the work is ("One controller drives one active cowboy" (ADR 0037)).
+ */
+export const ControlChangedEvent = Schema.Struct({
+  type: Schema.Literal("control_changed"),
+  controller: Controller,
+  reason: ControlChangeReason,
+  detail: Schema.optionalKey(ProtocolMessage),
+});
+
+/**
+ * A cowboy seat became the active one, or the active one stood down.
+ *
+ * At most one may be active (ADR 0037), which the reducer enforces rather than trusting the emitter: activating
+ * a second one while a first is active is an illegal transition, not a silent replacement. Deactivation carries
+ * the role so a stale event cannot retire a seat that already replaced it.
+ */
+export const CowboyActivatedEvent = Schema.Struct({
+  type: Schema.Literal("cowboy_activated"),
   seat: SeatRole,
   seatId: SeatId,
-  owner: LeaseOwner,
+});
+
+export const CowboyDeactivatedEvent = Schema.Struct({
+  type: Schema.Literal("cowboy_deactivated"),
+  seat: SeatRole,
+  seatId: SeatId,
 });
 
 export const EffectiveSpecSetEvent = Schema.Struct({
@@ -106,9 +134,28 @@ export const CandidateSubmittedEvent = Schema.Struct({
   candidate: CandidateReady,
 });
 
+/**
+ * The bounty stopped and needs a human.
+ *
+ * The `kind` is what makes the attention actionable: `resolutionsForAttention` turns it into the exact set of
+ * commands that may clear it ("Workflow actions have role-aware adapters" (ADR 0038)). Those commands are
+ * derived on read rather than carried here, so a record cannot claim an exit its kind does not permit.
+ */
 export const AttentionRequiredEvent = Schema.Struct({
   type: Schema.Literal("attention_required"),
+  kind: AttentionKind,
   reason: ProtocolMessage,
+});
+
+/**
+ * The attention was resolved, by the named action.
+ *
+ * The reducer refuses a resolution the raised kind does not permit, which is what stops a generic `resume` from
+ * clearing a budget exhaustion.
+ */
+export const AttentionClearedEvent = Schema.Struct({
+  type: Schema.Literal("attention_cleared"),
+  resolution: WorkflowResolution,
 });
 
 export const AttachmentsUpdatedEvent = Schema.Struct({
@@ -163,10 +210,13 @@ export const CandidateInvalidatedEvent = Schema.Struct({
 
 export const SwordfishEvent = Schema.Union([
   StageChangedEvent,
-  LeaseChangedEvent,
+  ControlChangedEvent,
+  CowboyActivatedEvent,
+  CowboyDeactivatedEvent,
   EffectiveSpecSetEvent,
   CandidateSubmittedEvent,
   AttentionRequiredEvent,
+  AttentionClearedEvent,
   AttachmentsUpdatedEvent,
   GateCompletedEvent,
   CandidateInvalidatedEvent,
@@ -193,9 +243,15 @@ export const EventAcknowledgedMessage = Schema.Struct({
 });
 export type EventAcknowledgedMessage = typeof EventAcknowledgedMessage.Type;
 
-export const HandbackCommand = Schema.Struct({
-  type: Schema.Literal("handback"),
-  seat: SeatRole,
+/**
+ * Release human control.
+ *
+ * Carries no seat: a human-control episode covers the whole workflow rather than one seat, and it may outlive
+ * the cowboy it started with ("One controller drives one active cowboy" (ADR 0037)). The local `sf` command
+ * never took a seat argument either, so naming one here only invented a way for the two to disagree.
+ */
+export const HandoffCommand = Schema.Struct({
+  type: Schema.Literal("handoff"),
 });
 
 export const ApproveConfigCommand = Schema.Struct({
@@ -217,7 +273,7 @@ export { ExtendConstraintCommand, RetryStageCommand, StopCommand, TakeoverComman
 export const BebopCommand = Schema.Union([
   StopCommand,
   TakeoverCommand,
-  HandbackCommand,
+  HandoffCommand,
   ExtendConstraintCommand,
   RetryStageCommand,
   ApproveConfigCommand,

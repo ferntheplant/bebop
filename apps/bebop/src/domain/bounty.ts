@@ -5,6 +5,7 @@ import type {
   BountyId,
   BountyStatus,
   ComputeProfile,
+  Controller,
   GitRef,
   RepositorySlug,
   SwordfishFreshnessStatus,
@@ -77,6 +78,7 @@ export function assignedBranchFor(bountyId: BountyId): string {
 export function deriveBountyStatus(
   lifecycleState: BountyLifecycleState,
   stage: SwordfishStage | null,
+  controller: Controller,
   freshness: SwordfishFreshnessStatus,
 ): BountyStatus {
   switch (lifecycleState) {
@@ -105,11 +107,7 @@ export function deriveBountyStatus(
     case "interactive":
       stageStatus = "interactive";
       break;
-    case "human_controlled":
-      stageStatus = "human_controlled";
-      break;
     case "needs_attention":
-    case "blocked":
       stageStatus = "needs_attention";
       break;
     case "ready":
@@ -126,6 +124,20 @@ export function deriveBountyStatus(
       stageStatus = "autonomous";
   }
 
+  // `human_controlled` is derived here rather than reported by Swordfish ("One controller drives one active
+  // cowboy" (ADR 0037)). It outranks `needs_attention` and every working stage because those describe what the
+  // bounty is doing, and a human already driving it is the more useful thing to say — nobody needs to be told
+  // that a bounty someone is actively steering requires attention. It does not outrank Bebop's own terminal
+  // opinions, which were returned above.
+  if (controller === "human" && stageStatus !== "stopped" && stageStatus !== "failed") {
+    stageStatus = "human_controlled";
+  }
+
+  // Freshness is applied last, and applies to human control exactly as it applies to every other non-terminal
+  // status. The controller is a projected fact from the last event Bebop received; a Swordfish that has since
+  // gone stale or disconnected cannot tell us whether that human is still there, and reporting `human_controlled`
+  // from a silent daemon presents an unverified claim as current state ("Bebop owns authority, Swordfish owns
+  // the loop" (ADR 0002)).
   return (freshness === "stale" || freshness === "disconnected") &&
     stageStatus !== "stopped" &&
     stageStatus !== "failed"

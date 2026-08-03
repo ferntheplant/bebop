@@ -11,14 +11,16 @@
 
 import type { EventSequence } from "@bebop/contracts";
 import {
+  AttentionKind,
   Candidate,
+  Controller,
   EffectiveSpec,
   EventSequence as EventSequenceSchema,
   GitSha,
   gateStatuses,
-  LeaseOwner,
   PrivatePreviewAttachment,
   SeatId,
+  SeatRole,
   SpecRevision,
   SwordfishStage,
   Timestamp,
@@ -40,7 +42,8 @@ const GateStatesSchema = Schema.Struct({
   evidence_upload: GateState,
 });
 
-const SeatLeaseState = Schema.Struct({ seatId: SeatId, owner: LeaseOwner });
+const ActiveCowboy = Schema.Struct({ role: SeatRole, seatId: SeatId });
+const AttentionState = Schema.Struct({ kind: AttentionKind, reason: Schema.String, raisedAt: Timestamp });
 
 /**
  * Retained event fingerprints, as a list rather than a map.
@@ -60,17 +63,14 @@ export const WorkflowSnapshot = Schema.Struct({
   fingerprintFloor: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))),
   stage: Schema.NullOr(SwordfishStage),
   suspendedStage: Schema.NullOr(SwordfishStage),
+  controller: Controller,
+  activeCowboy: Schema.NullOr(ActiveCowboy),
   effectiveSpec: Schema.NullOr(EffectiveSpec),
   candidate: Schema.NullOr(Candidate),
   gates: GateStatesSchema,
   readinessClaim: Schema.NullOr(Schema.Struct({ candidateSha: GitSha, specRevision: SpecRevision })),
-  leases: Schema.Struct({
-    ein: Schema.optionalKey(SeatLeaseState),
-    jet: Schema.optionalKey(SeatLeaseState),
-    faye: Schema.optionalKey(SeatLeaseState),
-  }),
   previews: Schema.Array(PrivatePreviewAttachment),
-  attentionReason: Schema.NullOr(Schema.String),
+  attention: Schema.Array(AttentionState),
 });
 export type WorkflowSnapshot = typeof WorkflowSnapshot.Type;
 
@@ -84,17 +84,14 @@ export function toWorkflowSnapshot(state: WorkflowCoreState): WorkflowSnapshot {
     fingerprintFloor: state.fingerprintFloor,
     stage: state.stage,
     suspendedStage: state.suspendedStage,
+    controller: state.controller,
+    activeCowboy: state.activeCowboy,
     effectiveSpec: state.effectiveSpec,
     candidate: state.candidate,
     gates: state.gates,
     readinessClaim: state.readinessClaim,
-    leases: {
-      ...(state.leases.ein === undefined ? {} : { ein: state.leases.ein }),
-      ...(state.leases.jet === undefined ? {} : { jet: state.leases.jet }),
-      ...(state.leases.faye === undefined ? {} : { faye: state.leases.faye }),
-    },
     previews: state.previews,
-    attentionReason: state.attentionReason,
+    attention: state.attention,
   };
 }
 
@@ -110,13 +107,14 @@ export function fromWorkflowSnapshot(snapshot: WorkflowSnapshot): WorkflowCoreSt
     fingerprintFloor: snapshot.fingerprintFloor,
     stage: snapshot.stage,
     suspendedStage: snapshot.suspendedStage,
+    controller: snapshot.controller,
+    activeCowboy: snapshot.activeCowboy,
     effectiveSpec: snapshot.effectiveSpec,
     candidate: snapshot.candidate,
     gates: snapshot.gates as GateStates,
     readinessClaim: snapshot.readinessClaim,
-    leases: snapshot.leases,
     previews: snapshot.previews,
-    attentionReason: snapshot.attentionReason,
+    attention: snapshot.attention,
   };
 }
 

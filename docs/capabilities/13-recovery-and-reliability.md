@@ -56,6 +56,9 @@ Swordfish or bebop does not duplicate VMs, prompts, PRs, or merges).
   all.
 - [The master runs on exe.dev (ADR 0019)](../adr/0019-the-master-runs-on-exe-dev-with-mandatory-off-vm-backups.md)
 - [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
+- [Constraint exhaustion is computed, not announced (ADR 0042)](../adr/0042-constraint-exhaustion-is-computed-not-announced.md)
+  — the constraint watchdog runs on the Swordfish side so a partition cannot silently stop bounding an attempt,
+  and Bebop re-verifies elapsed time as a defect signal about the daemon rather than as an exhaustion.
 
 Bounded shutdown behaviour and the connection-lifetime constraints behind it are in
 [`docs/gotchas.md`](../gotchas.md#process-lifecycle).

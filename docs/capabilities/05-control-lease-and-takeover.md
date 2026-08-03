@@ -42,10 +42,16 @@ exactly one actor may drive the active seat at a time.
 
 ## Where it stands
 
-**Partial.** Takeover and lease ownership are modelled as durable events and `sf` exists as a control client, but
-handoff, the orthogonal controller, the settled command surface, and operator authentication are not implemented.
-The current reducer still represents `human_controlled` as a stage. Prompt denial, isolated seat transport,
-unexpected-mutation detection, and role-aware action adapters are not built.
+**Partial.** The orthogonal controller is implemented: stage, controller, and attention are three independent
+dimensions in the shared workflow core, `human_controlled` is derived by Bebop rather than reported as a stage,
+at most one cowboy seat can be active, and takeover and handoff change control without touching stage. Every
+attention record carries a kind that names the commands permitted to clear it, and both `sf status` and
+`bounty status` print them.
+
+Not built: the quiescent handoff itself — abort, the ten-second grace period, and forced restart are decided but
+unimplemented, so control changes hands today without waiting for the previous actor to stop. The settled command
+surface, operator authentication, prompt denial, isolated seat transport, unexpected-mutation detection, and
+role-aware action adapters are also outstanding.
 
 ## Acceptance criteria
 

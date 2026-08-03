@@ -32,8 +32,18 @@
           "context": [],
           "constraints": [],
           "nonGoals": [],
-          "acceptanceCriteria": [{ "id": "ac-1", "description": "Duplicate events are no-ops." }],
-          "suggestedQaScenarios": [{ "description": "Reconnect", "expectedOutcome": "No duplicate state change." }],
+          "acceptanceCriteria": [
+            {
+              "id": "ac-1",
+              "description": "Duplicate events are no-ops."
+            }
+          ],
+          "suggestedQaScenarios": [
+            {
+              "description": "Reconnect",
+              "expectedOutcome": "No duplicate state change."
+            }
+          ],
           "createdFromSeatId": "seat-ein",
           "createdAt": "2026-07-26T12:34:56.000Z"
         }
@@ -48,7 +58,13 @@
       "occurredAt": "2026-07-26T12:34:56.000Z",
       "event": {
         "type": "attachments_updated",
-        "previews": [{ "label": "web", "url": "https://web.example.private/", "port": 3000 }]
+        "previews": [
+          {
+            "label": "web",
+            "url": "https://web.example.private/",
+            "port": 3000
+          }
+        ]
       }
     },
     {
@@ -58,7 +74,10 @@
       "vmId": "vm_01JZ8J3D9F4X",
       "sequence": 3,
       "occurredAt": "2026-07-26T12:34:56.000Z",
-      "event": { "type": "stage_changed", "stage": "implementing" }
+      "event": {
+        "type": "stage_changed",
+        "stage": "implementing"
+      }
     },
     {
       "type": "event",
@@ -67,7 +86,11 @@
       "vmId": "vm_01JZ8J3D9F4X",
       "sequence": 4,
       "occurredAt": "2026-07-26T12:34:56.000Z",
-      "event": { "type": "lease_changed", "seat": "ein", "seatId": "seat-ein", "owner": "swordfish" }
+      "event": {
+        "type": "cowboy_activated",
+        "seat": "ein",
+        "seatId": "seat-ein"
+      }
     },
     {
       "type": "event",
@@ -96,7 +119,11 @@
       "vmId": "vm_01JZ8J3D9F4X",
       "sequence": 6,
       "occurredAt": "2026-07-26T12:34:56.000Z",
-      "event": { "type": "attention_required", "reason": "Review the privileged path diff." }
+      "event": {
+        "type": "attention_required",
+        "kind": "agent_blocked",
+        "reason": "Review the privileged path diff."
+      }
     },
     {
       "type": "event",
@@ -129,6 +156,58 @@
       }
     },
     {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 9,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "cowboy_deactivated",
+        "seat": "jet",
+        "seatId": "seat-jet-1"
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 10,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "control_changed",
+        "controller": "human",
+        "reason": "takeover",
+        "detail": "Operator took over from the cockpit."
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 11,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "control_changed",
+        "controller": "swordfish",
+        "reason": "handoff"
+      }
+    },
+    {
+      "type": "event",
+      "protocolVersion": 1,
+      "bountyId": "bty-01jz8j3d9f4x",
+      "vmId": "vm_01JZ8J3D9F4X",
+      "sequence": 12,
+      "occurredAt": "2026-07-26T12:34:56.000Z",
+      "event": {
+        "type": "attention_cleared",
+        "resolution": "resume"
+      }
+    },
+    {
       "type": "command_result",
       "protocolVersion": 1,
       "bountyId": "bty-01jz8j3d9f4x",
@@ -150,8 +229,18 @@
         "stage": "local_validation",
         "provenance": "automated",
         "createdAt": "2026-07-26T12:34:56.000Z",
-        "tools": [{ "name": "bun", "version": "1.3.14" }],
-        "environment": [{ "name": "linux", "version": "6.8.0" }],
+        "tools": [
+          {
+            "name": "bun",
+            "version": "1.3.14"
+          }
+        ],
+        "environment": [
+          {
+            "name": "linux",
+            "version": "6.8.0"
+          }
+        ],
         "artifacts": [
           {
             "path": "validation/stdout.log",
@@ -201,7 +290,11 @@
       "vmId": "vm_01JZ8J3D9F4X",
       "commandId": "cmd-01",
       "issuedAt": "2026-07-26T12:34:56.000Z",
-      "command": { "type": "takeover", "seat": "ein", "force": false }
+      "command": {
+        "type": "takeover",
+        "seat": "ein",
+        "force": false
+      }
     },
     {
       "type": "command",
@@ -210,7 +303,10 @@
       "vmId": "vm_01JZ8J3D9F4X",
       "commandId": "cmd-02",
       "issuedAt": "2026-07-26T12:34:56.000Z",
-      "command": { "type": "stop", "reason": "User requested stop." }
+      "command": {
+        "type": "stop",
+        "reason": "User requested stop."
+      }
     },
     {
       "type": "command",
@@ -219,7 +315,9 @@
       "vmId": "vm_01JZ8J3D9F4X",
       "commandId": "cmd-03",
       "issuedAt": "2026-07-26T12:34:56.000Z",
-      "command": { "type": "handback", "seat": "ein" }
+      "command": {
+        "type": "handoff"
+      }
     },
     {
       "type": "command",
@@ -228,7 +326,10 @@
       "vmId": "vm_01JZ8J3D9F4X",
       "commandId": "cmd-04",
       "issuedAt": "2026-07-26T12:34:56.000Z",
-      "command": { "type": "extend_constraint", "constraint": "primary_turns" }
+      "command": {
+        "type": "extend_constraint",
+        "constraint": "primary_turns"
+      }
     },
     {
       "type": "command",
@@ -237,7 +338,10 @@
       "vmId": "vm_01JZ8J3D9F4X",
       "commandId": "cmd-05",
       "issuedAt": "2026-07-26T12:34:56.000Z",
-      "command": { "type": "retry_stage", "stage": "local_validation" }
+      "command": {
+        "type": "retry_stage",
+        "stage": "local_validation"
+      }
     },
     {
       "type": "command",

@@ -199,6 +199,7 @@ describe("Swordfish outbound protocol", () => {
           yield* workflow.append(
             Schema.decodeUnknownSync(SwordfishEventSchema)({
               type: "attention_required",
+              kind: "operational",
               reason: `preexisting event ${sequence}`,
             }),
           );

@@ -15,7 +15,11 @@ import type {
   IdempotencyKey,
   Timestamp,
 } from "@bebop/contracts";
-import { BountyListCursor as BountyListCursorSchema, GitRef as GitRefSchema } from "@bebop/contracts";
+import {
+  BountyListCursor as BountyListCursorSchema,
+  GitRef as GitRefSchema,
+  resolutionsForAttention,
+} from "@bebop/contracts";
 import { Effect, Schema } from "effect";
 import type { SqlError } from "effect/unstable/sql";
 import { SqlClient } from "effect/unstable/sql";
@@ -79,7 +83,13 @@ export interface CreatedBounty {
 /** The list view: identity, status, and freshness, without attachment or attention detail. */
 export const bountySummary = Effect.fnUntraced(function* (bounty: BountyRecord) {
   const detail = yield* bountyDetail(bounty);
-  const { attachment: _attachment, attentionReason: _attentionReason, readinessClaimSha: _sha, ...summary } = detail;
+  const {
+    attachment: _attachment,
+    attention: _attention,
+    suspendedStage: _suspendedStage,
+    readinessClaimSha: _sha,
+    ...summary
+  } = detail;
   return summary satisfies BountySummary;
 });
 
@@ -97,8 +107,14 @@ export const bountyDetail = Effect.fnUntraced(function* (bounty: BountyRecord) {
     repository: bounty.repository,
     baseRef: bounty.baseRef,
     assignedBranch: bounty.assignedBranch,
-    status: deriveBountyStatus(bounty.lifecycleState, stage, projection?.freshness.status ?? "never_connected"),
+    status: deriveBountyStatus(
+      bounty.lifecycleState,
+      stage,
+      projection?.controller ?? "swordfish",
+      projection?.freshness.status ?? "never_connected",
+    ),
     ...(stage === null ? {} : { swordfishStage: stage }),
+    controller: projection?.controller ?? "swordfish",
     swordfishFreshness: projection?.freshness.status ?? "never_connected",
     ...(projection?.candidate == null ? {} : { candidateSha: projection.candidate.commitSha }),
     ...(projection?.effectiveSpec == null ? {} : { specRevision: projection.effectiveSpec.revision }),
@@ -119,7 +135,12 @@ export const bountyDetail = Effect.fnUntraced(function* (bounty: BountyRecord) {
     ...summary,
     ...(attachmentSnapshot === undefined ? {} : { attachment: attachmentSnapshot }),
     ...(projection?.readinessClaim == null ? {} : { readinessClaimSha: projection.readinessClaim.candidateSha }),
-    ...(projection?.attentionReason == null ? {} : { attentionReason: projection.attentionReason }),
+    ...(projection?.suspendedStage == null ? {} : { suspendedStage: projection.suspendedStage }),
+    attention: (projection?.attention ?? []).map((record) => ({
+      kind: record.kind,
+      reason: record.reason,
+      resolutions: resolutionsForAttention[record.kind],
+    })),
   };
   return detail;
 });
@@ -296,9 +317,10 @@ export const transitionLifecycle = Effect.fnUntraced(function* (options: {
       const bounty = yield* requireBounty(options.bountyId);
       const projection = yield* projections.loadIfPresent(options.bountyId);
       const stage = projection?.stage ?? null;
+      const controller = projection?.controller ?? "swordfish";
       const freshness = projection?.freshness.status ?? "never_connected";
-      const before = deriveBountyStatus(bounty.lifecycleState, stage, freshness);
-      const after = deriveBountyStatus(options.to, stage, freshness);
+      const before = deriveBountyStatus(bounty.lifecycleState, stage, controller, freshness);
+      const after = deriveBountyStatus(options.to, stage, controller, freshness);
 
       const updated = yield* bounties.setLifecycleState({
         bountyId: options.bountyId,

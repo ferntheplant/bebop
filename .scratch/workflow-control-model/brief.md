@@ -101,14 +101,25 @@ by
 - Bebop: cross-check elapsed time in the heartbeat handler with a grace margin, reporting a daemon defect rather
   than an exhaustion.
 
-Two questions the ledger has to answer that nothing upstream settles:
+Three things the ledger has to account for that nothing upstream spells out. The first is settled behaviour it
+inherits; the other two are open.
 
-1. **How a targeted `rerun` names the record it resolves.** `constraint_exhausted` and `uncertain_gate` both
+1. **`reopen-spec` may land in a suspended stage.** ADR 0038 and
+   [control lease and takeover](../../docs/capabilities/05-control-lease-and-takeover.md) describe `reopen-spec`
+   as a human action that establishes control and carries it into the resulting stage, which reads as though it
+   always reaches `implementing`. It does not. A review found that emptying attention on a spec change let
+   `reopen-spec` clear reasons whose kind permits no such exit — an unreachable environment or a detected
+   intrusion, both of which only `cancel` resolves — so outstanding reasons now survive it. The new spec applies
+   and the gates and candidate reset, but the stage stays `needs_attention` with `implementing` recorded as the
+   stage to resume into. This matters here because ticket 09 makes `reopen-spec` the only way to earn a fresh
+   validated-candidate allowance: the allowance is created by the spec revision, not by the stage resuming, and
+   the ledger must not wait on a stage that is still suspended behind an unrelated reason.
+2. **How a targeted `rerun` names the record it resolves.** `constraint_exhausted` and `uncertain_gate` both
    permit `rerun`, and a resolution currently clears every record permitting it, so `rerun building` issued while
    an uncertain gate is outstanding would clear a reason nobody addressed. Either match the target against the
    kind, or have `attention_cleared` name the kind directly. ADR 0042 records the edge; neither it nor ticket 09
    decides it.
-2. **Where the frozen profile lives.** Ticket 09 has Swordfish freeze the base revision's profile for the bounty
+3. **Where the frozen profile lives.** Ticket 09 has Swordfish freeze the base revision's profile for the bounty
    and fill omissions from Bebop defaults, but `.bebop/config.yml` has never been read against a real repository
    — that is fog on [the map](../bebop-mvp/map.md) under "Repository configuration in practice". The ledger can
    be built against the frozen profile as a value without settling where it is parsed.

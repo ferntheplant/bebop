@@ -162,7 +162,7 @@ function changesFor(
           candidate: null,
           gates: initialGates(),
           readinessClaim: null,
-          attention: null,
+          attention: [],
         },
       };
     }
@@ -332,10 +332,10 @@ function changesFor(
         return { ok: true, changes: { stage: "cancelling" } };
       }
       if (event.stage === "cancelled" && state.stage === "cancelling") {
-        return { ok: true, changes: { stage: "cancelled", suspendedStage: null, attention: null } };
+        return { ok: true, changes: { stage: "cancelled", suspendedStage: null, attention: [] } };
       }
       if (event.stage === "failed" && state.stage !== "cancelled") {
-        return { ok: true, changes: { stage: "failed", suspendedStage: null, attention: null } };
+        return { ok: true, changes: { stage: "failed", suspendedStage: null, attention: [] } };
       }
       // `needs_attention` is deliberately unreachable here: it is entered by `attention_required` and left by
       // `attention_cleared`, so every suspension carries a reason and every resumption names the action that
@@ -392,9 +392,12 @@ function changesFor(
       return { ok: true, changes: { previews: event.previews } };
 
     case "attention_required": {
-      const attention = { kind: event.kind, reason: event.reason, raisedAt: message.occurredAt };
-      // Already suspended: record the newer reason but keep the stage that was interrupted. An attention raised
-      // while cancelling must not rewrite the cancellation as something resumable.
+      const raised = { kind: event.kind, reason: event.reason, raisedAt: message.occurredAt };
+      // Reasons accumulate rather than replacing each other, so a later laxer reason cannot widen the exits of
+      // an outstanding stricter one. A second reason of the same kind is a restatement and replaces it.
+      const attention = [...state.attention.filter((record) => record.kind !== event.kind), raised];
+      // Already suspended: record the reason but keep the stage that was interrupted. An attention raised while
+      // cancelling must not rewrite the cancellation as something resumable.
       if (isSuspended(state.stage)) {
         return { ok: true, changes: { attention } };
       }
@@ -409,26 +412,33 @@ function changesFor(
     }
 
     case "attention_cleared": {
-      const attention = state.attention;
-      if (attention === null) {
+      if (state.attention.length === 0) {
         return { ok: false, error: { type: "no_attention_raised" } };
       }
-      // This is the rule that makes an attention kind mean something: a `resume` cannot clear an exhausted
-      // budget, because reviving an attempt is a grant and grants are explicit (ADR 0038, ADR 0041).
-      const permitted: ReadonlyArray<string> = resolutionsForAttention[attention.kind];
-      if (!permitted.includes(event.resolution)) {
+      // A resolution clears every outstanding reason that permits it, and only those. This is the rule that
+      // makes an attention kind mean something: `resume` cannot clear an exhausted budget, because reviving an
+      // attempt is a grant and grants are explicit (ADR 0038, ADR 0041). It is also why reasons are a list — a
+      // `resume` arriving while both an operational reason and an exhausted budget are outstanding clears the
+      // operational one and leaves the budget suspended, rather than reviving work nobody granted.
+      const cleared = state.attention.filter((record) => {
+        const permitted: ReadonlyArray<string> = resolutionsForAttention[record.kind];
+        return !permitted.includes(event.resolution);
+      });
+      const outstanding = state.attention[0];
+      if (outstanding !== undefined && cleared.length === state.attention.length) {
         return {
           ok: false,
-          error: { type: "resolution_not_permitted", kind: attention.kind, resolution: event.resolution },
+          error: { type: "resolution_not_permitted", kind: outstanding.kind, resolution: event.resolution },
         };
       }
-      // Clearing attention raised during cancellation drops the reason without reviving the run.
-      if (state.stage !== "needs_attention") {
-        return { ok: true, changes: { attention: null } };
+      // The workflow resumes only once nothing is outstanding, and clearing a reason raised during cancellation
+      // never revives the run.
+      if (cleared.length > 0 || state.stage !== "needs_attention") {
+        return { ok: true, changes: { attention: cleared } };
       }
       return {
         ok: true,
-        changes: { stage: state.suspendedStage ?? "interactive", suspendedStage: null, attention: null },
+        changes: { stage: state.suspendedStage ?? "interactive", suspendedStage: null, attention: cleared },
       };
     }
   }

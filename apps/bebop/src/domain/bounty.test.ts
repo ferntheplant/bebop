@@ -86,6 +86,21 @@ describe("bounty status derivation", () => {
     expect(deriveBountyStatus("active", "failed", "human", "connected")).toBe("failed");
   });
 
+  test("a silent Swordfish is not presented as still under human control", () => {
+    // The controller is a projected fact from the last event Bebop received. Once the daemon goes quiet, Bebop
+    // cannot tell whether that human is still there, so freshness overrides human control exactly as it
+    // overrides every other non-terminal status ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
+    for (const freshness of ["stale", "disconnected"] as const) {
+      expect(deriveBountyStatus("active", "qa_running", "human", freshness)).toBe("needs_attention");
+      expect(deriveBountyStatus("active", "ready", "human", freshness)).toBe("needs_attention");
+      // Terminal stages are still exempt, under either controller.
+      expect(deriveBountyStatus("active", "cancelled", "human", freshness)).toBe("stopped");
+      expect(deriveBountyStatus("active", "failed", "human", freshness)).toBe("failed");
+    }
+    // A connected daemon still reports human control.
+    expect(deriveBountyStatus("active", "qa_running", "human", "connected")).toBe("human_controlled");
+  });
+
   test("does not present stale or disconnected work as active or ready", () => {
     for (const freshness of ["stale", "disconnected"] as const) {
       expect(deriveBountyStatus("active", "implementing", "swordfish", freshness)).toBe("needs_attention");

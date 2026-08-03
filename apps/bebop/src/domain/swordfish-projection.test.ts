@@ -397,9 +397,9 @@ describe("Bebop Swordfish projection reducer", () => {
     expect(state).toMatchObject({ stage: "needs_attention", suspendedStage: "implementing" });
     state = apply(state, 3, { type: "attention_required", kind: "operational", reason: "Still blocked." });
     expect(state).toMatchObject({ stage: "needs_attention", suspendedStage: "implementing" });
-    expect(state.attention).toMatchObject({ reason: "Still blocked." });
+    expect(state.attention).toMatchObject([{ reason: "Still blocked." }]);
     state = apply(state, 4, { type: "attention_cleared", resolution: "resume" });
-    expect(state).toMatchObject({ stage: "implementing", suspendedStage: null, attention: null });
+    expect(state).toMatchObject({ stage: "implementing", suspendedStage: null, attention: [] });
   });
 
   test("projects attention during human control without releasing control", () => {

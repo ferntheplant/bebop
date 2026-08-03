@@ -170,16 +170,19 @@ is driving it; that is the workflow controller.
 _Avoid_: current seat (a bounty keeps many seats; only one is active), lease holder.
 
 **attention record**:
-Why a bounty stopped, carried alongside the `needs_attention` stage: a kind, a human-readable reason, and the
-stage that was suspended. Its kind determines which **resolutions** may clear it, so status can print the exact
-command that applies rather than a reason a human must interpret.
+One reason a bounty stopped: a kind and a human-readable reason. Its kind determines which **resolutions** may
+clear it, so status can print the exact command that applies rather than a reason a human must interpret. More
+than one may be outstanding at a time — a later reason never supersedes an earlier one, at most one is held per
+kind, and the suspended stage is recorded once for the workflow rather than on each record.
 _Avoid_: error, alert, attention reason (the bare string this replaced).
 
 **resolution**:
-A named action permitted to clear a specific attention record — `resume`, `continue`, `rerun`, `takeover`,
-`cancel`, or bebop-side `approve-config`. Derived from the attention's kind rather than stored with it, so a
-record can never offer an exit its kind forbids. `resume` changes no allowance; reviving an exhausted attempt is
-a grant and is therefore `continue` or `rerun`.
+A named action permitted to clear an attention record — `resume`, `continue`, `rerun`, `takeover`, `cancel`, or
+bebop-side `approve-config`. Derived from the record's kind rather than stored with it, so a record can never
+offer an exit its kind forbids. A resolution clears every outstanding record that permits it and no others, and
+the workflow resumes only once none remain: a `resume` alongside an exhausted budget clears the reason it may
+and leaves the budget suspended. `resume` changes no allowance; reviving an exhausted attempt is a grant, and is
+therefore `continue` or `rerun`.
 _Avoid_: fix, remedy, unblock.
 
 ## Verification

@@ -285,9 +285,9 @@ describe("Swordfish workflow reducer", () => {
     // A second reason replaces the first; the stage that was interrupted is still the one to come back to.
     state = apply(state, 3, { type: "attention_required", kind: "operational", reason: "Still blocked." });
     expect(state).toMatchObject({ stage: "needs_attention", suspendedStage: "implementing" });
-    expect(state.attention).toMatchObject({ reason: "Still blocked." });
+    expect(state.attention).toMatchObject([{ reason: "Still blocked." }]);
     state = apply(state, 4, { type: "attention_cleared", resolution: "resume" });
-    expect(state).toMatchObject({ stage: "implementing", suspendedStage: null, attention: null });
+    expect(state).toMatchObject({ stage: "implementing", suspendedStage: null, attention: [] });
   });
 
   test("attention during human control suspends the work without releasing control", () => {

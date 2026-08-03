@@ -413,8 +413,9 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
               seatId: text(row as Row, "seat_id"),
             }));
             // The active cowboy comes from the workflow state, not from scanning the seat table. The table is a
-            // history of every seat that ever ran; only one of them is being driven (ADR 0037).
-            const activeSeat = workflow.state.activeCowboy?.role;
+            // history of every seat that ever ran — including repeated roles, since each jet and faye attempt
+            // takes a fresh seat — and only one of them is being driven (ADR 0037).
+            const activeCowboy = workflow.state.activeCowboy;
             const attention = workflow.state.attention;
             return decodeStatus({
               stateRevision: workflow.stateRevision,
@@ -425,22 +426,16 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
               assignedBranch: config.assignedBranch,
               stage: workflow.state.stage,
               controller: workflow.state.controller,
-              ...(attention === null
-                ? {}
-                : {
-                    attention: {
-                      kind: attention.kind,
-                      reason: attention.reason,
-                      ...(workflow.state.suspendedStage === null
-                        ? {}
-                        : { suspendedStage: workflow.state.suspendedStage }),
-                      resolutions: resolutionsForAttention[attention.kind],
-                    },
-                  }),
+              ...(workflow.state.suspendedStage === null ? {} : { suspendedStage: workflow.state.suspendedStage }),
+              attention: attention.map((record) => ({
+                kind: record.kind,
+                reason: record.reason,
+                resolutions: resolutionsForAttention[record.kind],
+              })),
               ...(workflow.state.effectiveSpec === null
                 ? {}
                 : { effectiveSpecRevision: workflow.state.effectiveSpec.revision }),
-              ...(activeSeat === undefined ? {} : { activeSeat }),
+              ...(activeCowboy === null ? {} : { activeCowboy }),
               seats,
               ...(candidate === null ? {} : { candidateSha: candidate.commitSha }),
               gates,

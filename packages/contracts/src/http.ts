@@ -71,7 +71,7 @@ export const BountySummary = Schema.Struct({
 export type BountySummary = typeof BountySummary.Type;
 
 /**
- * Why a bounty stopped, and what will restart it.
+ * One reason a bounty stopped, and what will clear it.
  *
  * `resolutions` is served rather than left for the client to look up, so that a thin CLI can print the exact
  * commands that apply without carrying its own copy of the attention-kind table
@@ -80,7 +80,6 @@ export type BountySummary = typeof BountySummary.Type;
 export const AttentionDetail = Schema.Struct({
   kind: AttentionKind,
   reason: Message,
-  suspendedStage: Schema.optionalKey(SwordfishStage),
   resolutions: Schema.Array(WorkflowResolution),
 });
 export type AttentionDetail = typeof AttentionDetail.Type;
@@ -89,7 +88,10 @@ export const BountyDetail = Schema.Struct({
   ...BountySummary.fields,
   attachment: Schema.optionalKey(AttachmentSnapshot),
   readinessClaimSha: Schema.optionalKey(GitSha),
-  attention: Schema.optionalKey(AttentionDetail),
+  suspendedStage: Schema.optionalKey(SwordfishStage),
+  // Every outstanding reason, because a later one does not supersede an earlier one: each is cleared by its own
+  // permitted resolution and the bounty resumes only when none remain.
+  attention: Schema.Array(AttentionDetail),
 });
 export type BountyDetail = typeof BountyDetail.Type;
 

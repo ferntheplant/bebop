@@ -130,9 +130,14 @@ export function deriveBountyStatus(
   // that a bounty someone is actively steering requires attention. It does not outrank Bebop's own terminal
   // opinions, which were returned above.
   if (controller === "human" && stageStatus !== "stopped" && stageStatus !== "failed") {
-    return "human_controlled";
+    stageStatus = "human_controlled";
   }
 
+  // Freshness is applied last, and applies to human control exactly as it applies to every other non-terminal
+  // status. The controller is a projected fact from the last event Bebop received; a Swordfish that has since
+  // gone stale or disconnected cannot tell us whether that human is still there, and reporting `human_controlled`
+  // from a silent daemon presents an unverified claim as current state ("Bebop owns authority, Swordfish owns
+  // the loop" (ADR 0002)).
   return (freshness === "stale" || freshness === "disconnected") &&
     stageStatus !== "stopped" &&
     stageStatus !== "failed"

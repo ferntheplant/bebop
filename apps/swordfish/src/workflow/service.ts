@@ -13,6 +13,7 @@ import {
   CommandMessage as CommandMessageSchema,
   currentProtocolVersion,
   EventMessage as EventMessageSchema,
+  resolutionsForAttention,
   ProducedEventSequence,
   SwordfishEvent as SwordfishEventSchema,
   Timestamp as TimestampSchema,
@@ -158,23 +159,39 @@ export const WorkflowServiceLayer: Layer.Layer<
             break;
           // Takeover claims control of whichever cowboy is active; it does not select one. There is at most one
           // ("One controller drives one active cowboy" (ADR 0037)), so a seat argument could only ever agree
-          // with the state or be wrong, and the stage is deliberately left alone: the human is assuming
-          // responsibility for this work, not leaving it.
+          // with the state or be wrong.
+          //
+          // It also clears any outstanding reason that names takeover as an exit, in the same transaction. A
+          // takeover that left the record standing would have status keep advertising `takeover` as the way to
+          // resolve it while a second attempt was rejected for control already being held, which is precisely
+          // what `docs/capabilities/05-control-lease-and-takeover.md` promises will not happen.
           case "takeover": {
             const active = workflow.state.activeCowboy;
-            if (active === null) {
-              outcome = result(message, "rejected", at, "No cowboy seat is active to take over.");
-              break;
-            }
-            if (command.seat !== active.role) {
-              outcome = result(message, "rejected", at, `The active cowboy is ${active.role}, not ${command.seat}.`);
-              break;
-            }
+            const resolvable = workflow.state.attention.filter((record) =>
+              resolutionsForAttention[record.kind].includes("takeover"),
+            );
             if (workflow.state.controller === "human") {
               outcome = result(message, "rejected", at, "Human control is already held.");
               break;
             }
-            yield* appendUnsafe({ type: "control_changed", controller: "human", reason: "takeover" }, at);
+            // With no cowboy running there is nothing to interrupt, so this is not a takeover in the sense
+            // ADR 0037 refuses — it is a human answering the attention that stopped the bounty, which
+            // ADR 0038 permits to establish control on its own.
+            if (active === null && resolvable.length === 0) {
+              outcome = result(message, "rejected", at, "No cowboy seat is active to take over.");
+              break;
+            }
+            if (active !== null && command.seat !== active.role) {
+              outcome = result(message, "rejected", at, `The active cowboy is ${active.role}, not ${command.seat}.`);
+              break;
+            }
+            yield* appendUnsafe(
+              { type: "control_changed", controller: "human", reason: active === null ? "attention" : "takeover" },
+              at,
+            );
+            if (resolvable.length > 0) {
+              yield* appendUnsafe({ type: "attention_cleared", resolution: "takeover" }, at);
+            }
             outcome = result(message, "completed", at);
             break;
           }

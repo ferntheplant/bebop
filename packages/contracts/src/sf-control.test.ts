@@ -14,8 +14,9 @@ const baseSnapshot = {
   assignedBranch: "bounty/bty-01jz8j3d9f4x",
   stage: "interactive",
   controller: "human",
-  activeSeat: "ein",
+  activeCowboy: { role: "ein", seatId: "seat-ein" },
   seats: [{ role: "ein", seatId: "seat-ein" }],
+  attention: [],
   constraints: [{ constraint: "primary_turns", consumed: 0, limit: 40, extensionsGranted: 0 }],
   bebopConnection: { state: "connected", lastContactAt: timestamp, acknowledgedThrough: 0, pendingEventCount: 0 },
   previews: [],
@@ -65,7 +66,6 @@ describe("sf local control contracts", () => {
       ...baseSnapshot,
       stateRevision: 12,
       stage: "local_validation",
-      activeSeat: "ein",
       effectiveSpecRevision: 1,
       candidateSha: "b".repeat(40),
       gates: [
@@ -86,7 +86,12 @@ describe("sf local control contracts", () => {
 
   test("rejects inconsistent status snapshots", () => {
     expect(() => Schema.decodeUnknownSync(SfStatusSnapshot)({ ...baseSnapshot, stage: "ready" })).toThrow();
-    expect(() => Schema.decodeUnknownSync(SfStatusSnapshot)({ ...baseSnapshot, activeSeat: "jet" })).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        activeCowboy: { role: "jet", seatId: "seat-jet-1" },
+      }),
+    ).toThrow();
     expect(() =>
       Schema.decodeUnknownSync(SfStatusSnapshot)({
         ...baseSnapshot,
@@ -111,29 +116,64 @@ describe("sf local control contracts", () => {
     ).toThrow();
   });
 
-  test("rejects a status that stops without exits, or offers exits without stopping", () => {
-    // The cockpit prints attention detail whenever the stage says the bounty stopped
-    // (`docs/capabilities/05-control-lease-and-takeover.md`). A snapshot carrying one without the other would
-    // either strand a stopped bounty with nothing to print or advertise exits for work still running.
+  test("accepts repeated seat roles from retried attempts", () => {
+    // Every jet and faye attempt takes a fresh seat ("One controller drives one active cowboy" (ADR 0037)), so
+    // a second review attempt legitimately puts two `jet` rows in this list. Rejecting that made `sf status`
+    // throw after an ordinary retry.
+    const retried = Schema.decodeUnknownSync(SfStatusSnapshot)({
+      ...baseSnapshot,
+      activeCowboy: { role: "jet", seatId: "seat-jet-2" },
+      seats: [
+        { role: "ein", seatId: "seat-ein" },
+        { role: "jet", seatId: "seat-jet-1" },
+        { role: "jet", seatId: "seat-jet-2" },
+      ],
+    });
+    expect(retried.seats).toHaveLength(3);
+    expect(retried.activeCowboy?.seatId).toBe("seat-jet-2");
+
+    // Seat IDs are still unique, and the active cowboy still has to be one of them.
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        seats: [
+          { role: "jet", seatId: "seat-jet-1" },
+          { role: "faye", seatId: "seat-jet-1" },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  test("rejects a stopped status with no stated reason", () => {
+    // The cockpit prints the commands that restart a stopped bounty
+    // (`docs/capabilities/05-control-lease-and-takeover.md`), so a `needs_attention` with nothing outstanding
+    // would strand it with nothing to print.
     expect(() => Schema.decodeUnknownSync(SfStatusSnapshot)({ ...baseSnapshot, stage: "needs_attention" })).toThrow();
     expect(() =>
       Schema.decodeUnknownSync(SfStatusSnapshot)({
         ...baseSnapshot,
-        attention: { kind: "agent_blocked", reason: "needs a decision", resolutions: ["resume"] },
+        attention: [{ kind: "agent_blocked", reason: "needs a decision", resolutions: ["resume"] }],
       }),
     ).toThrow();
 
     const stopped = Schema.decodeUnknownSync(SfStatusSnapshot)({
       ...baseSnapshot,
       stage: "needs_attention",
-      attention: {
-        kind: "agent_blocked",
-        reason: "needs a decision",
-        suspendedStage: "implementing",
-        resolutions: ["resume", "takeover"],
-      },
+      suspendedStage: "implementing",
+      attention: [{ kind: "agent_blocked", reason: "needs a decision", resolutions: ["resume", "takeover"] }],
     });
-    expect(stopped.attention?.resolutions).toEqual(["resume", "takeover"]);
+    expect(stopped.attention[0]?.resolutions).toEqual(["resume", "takeover"]);
+  });
+
+  test("accepts attention retained through cancellation", () => {
+    // A reason raised after a stop command is retained without reviving the run, so attention outlives
+    // `needs_attention` on the cancellation path and status has to be able to say so.
+    const cancelling = Schema.decodeUnknownSync(SfStatusSnapshot)({
+      ...baseSnapshot,
+      stage: "cancelling",
+      attention: [{ kind: "environment", reason: "the VM is unreachable", resolutions: ["cancel"] }],
+    });
+    expect(cancelling.attention).toHaveLength(1);
   });
 
   test("rejects an exit the attention kind does not permit", () => {
@@ -143,11 +183,20 @@ describe("sf local control contracts", () => {
       Schema.decodeUnknownSync(SfStatusSnapshot)({
         ...baseSnapshot,
         stage: "needs_attention",
-        attention: {
-          kind: "constraint_exhausted",
-          reason: "primary turn budget exhausted",
-          resolutions: ["resume"],
-        },
+        attention: [{ kind: "constraint_exhausted", reason: "turn budget exhausted", resolutions: ["resume"] }],
+      }),
+    ).toThrow();
+  });
+
+  test("rejects two outstanding reasons of the same kind", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        stage: "needs_attention",
+        attention: [
+          { kind: "operational", reason: "first", resolutions: ["resume"] },
+          { kind: "operational", reason: "second", resolutions: ["resume"] },
+        ],
       }),
     ).toThrow();
   });

@@ -114,7 +114,7 @@ describe("workflow core", () => {
 
     expect(state.stage).toBe("needs_attention");
     expect(state.suspendedStage).toBe("implementing");
-    expect(state.attention).toMatchObject({ kind: "agent_blocked", reason: "hook is missing" });
+    expect(state.attention).toMatchObject([{ kind: "agent_blocked", reason: "hook is missing" }]);
   });
 
   test("a permitted resolution restores the suspended stage", () => {
@@ -125,7 +125,7 @@ describe("workflow core", () => {
 
     expect(state.stage).toBe("implementing");
     expect(state.suspendedStage).toBeNull();
-    expect(state.attention).toBeNull();
+    expect(state.attention).toEqual([]);
   });
 
   test("a generic resume cannot clear an exhausted budget", () => {
@@ -147,7 +147,58 @@ describe("workflow core", () => {
 
     const continued = apply(state, 3, { type: "attention_cleared", resolution: "continue" });
     expect(continued.stage).toBe("implementing");
-    expect(continued.attention).toBeNull();
+    expect(continued.attention).toEqual([]);
+  });
+
+  test("a later reason cannot widen the exits of an outstanding stricter one", () => {
+    // An `operational` attention raised by startup reconciliation used to replace an outstanding
+    // `constraint_exhausted`. Because `operational` permits `resume`, the exhausted attempt could then be
+    // revived with no grant, which is exactly what ADR 0038 and ADR 0041 forbid.
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, {
+      type: "attention_required",
+      kind: "constraint_exhausted",
+      reason: "primary turn budget exhausted",
+    });
+    state = apply(state, 3, {
+      type: "attention_required",
+      kind: "operational",
+      reason: "Startup reconciliation found 1 uncertain operation.",
+    });
+    expect(state.attention.map((record) => record.kind)).toEqual(["constraint_exhausted", "operational"]);
+
+    // `resume` clears the operational reason it is permitted to clear, and only that one.
+    state = apply(state, 4, { type: "attention_cleared", resolution: "resume" });
+    expect(state.stage).toBe("needs_attention");
+    expect(state.attention.map((record) => record.kind)).toEqual(["constraint_exhausted"]);
+
+    // The budget still needs its own grant, and only then does the work resume.
+    state = apply(state, 5, { type: "attention_cleared", resolution: "continue" });
+    expect(state.stage).toBe("implementing");
+    expect(state.attention).toEqual([]);
+  });
+
+  test("a restatement of the same kind replaces rather than accumulating", () => {
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "attention_required", kind: "operational", reason: "first" });
+    state = apply(state, 3, { type: "attention_required", kind: "operational", reason: "second" });
+
+    expect(state.attention).toHaveLength(1);
+    expect(state.attention[0]).toMatchObject({ kind: "operational", reason: "second" });
+  });
+
+  test("a resolution no outstanding reason permits is refused", () => {
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "attention_required", kind: "environment", reason: "the VM is unreachable" });
+
+    const result = applyWorkflowEvent(state, message(3, { type: "attention_cleared", resolution: "resume" }));
+    expect(result).toMatchObject({
+      ok: false,
+      error: { type: "resolution_not_permitted", kind: "environment", resolution: "resume" },
+    });
   });
 
   test("clearing attention nobody raised is refused", () => {
@@ -164,12 +215,12 @@ describe("workflow core", () => {
     state = apply(state, 6, { type: "attention_required", kind: "environment", reason: "the VM is unreachable" });
 
     expect(state.stage).toBe("cancelling");
-    expect(state.attention).toMatchObject({ kind: "environment" });
+    expect(state.attention).toMatchObject([{ kind: "environment" }]);
 
     // Clearing it drops the reason without reviving the run.
     state = apply(state, 7, { type: "attention_cleared", resolution: "cancel" });
     expect(state.stage).toBe("cancelling");
-    expect(state.attention).toBeNull();
+    expect(state.attention).toEqual([]);
   });
 
   test("takeover changes the controller and leaves the stage alone", () => {

@@ -62,9 +62,13 @@ export type SfControlRequest = typeof SfControlRequest.Type;
  * One seat Swordfish knows about.
  *
  * A seat no longer carries a lease owner. Who is driving is one workflow-wide value (`controller`), and which
- * seat is being driven is `activeSeat`; a per-seat owner was a third representation of the same fact and could
+ * seat is being driven is `activeCowboy`; a per-seat owner was a third representation of the same fact and could
  * disagree with both ("One controller drives one active cowboy" (ADR 0037)). Inactive seats stay listed because
  * they remain inspectable provenance.
+ *
+ * A role repeats across seats, and that is the normal case rather than an anomaly: every jet and faye attempt
+ * gets a fresh seat, so a second review attempt legitimately produces two `jet` rows. Only the seat ID is
+ * unique.
  */
 export const SfSeatSnapshot = Schema.Struct({
   role: SeatRole,
@@ -72,11 +76,17 @@ export const SfSeatSnapshot = Schema.Struct({
 });
 export type SfSeatSnapshot = typeof SfSeatSnapshot.Type;
 
-/** Why the bounty stopped, and the exact commands that may clear it (`docs/capabilities/05-control-lease-and-takeover.md`). */
+/** The one seat being driven, identified by ID because the role alone no longer picks a single seat out. */
+export const SfActiveCowboy = Schema.Struct({
+  role: SeatRole,
+  seatId: SeatId,
+});
+export type SfActiveCowboy = typeof SfActiveCowboy.Type;
+
+/** One reason the bounty stopped, with the exact commands that clear it (`docs/capabilities/05-control-lease-and-takeover.md`). */
 export const SfAttentionSnapshot = Schema.Struct({
   kind: AttentionKind,
   reason: Schema.String,
-  suspendedStage: Schema.optionalKey(SwordfishStage),
   resolutions: Schema.Array(WorkflowResolution).pipe(Schema.check(Schema.isMinLength(1))),
 });
 export type SfAttentionSnapshot = typeof SfAttentionSnapshot.Type;
@@ -131,9 +141,10 @@ const SfStatusSnapshotBase = Schema.Struct({
   assignedBranch: GitRef,
   stage: SwordfishStage,
   controller: Controller,
-  attention: Schema.optionalKey(SfAttentionSnapshot),
+  suspendedStage: Schema.optionalKey(SwordfishStage),
+  attention: Schema.Array(SfAttentionSnapshot),
   effectiveSpecRevision: Schema.optionalKey(SpecRevision),
-  activeSeat: Schema.optionalKey(SeatRole),
+  activeCowboy: Schema.optionalKey(SfActiveCowboy),
   seats: Schema.Array(SfSeatSnapshot),
   candidateSha: Schema.optionalKey(GitSha),
   gates: Schema.Array(SfGateSnapshot),
@@ -146,24 +157,35 @@ const SfStatusSnapshotBase = Schema.Struct({
 export const SfStatusSnapshot = SfStatusSnapshotBase.pipe(
   Schema.check(
     Schema.makeFilter<typeof SfStatusSnapshotBase.Type>((snapshot) => {
-      const seatRoles = new Set(snapshot.seats.map((seat) => seat.role));
+      // Seat IDs are unique; roles deliberately are not. A second jet or faye attempt requires a fresh seat, so
+      // repeated roles are what a normal retry looks like in this list (ADR 0037).
       const seatIds = new Set(snapshot.seats.map((seat) => seat.seatId));
-      if (seatRoles.size !== snapshot.seats.length || seatIds.size !== snapshot.seats.length) {
-        return "Expected unique Swordfish seat roles and IDs";
+      if (seatIds.size !== snapshot.seats.length) {
+        return "Expected unique Swordfish seat IDs";
       }
-      if (snapshot.activeSeat !== undefined && !seatRoles.has(snapshot.activeSeat)) {
-        return "Expected the active seat to exist in the seat snapshot";
+      const activeCowboy = snapshot.activeCowboy;
+      if (
+        activeCowboy !== undefined &&
+        !snapshot.seats.some((seat) => seat.seatId === activeCowboy.seatId && seat.role === activeCowboy.role)
+      ) {
+        return "Expected the active cowboy to exist in the seat snapshot";
       }
-      // Attention and the `needs_attention` stage are two views of one fact, so a snapshot that carries only
-      // one of them would let the cockpit print a stopped bounty with no exits, or exits for a bounty that is
-      // still working.
-      if ((snapshot.stage === "needs_attention") !== (snapshot.attention !== undefined)) {
-        return "Expected attention detail exactly when the stage is needs_attention";
+      // A stopped bounty always states why, so the cockpit can print the commands that restart it. The converse
+      // is weaker than it looks: a reason raised after a stop command is retained through `cancelling` without
+      // reviving the run, so attention outlives `needs_attention` on the cancellation path.
+      if (snapshot.stage === "needs_attention" && snapshot.attention.length === 0) {
+        return "Expected the needs_attention stage to state at least one reason";
       }
-      const attention = snapshot.attention;
-      if (attention !== undefined) {
-        const permitted: ReadonlyArray<WorkflowResolution> = resolutionsForAttention[attention.kind];
-        if (attention.resolutions.some((resolution) => !permitted.includes(resolution))) {
+      if (snapshot.attention.length > 0 && snapshot.stage !== "needs_attention" && snapshot.stage !== "cancelling") {
+        return "Expected outstanding attention only while suspended or cancelling";
+      }
+      const kinds = new Set(snapshot.attention.map((record) => record.kind));
+      if (kinds.size !== snapshot.attention.length) {
+        return "Expected at most one outstanding reason per attention kind";
+      }
+      for (const record of snapshot.attention) {
+        const permitted: ReadonlyArray<WorkflowResolution> = resolutionsForAttention[record.kind];
+        if (record.resolutions.some((resolution) => !permitted.includes(resolution))) {
           return "Expected every offered resolution to be permitted by the attention kind";
         }
       }

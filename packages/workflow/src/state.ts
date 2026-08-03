@@ -13,7 +13,9 @@ import type {
   SpecRevision,
   SwordfishStage,
   Timestamp,
+  WorkflowResolution,
 } from "@bebop/contracts";
+import { resolutionsForAttention } from "@bebop/contracts";
 
 export interface GateState {
   readonly status: GateStatus;
@@ -35,7 +37,7 @@ export interface ActiveCowboy {
 }
 
 /**
- * Why the workflow stopped, and what the stage was when it did.
+ * One reason the workflow stopped.
  *
  * The permitted exits are not stored: they are a function of `kind` alone, so `resolutionsForAttention` derives
  * them on read and a record can never offer an exit its kind forbids.
@@ -44,6 +46,31 @@ export interface AttentionState {
   readonly kind: AttentionKind;
   readonly reason: string;
   readonly raisedAt: Timestamp;
+}
+
+/**
+ * Every outstanding reason, not just the newest.
+ *
+ * A single record let a later, laxer reason overwrite a stricter one: an `operational` attention raised during
+ * startup reconciliation would replace an outstanding `constraint_exhausted`, and because `operational` permits
+ * `resume`, the exhausted attempt could then be revived without the explicit grant
+ * ("Workflow actions have role-aware adapters" (ADR 0038)) requires. Reasons therefore accumulate, each is
+ * cleared by its own permitted resolution, and the workflow resumes only once none remain.
+ *
+ * At most one record per kind: a second reason of the same kind is a restatement, so it replaces rather than
+ * accumulating without bound.
+ */
+export type AttentionStates = ReadonlyArray<AttentionState>;
+
+/** The resolutions that clear at least one outstanding reason. */
+export function offeredResolutions(attention: AttentionStates): ReadonlyArray<WorkflowResolution> {
+  const offered: Array<WorkflowResolution> = [];
+  for (const record of attention) {
+    for (const resolution of resolutionsForAttention[record.kind]) {
+      if (!offered.includes(resolution)) offered.push(resolution);
+    }
+  }
+  return offered;
 }
 
 export interface ReadinessClaim {
@@ -78,7 +105,7 @@ export interface WorkflowCoreState {
   readonly gates: GateStates;
   readonly readinessClaim: ReadinessClaim | null;
   readonly previews: ReadonlyArray<PrivatePreviewAttachment>;
-  readonly attention: AttentionState | null;
+  readonly attention: AttentionStates;
 }
 
 /**
@@ -115,6 +142,6 @@ export function initialWorkflowCoreState(): Omit<WorkflowCoreState, "stage"> {
     gates: initialGates(),
     readinessClaim: null,
     previews: [],
-    attention: null,
+    attention: [],
   };
 }

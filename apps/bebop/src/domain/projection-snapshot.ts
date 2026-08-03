@@ -70,7 +70,7 @@ export const WorkflowSnapshot = Schema.Struct({
   gates: GateStatesSchema,
   readinessClaim: Schema.NullOr(Schema.Struct({ candidateSha: GitSha, specRevision: SpecRevision })),
   previews: Schema.Array(PrivatePreviewAttachment),
-  attention: Schema.NullOr(AttentionState),
+  attention: Schema.Array(AttentionState),
 });
 export type WorkflowSnapshot = typeof WorkflowSnapshot.Type;
 

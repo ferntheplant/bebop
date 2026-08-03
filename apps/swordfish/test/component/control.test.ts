@@ -231,6 +231,54 @@ describe("Swordfish local control", () => {
     }
   });
 
+  test("takeover clears the attention that advertised it as the exit", async () => {
+    harness = await startSwordfishHarness("takeover-clears-attention");
+    await harness.run(
+      Effect.flatMap(WorkflowService, (workflow) =>
+        Effect.gen(function* () {
+          yield* workflow.append(
+            Schema.decodeUnknownSync(SwordfishEvent)({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" }),
+          );
+          yield* workflow.append(
+            Schema.decodeUnknownSync(SwordfishEvent)({
+              type: "attention_required",
+              kind: "intrusion",
+              reason: "Unexpected shell execution in the ein seat.",
+            }),
+          );
+        }),
+      ),
+    );
+
+    const before = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.status));
+    expect(before.stage).toBe("needs_attention");
+    expect(before.attention[0]?.resolutions).toContain("takeover");
+
+    const fiber = harness.fork(runControlSocket);
+    try {
+      await waitForSocket(harness.config.controlSocketPath);
+      const socketPath = harness.config.controlSocketPath;
+      const response = await Effect.runPromise(
+        requestControl(
+          socketPath,
+          controlRequest("sf-cmd-takeover-attention", { type: "takeover", seat: "ein", force: false }),
+        ).pipe(Effect.scoped),
+      );
+
+      expect(response.type).toBe("success");
+      if (response.type === "success") {
+        // Status must stop advertising an exit that a second attempt would now reject for control already
+        // being held (`docs/capabilities/05-control-lease-and-takeover.md`).
+        const snapshot = response.result.snapshot;
+        expect(snapshot.controller).toBe("human");
+        expect(snapshot.attention).toEqual([]);
+        expect(snapshot.stage).toBe("interactive");
+      }
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
   test("drives takeover, handoff, extend, retry, and approve-config over the socket", async () => {
     harness = await startSwordfishHarness("commands");
     // There has to be an active cowboy to take over from ("One controller drives one active cowboy" (ADR 0037)).
@@ -258,7 +306,7 @@ describe("Swordfish local control", () => {
         // Takeover changes who is driving, not what is being driven.
         expect(takeover.result.snapshot.stage).toBe("interactive");
         expect(takeover.result.snapshot.controller).toBe("human");
-        expect(takeover.result.snapshot.activeSeat).toBe("ein");
+        expect(takeover.result.snapshot.activeCowboy).toMatchObject({ role: "ein", seatId: "seat-ein" });
       }
 
       const handoff = await send("sf-cmd-handoff", { type: "handoff" });

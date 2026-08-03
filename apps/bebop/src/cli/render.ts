@@ -54,9 +54,14 @@ export function printBounty(bounty: BountyDetail): string {
     `spec        ${bounty.specRevision === undefined ? "-" : `revision ${bounty.specRevision}`}`,
     `updated     ${instant(bounty.updatedAt)}`,
   ];
-  if (bounty.attention !== undefined) {
-    lines.push(`attention   ${bounty.attention.kind}: ${bounty.attention.reason}`);
-    lines.push(`resolve     ${bounty.attention.resolutions.join(", ")}`);
+  // Every outstanding reason is printed with its own exits: a `resume` that clears one of them may leave another
+  // standing, so collapsing them into one line would misreport what the next command actually does.
+  for (const attention of bounty.attention) {
+    lines.push(`attention   ${attention.kind}: ${attention.reason}`);
+    lines.push(`resolve     ${attention.resolutions.join(", ")}`);
+  }
+  if (bounty.suspendedStage !== undefined) {
+    lines.push(`suspended   ${bounty.suspendedStage}`);
   }
   if (bounty.readinessClaimSha !== undefined) {
     // Named a claim, not a state, because "Readiness is a claim, not authority" (ADR 0003) makes readiness something Bebop

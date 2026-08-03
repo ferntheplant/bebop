@@ -83,7 +83,13 @@ export interface CreatedBounty {
 /** The list view: identity, status, and freshness, without attachment or attention detail. */
 export const bountySummary = Effect.fnUntraced(function* (bounty: BountyRecord) {
   const detail = yield* bountyDetail(bounty);
-  const { attachment: _attachment, attention: _attention, readinessClaimSha: _sha, ...summary } = detail;
+  const {
+    attachment: _attachment,
+    attention: _attention,
+    suspendedStage: _suspendedStage,
+    readinessClaimSha: _sha,
+    ...summary
+  } = detail;
   return summary satisfies BountySummary;
 });
 
@@ -129,16 +135,12 @@ export const bountyDetail = Effect.fnUntraced(function* (bounty: BountyRecord) {
     ...summary,
     ...(attachmentSnapshot === undefined ? {} : { attachment: attachmentSnapshot }),
     ...(projection?.readinessClaim == null ? {} : { readinessClaimSha: projection.readinessClaim.candidateSha }),
-    ...(projection?.attention == null
-      ? {}
-      : {
-          attention: {
-            kind: projection.attention.kind,
-            reason: projection.attention.reason,
-            ...(projection.suspendedStage === null ? {} : { suspendedStage: projection.suspendedStage }),
-            resolutions: resolutionsForAttention[projection.attention.kind],
-          },
-        }),
+    ...(projection?.suspendedStage == null ? {} : { suspendedStage: projection.suspendedStage }),
+    attention: (projection?.attention ?? []).map((record) => ({
+      kind: record.kind,
+      reason: record.reason,
+      resolutions: resolutionsForAttention[record.kind],
+    })),
   };
   return detail;
 });

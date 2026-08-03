@@ -91,6 +91,11 @@ A human claiming the control lease on a seat. Always recorded.
 **handback**:
 A human releasing the control lease back to Swordfish.
 
+**quiescent handoff**:
+A control transfer in which the previous actor is no longer executing before the next actor receives access. It
+does not promise rollback, a clean worktree, or atomic completion of an interrupted tool.
+_Avoid_: safe point (implies consistency that cannot be proved).
+
 **intrusion**:
 A message or tool execution on a leased seat that Swordfish did not originate. Recorded and escalated rather than silently absorbed.
 

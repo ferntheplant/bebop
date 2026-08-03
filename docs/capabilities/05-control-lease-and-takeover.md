@@ -8,12 +8,16 @@ corrupts the bounty's state by accident.
 
 - **Observation always, input never by accident.** You can read any seat pane at any time. A seat whose lease
   Swordfish holds will not accept your keystrokes, and a prompt reaching it by any other route is rejected.
-- **Takeover is explicit and recorded.** `sf takeover <seat>` interrupts the seat at a safe point, transfers the
-  lease, enables input, and records that it happened. `--force` interrupts immediately.
+- **Takeover is explicit and recorded.** `sf takeover <seat>` claims the lease immediately, then enables input
+  only after a quiescent handoff. Swordfish asks OpenCode to abort and automatically kills and restarts the seat
+  after a configurable grace period; `--force` skips that grace period.
+- **Progress is visible.** While input remains disabled, status names the seat and resumable stage, shows the
+  graceful or forced path and its deadline, and says whether human access is ready or degraded.
 - **A second client if you want one.** Takeover can issue the seat's credential so you can attach a wider
   terminal or a separate SSH session. `sf status` never prints it.
-- **Handback is explicit too.** Swordfish never infers that closing SSH means autonomous work should resume — a
-  disconnected user leaves the bounty `human_controlled` until you say otherwise.
+- **Handback is explicit too.** Swordfish never infers that closing SSH means autonomous work should resume. You
+  declare whether the effective spec is unchanged or needs revision; unchanged handback reconciles and starts a
+  fresh operation, while revision keeps human control until a new spec is confirmed.
 - **Your access ends when control does.** Every release revokes any credential issued during that episode, so a
   client left attached in another terminal stops working the moment control returns.
 - **Steering is honest in the record.** Human-steered review and QA results stay valid but are marked
@@ -43,9 +47,10 @@ prompt by any other route is rejected by the plugin), **31** (the user can take 
 - [Seat credentials die with the lease (ADR 0010)](../adr/0010-no-human-held-seat-credential-survives-a-control-release.md)
   — without rotation, the first takeover makes every later lease advisory.
 - [The VM is the sandbox (ADR 0012)](../adr/0012-the-vm-is-the-sandbox.md)
+- [Control passes through a quiescent handoff (ADR 0036)](../adr/0036-control-passes-through-a-quiescent-handoff.md)
+  — takeover guarantees that the prior actor stopped, not that its partial work was rolled back.
 
 ## Still open
 
-- [What is a safe point to interrupt a seat, and what does takeover do at each stage?](../../.scratch/bebop-mvp/issues/06-what-is-a-safe-point-to-interrupt-a-seat.md)
 - [What is the `sf` command surface, in use?](../../.scratch/bebop-mvp/issues/07-the-sf-command-surface.md)
 - [What are the default constraints, and what happens when one is exhausted?](../../.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md)

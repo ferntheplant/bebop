@@ -91,6 +91,11 @@ prototypes rather than tickets.
   — OpenCode is pinned inside an immutable Swordfish release rather than overridden independently. Every upgrade
   passes the hermetic contract suite, the candidate-image suite, and an explicit direct-provider smoke before
   merge makes that runtime manifest the default for new bounties.
+- [Control passes through a quiescent handoff (ADR 0036)](../../docs/adr/0036-control-passes-through-a-quiescent-handoff.md),
+  from [What is a safe point to interrupt a seat, and what does takeover do at each stage?](./issues/06-what-is-a-safe-point-to-interrupt-a-seat.md)
+  — takeover claims the lease immediately but withholds human access until OpenCode aborts or the selected seat
+  is forcibly restarted. It guarantees no concurrent actor, not rollback; handback reconciles and starts fresh
+  work rather than resuming an interrupted turn.
 
 ## Not yet specified
 

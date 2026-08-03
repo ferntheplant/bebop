@@ -63,6 +63,9 @@ previous results), and **28** (a QA failure returns to ein and restarts the full
 - [CI gates cowboy review (ADR 0040)](../adr/0040-ci-gates-cowboy-review.md) — deterministic and external checks
   reject a candidate before model turns are spent on independent review.
 - [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
+- [Constraint exhaustion is computed, not announced (ADR 0042)](../adr/0042-constraint-exhaustion-is-computed-not-announced.md)
+  — the reducer decides whether an attempt is over budget, so a daemon whose clock disagrees fails loudly rather
+  than strangling healthy work.
 
 ## Still open
 

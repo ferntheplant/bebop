@@ -74,8 +74,23 @@ status print the exact command that resolves it, as
 
 **Next PR — the constraint ledger (ADR 0041).** Attempts per scope, the turn/wall-clock watchdog pair, human
 grants, and the validated-candidate allowance, with `continue`/`rerun`/`resume` acting on them. Split out
-because attempts only become observable once a cowboy seat actually runs, and because the orthogonal model is
-what an attempt suspension has to attach to.
+because the orthogonal model is what an attempt suspension has to attach to. Its shape is settled by
+[Constraint exhaustion is computed, not announced (ADR 0042)](../../docs/adr/0042-constraint-exhaustion-is-computed-not-announced.md):
+
+- Contracts: `ConstraintProfile` takes the shape ticket 09 settled — `validatedCandidatesPerSpec`, and a
+  `building`/`review`/`qa` scope each carrying its attempt allowance and its turn and wall-clock watchdogs.
+  `ConstraintKey`, `constraintKeys`, `ExtendConstraintCommand`, and `RetryStageCommand` are retired; `continue`,
+  `rerun <target>`, and `resume` replace `extend` and `retry`.
+- Events: `attempt_started`, `turn_completed`, and `attempt_ended` are the only additions. Recovery grants ride
+  on `attention_cleared` as resolutions, so `rerun` gains an optional target rather than an event of its own.
+- Core: the reducer accrues turns and wall clock, owns the exhaustion predicate, and rejects a
+  `constraint_exhausted` claim its own accounting does not support. A validated-candidate slot is consumed where
+  `pr_ci` passes, which is already a branch the core has.
+- Swordfish: evaluate the ledger in the existing heartbeat loop (`apps/swordfish/src/protocol/client.ts`) rather
+  than adding a timer, and replace the `constraint_ledger` table, which currently encodes the retired per-key
+  model and its incorrect `limit_value + 1` extension.
+- Bebop: cross-check elapsed time in the heartbeat handler with a grace margin, reporting a daemon defect rather
+  than an exhaustion.
 
 **Not in scope.** The `sf` command surface and its operator credential, plugin intrusion detection, tmux cockpit
 layout, and the runtime manifest. Those are separate efforts that consume this model.

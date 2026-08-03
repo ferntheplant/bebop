@@ -115,6 +115,12 @@ prototypes rather than tickets.
   — a base-revision repository profile bounds autonomous attempts and each spec's CI-passed candidates. CI now
   precedes jet; exhaustion preserves a final attempt for `continue`, while `rerun` explicitly starts another.
   Human recoveries are unlimited but authenticated and recorded.
+- [Constraint exhaustion is computed, not announced (ADR 0042)](../../docs/adr/0042-constraint-exhaustion-is-computed-not-announced.md),
+  from building ADRs 0036–0041 rather than from a ticket — the pure reducer accrues turns and attempt wall clock
+  from event timestamps, owns the exhaustion predicate, and rejects a `constraint_exhausted` claim its own
+  accounting does not support. Swordfish's existing heartbeat loop is the wake-up for the silent case, so the
+  ledger adds no timer; Bebop re-verifies elapsed time as a defect signal about the daemon rather than as an
+  exhaustion of its own.
 
 ## Not yet specified
 

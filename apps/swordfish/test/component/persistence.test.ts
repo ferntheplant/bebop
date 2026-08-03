@@ -154,7 +154,7 @@ describe("Swordfish SQLite authority", () => {
 
   test("rolls back a workflow append when the outbox insert aborts, then retries it once", async () => {
     harness = await startSwordfishHarness("append-atomicity");
-    const event = decodeEvent({ type: "lease_changed", seat: "ein", seatId: "seat-ein", owner: "swordfish" });
+    const event = decodeEvent({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
     const inspect = Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const store = yield* SwordfishStore;
@@ -164,7 +164,7 @@ describe("Swordfish SQLite authority", () => {
       const outbox = yield* sql`
         SELECT count(*) AS count, coalesce(max(sequence), 0) AS max_sequence FROM bebop_outbox
       `;
-      const seats = yield* sql`SELECT seat_id, lease_owner FROM seats WHERE role = 'ein'`;
+      const seats = yield* sql`SELECT seat_id FROM seats WHERE role = 'ein'`;
       const stateRows = yield* sql`SELECT state_revision, snapshot FROM workflow_state WHERE singleton = 1`;
       const workflow = yield* store.loadWorkflow;
       return {
@@ -172,7 +172,7 @@ describe("Swordfish SQLite authority", () => {
         eventMaxSequence: events[0]?.["max_sequence"],
         outboxCount: outbox[0]?.["count"],
         outboxMaxSequence: outbox[0]?.["max_sequence"],
-        seats: seats.map((row) => ({ seatId: row["seat_id"], owner: row["lease_owner"] })),
+        seats: seats.map((row) => ({ seatId: row["seat_id"] })),
         stateRevision: stateRows[0]?.["state_revision"],
         snapshot: stateRows[0]?.["snapshot"],
         lastSequence: workflow.state.lastAppliedSequence,
@@ -210,7 +210,7 @@ describe("Swordfish SQLite authority", () => {
       outboxMaxSequence: Number(baseline.outboxMaxSequence) + 1,
       stateRevision: Number(baseline.stateRevision) + 1,
       lastSequence: Number(baseline.lastSequence) + 1,
-      seats: [{ seatId: "seat-ein", owner: "swordfish" }],
+      seats: [{ seatId: "seat-ein" }],
     });
     expect(afterRetry.snapshot).not.toBe(baseline.snapshot);
   });
@@ -219,7 +219,7 @@ describe("Swordfish SQLite authority", () => {
     harness = await startSwordfishHarness("command-atomicity");
     await harness.run(
       Effect.flatMap(WorkflowService, (workflow) =>
-        workflow.append(decodeEvent({ type: "lease_changed", seat: "ein", seatId: "seat-ein", owner: "swordfish" })),
+        workflow.append(decodeEvent({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" })),
       ),
     );
     const command = takeoverCommand("cmd-takeover-atomicity");
@@ -231,7 +231,7 @@ describe("Swordfish SQLite authority", () => {
       `;
       const outbox = yield* sql`SELECT count(*) AS count FROM bebop_outbox`;
       const stateRows = yield* sql`SELECT state_revision, snapshot FROM workflow_state WHERE singleton = 1`;
-      const seats = yield* sql`SELECT seat_id, lease_owner, updated_at FROM seats WHERE role = 'ein'`;
+      const seats = yield* sql`SELECT seat_id, updated_at FROM seats WHERE role = 'ein'`;
       const constraints = yield* sql`
         SELECT consumed, limit_value, extensions_granted, updated_at
         FROM constraint_ledger WHERE constraint_key = 'primary_turns'
@@ -250,7 +250,6 @@ describe("Swordfish SQLite authority", () => {
         snapshot: stateRows[0]?.["snapshot"],
         seats: seats.map((row) => ({
           seatId: row["seat_id"],
-          owner: row["lease_owner"],
           updatedAt: row["updated_at"],
         })),
         constraints: constraints.map((row) => ({
@@ -264,7 +263,7 @@ describe("Swordfish SQLite authority", () => {
         lastAppliedCommandId: metadata[0]?.["last_applied_command_id"],
         lastSequence: workflow.state.lastAppliedSequence,
         stage: workflow.state.stage,
-        leaseOwner: workflow.state.leases.ein?.owner,
+        controller: workflow.state.controller,
       };
     });
     const baseline = await harness.run(inspect);
@@ -292,19 +291,22 @@ describe("Swordfish SQLite authority", () => {
     const result = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.applyCommand(command)));
     const afterRetry = await harness.run(inspect);
     expect(result.status).toBe("completed");
+    // Takeover is one event now, not two. It used to write a `stage_changed` to `human_controlled` and then a
+    // `lease_changed`; control is a single orthogonal fact, so it is a single `control_changed` (ADR 0037).
     expect(afterRetry).toMatchObject({
-      eventCount: Number(baseline.eventCount) + 2,
-      eventMaxSequence: Number(baseline.eventMaxSequence) + 2,
-      outboxCount: Number(baseline.outboxCount) + 2,
-      stateRevision: Number(baseline.stateRevision) + 2,
+      eventCount: Number(baseline.eventCount) + 1,
+      eventMaxSequence: Number(baseline.eventMaxSequence) + 1,
+      outboxCount: Number(baseline.outboxCount) + 1,
+      stateRevision: Number(baseline.stateRevision) + 1,
       commandCount: Number(baseline.commandCount) + 1,
       lastAppliedCommandId: command.commandId,
-      lastSequence: Number(baseline.lastSequence) + 2,
-      stage: "human_controlled",
-      leaseOwner: "human",
+      lastSequence: Number(baseline.lastSequence) + 1,
+      // Takeover leaves the stage where it was and moves control instead (ADR 0037).
+      stage: "interactive",
+      controller: "human",
     });
     expect(afterRetry.snapshot).not.toBe(baseline.snapshot);
-    expect(afterRetry.seats).toEqual([{ seatId: "seat-ein", owner: "human", updatedAt: expect.any(String) }]);
+    expect(afterRetry.seats).toEqual([{ seatId: "seat-ein", updatedAt: expect.any(String) }]);
     expect(afterRetry.constraints).toEqual(baseline.constraints);
     expect(afterRetry.commandResults).toHaveLength(1);
     expect(JSON.parse(String(afterRetry.commandResults[0]))).toMatchObject({
@@ -458,9 +460,7 @@ describe("Swordfish SQLite authority", () => {
         const workflow = yield* WorkflowService;
         const store = yield* SwordfishStore;
         const identity = yield* SwordfishIdentity;
-        yield* workflow.append(
-          decodeEvent({ type: "lease_changed", seat: "ein", seatId: "seat-ein", owner: "swordfish" }),
-        );
+        yield* workflow.append(decodeEvent({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" }));
         yield* workflow.append(
           decodeEvent({
             type: "effective_spec_set",
@@ -553,7 +553,7 @@ describe("Swordfish SQLite authority", () => {
       stage: "revision",
       effectiveSpec: { revision: 1 },
       candidate: { commitSha: candidateSha, specRevision: 1 },
-      leases: { ein: { seatId: "seat-ein", owner: "swordfish" } },
+      activeCowboy: { role: "ein", seatId: "seat-ein" },
       gates: { local_validation: { status: "failed" } },
     });
     expect(restored.status.constraints.find((entry) => entry.constraint === "primary_turns")).toMatchObject({

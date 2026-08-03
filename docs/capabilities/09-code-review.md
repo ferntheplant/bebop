@@ -25,8 +25,9 @@ isolation and restricted tooling, not from using a different vendor's model.
 ## Where it stands
 
 **Designed.** Jet's seat, the review prompt, and the findings pipeline do not exist. External CI observation
-depends on GitHub, which bebop does not have yet. The current workflow core still accepts CI and review
-completion in either order and must be changed before this path is reachable.
+depends on GitHub, which bebop does not have yet. The workflow core now enforces the ordering this path needs:
+the review gate does not open until `pr_ci` has passed, and a review result for a candidate whose CI has not
+passed is rejected rather than reordered.
 
 ## Acceptance criteria
 

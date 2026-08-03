@@ -10,7 +10,9 @@ from then on it has an identity that outlives any computer it runs on.
 - **List and inspect** every bounty, with a compact status — `provisioning`, `interactive`, `autonomous`,
   `human_controlled`, `needs_attention`, `ready`, `cancelled`, `merging`, `done`, `failed`, `stopped` — and the
   detailed Swordfish stage alongside it. `cancelled` means the inner loop ended while the VM remains available;
-  `stopped` means the VM lifecycle stopped.
+  `stopped` means the VM lifecycle stopped. `human_controlled` is derived from the workflow controller rather
+  than from a stage ([One controller drives one active cowboy (ADR 0037)](../adr/0037-one-controller-drives-one-active-cowboy.md)),
+  so the stage keeps saying what work is under way while a human steers it.
 - **Follow one live** over SSE with cursor replay, so a client that reconnects misses nothing and never has to
   poll.
 - **Stop** a bounty that is going nowhere, or **destroy** it outright.

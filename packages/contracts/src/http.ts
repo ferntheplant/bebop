@@ -29,7 +29,7 @@ import {
   SpecRevision,
   Timestamp,
 } from "./scalars.ts";
-import { BountyStatus, SwordfishStage } from "./workflow.ts";
+import { AttentionKind, BountyStatus, Controller, SwordfishStage, WorkflowResolution } from "./workflow.ts";
 
 const Message = Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isMaxLength(4_000), Schema.isTrimmed()));
 const ContextCapability = Schema.String.pipe(
@@ -58,6 +58,10 @@ export const BountySummary = Schema.Struct({
   assignedBranch: GitRef,
   status: BountyStatus,
   swordfishStage: Schema.optionalKey(SwordfishStage),
+  // Reported alongside stage rather than folded into it: `status` already collapses the two into one word, and a
+  // client that wants to know whether a human is driving `qa_running` cannot recover that from the collapse
+  // ("One controller drives one active cowboy" (ADR 0037)).
+  controller: Controller,
   swordfishFreshness: SwordfishFreshnessStatus,
   candidateSha: Schema.optionalKey(GitSha),
   specRevision: Schema.optionalKey(SpecRevision),
@@ -66,11 +70,26 @@ export const BountySummary = Schema.Struct({
 });
 export type BountySummary = typeof BountySummary.Type;
 
+/**
+ * Why a bounty stopped, and what will restart it.
+ *
+ * `resolutions` is served rather than left for the client to look up, so that a thin CLI can print the exact
+ * commands that apply without carrying its own copy of the attention-kind table
+ * (`docs/capabilities/05-control-lease-and-takeover.md`).
+ */
+export const AttentionDetail = Schema.Struct({
+  kind: AttentionKind,
+  reason: Message,
+  suspendedStage: Schema.optionalKey(SwordfishStage),
+  resolutions: Schema.Array(WorkflowResolution),
+});
+export type AttentionDetail = typeof AttentionDetail.Type;
+
 export const BountyDetail = Schema.Struct({
   ...BountySummary.fields,
   attachment: Schema.optionalKey(AttachmentSnapshot),
   readinessClaimSha: Schema.optionalKey(GitSha),
-  attentionReason: Schema.optionalKey(Message),
+  attention: Schema.optionalKey(AttentionDetail),
 });
 export type BountyDetail = typeof BountyDetail.Type;
 

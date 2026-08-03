@@ -1,12 +1,14 @@
 import {
+  AttentionKind,
   Candidate,
+  Controller,
   EffectiveSpec,
   EventSequence,
   GitSha,
   gateStatuses,
-  LeaseOwner,
   PrivatePreviewAttachment,
   SeatId,
+  SeatRole,
   SpecRevision,
   SwordfishStage,
   Timestamp,
@@ -21,7 +23,8 @@ const RetainedFingerprint = Schema.Struct({
   sequence: EventSequence,
   fingerprint: Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{32}$/))),
 });
-const SeatLeaseState = Schema.Struct({ seatId: SeatId, owner: LeaseOwner });
+const ActiveCowboy = Schema.Struct({ role: SeatRole, seatId: SeatId });
+const AttentionState = Schema.Struct({ kind: AttentionKind, reason: Schema.String, raisedAt: Timestamp });
 
 export const SwordfishWorkflowSnapshot = Schema.Struct({
   lastAppliedSequence: EventSequence,
@@ -29,6 +32,8 @@ export const SwordfishWorkflowSnapshot = Schema.Struct({
   fingerprintFloor: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))),
   stage: SwordfishStage,
   suspendedStage: Schema.NullOr(SwordfishStage),
+  controller: Controller,
+  activeCowboy: Schema.NullOr(ActiveCowboy),
   effectiveSpec: Schema.NullOr(EffectiveSpec),
   candidate: Schema.NullOr(Candidate),
   gates: Schema.Struct({
@@ -39,13 +44,8 @@ export const SwordfishWorkflowSnapshot = Schema.Struct({
     evidence_upload: GateState,
   }),
   readinessClaim: Schema.NullOr(Schema.Struct({ candidateSha: GitSha, specRevision: SpecRevision })),
-  leases: Schema.Struct({
-    ein: Schema.optionalKey(SeatLeaseState),
-    jet: Schema.optionalKey(SeatLeaseState),
-    faye: Schema.optionalKey(SeatLeaseState),
-  }),
   previews: Schema.Array(PrivatePreviewAttachment),
-  attentionReason: Schema.NullOr(Schema.String),
+  attention: Schema.NullOr(AttentionState),
 });
 export type SwordfishWorkflowSnapshot = typeof SwordfishWorkflowSnapshot.Type;
 
@@ -59,13 +59,14 @@ export function toWorkflowSnapshot(state: SwordfishWorkflowState): SwordfishWork
     fingerprintFloor: state.fingerprintFloor,
     stage: state.stage,
     suspendedStage: state.suspendedStage,
+    controller: state.controller,
+    activeCowboy: state.activeCowboy,
     effectiveSpec: state.effectiveSpec,
     candidate: state.candidate,
     gates: state.gates,
     readinessClaim: state.readinessClaim,
-    leases: state.leases,
     previews: state.previews,
-    attentionReason: state.attentionReason,
+    attention: state.attention,
   };
 }
 
@@ -79,13 +80,14 @@ export function fromWorkflowSnapshot(snapshot: SwordfishWorkflowSnapshot): Sword
     fingerprintFloor: snapshot.fingerprintFloor,
     stage: snapshot.stage,
     suspendedStage: snapshot.suspendedStage,
+    controller: snapshot.controller,
+    activeCowboy: snapshot.activeCowboy,
     effectiveSpec: snapshot.effectiveSpec,
     candidate: snapshot.candidate,
     gates: snapshot.gates as GateStates,
     readinessClaim: snapshot.readinessClaim,
-    leases: snapshot.leases,
     previews: snapshot.previews,
-    attentionReason: snapshot.attentionReason,
+    attention: snapshot.attention,
   };
 }
 

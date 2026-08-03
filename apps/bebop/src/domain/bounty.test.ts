@@ -27,7 +27,7 @@ describe("bounty status derivation", () => {
       ["failed", "implementing", "failed"],
     ];
     for (const [lifecycle, stage, expected] of cases) {
-      expect(deriveBountyStatus(lifecycle, stage, "connected")).toBe(expected);
+      expect(deriveBountyStatus(lifecycle, stage, "swordfish", "connected")).toBe(expected);
     }
   });
 
@@ -35,7 +35,7 @@ describe("bounty status derivation", () => {
     // Provisioning is not finished until its Swordfish connects
     // (`docs/capabilities/02-provisioning-and-attachment.md`), so a VM with no supervisor on
     // it is not yet something a user can work with.
-    expect(deriveBountyStatus("active", null, "never_connected")).toBe("provisioning");
+    expect(deriveBountyStatus("active", null, "swordfish", "never_connected")).toBe("provisioning");
   });
 
   test("an active bounty reports the stage its Swordfish is in", () => {
@@ -50,24 +50,47 @@ describe("bounty status derivation", () => {
       ["qa_running", "autonomous"],
       ["evidence_upload", "autonomous"],
       ["revision", "autonomous"],
-      ["human_controlled", "human_controlled"],
       ["needs_attention", "needs_attention"],
-      ["blocked", "needs_attention"],
       ["ready", "ready"],
       ["cancelling", "stopped"],
       ["cancelled", "stopped"],
       ["failed", "failed"],
     ];
     for (const [stage, expected] of cases) {
-      expect(deriveBountyStatus("active", stage, "connected")).toBe(expected);
+      expect(deriveBountyStatus("active", stage, "swordfish", "connected")).toBe(expected);
     }
+  });
+
+  test("human control is derived from the controller, not from a stage", () => {
+    // `human_controlled` left the stage enum in "One controller drives one active cowboy" (ADR 0037). Swordfish
+    // reports the work it is doing; whether a human is driving it is the orthogonal `controller`, and this
+    // function is the only place the two are collapsed into one word for a client.
+    for (const stage of ["implementing", "code_review", "qa_running", "ready"] as const) {
+      expect(deriveBountyStatus("active", stage, "human", "connected")).toBe("human_controlled");
+      expect(deriveBountyStatus("active", stage, "swordfish", "connected")).not.toBe("human_controlled");
+    }
+  });
+
+  test("a human already driving outranks the attention that called them", () => {
+    // Attention means "a human must act". Once one is acting, saying so is more useful than repeating the call.
+    expect(deriveBountyStatus("active", "needs_attention", "swordfish", "connected")).toBe("needs_attention");
+    expect(deriveBountyStatus("active", "needs_attention", "human", "connected")).toBe("human_controlled");
+  });
+
+  test("human control does not override Bebop's own terminal opinions", () => {
+    // Bebop owns lifecycle ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)); a stopped bounty is
+    // stopped no matter who last held control of its loop.
+    expect(deriveBountyStatus("stopped", "implementing", "human", "connected")).toBe("stopped");
+    expect(deriveBountyStatus("done", "ready", "human", "connected")).toBe("done");
+    expect(deriveBountyStatus("active", "cancelled", "human", "connected")).toBe("stopped");
+    expect(deriveBountyStatus("active", "failed", "human", "connected")).toBe("failed");
   });
 
   test("does not present stale or disconnected work as active or ready", () => {
     for (const freshness of ["stale", "disconnected"] as const) {
-      expect(deriveBountyStatus("active", "implementing", freshness)).toBe("needs_attention");
-      expect(deriveBountyStatus("active", "ready", freshness)).toBe("needs_attention");
-      expect(deriveBountyStatus("active", "cancelled", freshness)).toBe("stopped");
+      expect(deriveBountyStatus("active", "implementing", "swordfish", freshness)).toBe("needs_attention");
+      expect(deriveBountyStatus("active", "ready", "swordfish", freshness)).toBe("needs_attention");
+      expect(deriveBountyStatus("active", "cancelled", "swordfish", freshness)).toBe("stopped");
     }
   });
 });

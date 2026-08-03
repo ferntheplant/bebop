@@ -149,7 +149,7 @@ describe("Bebop Swordfish projection reducer", () => {
     const collision = reduceBebopSwordfishProjection(state, {
       type: "event_received",
       connectionId,
-      message: eventMessage(2, { type: "attention_required", reason: "conflict" }),
+      message: eventMessage(2, { type: "attention_required", kind: "operational", reason: "conflict" }),
       observedAt,
     });
     expect(collision).toMatchObject({ ok: false, error: { type: "sequence_collision", sequence: 2 } });
@@ -157,7 +157,7 @@ describe("Bebop Swordfish projection reducer", () => {
     const gap = reduceBebopSwordfishProjection(state, {
       type: "event_received",
       connectionId,
-      message: eventMessage(4, { type: "attention_required", reason: "gap" }),
+      message: eventMessage(4, { type: "attention_required", kind: "operational", reason: "gap" }),
       observedAt,
     });
     expect(gap).toMatchObject({ ok: false, error: { type: "sequence_gap", expected: 3, received: 4 } });
@@ -376,29 +376,33 @@ describe("Bebop Swordfish projection reducer", () => {
       outcome: "passed",
     });
     state = apply(state, 4, { type: "stage_changed", stage: "pushed_candidate" });
-    state = apply(state, 5, { type: "stage_changed", stage: "human_controlled" });
-    state = apply(state, 6, {
+    state = apply(state, 5, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+    state = apply(state, 6, { type: "control_changed", controller: "human", reason: "takeover" });
+    state = apply(state, 7, {
       type: "candidate_invalidated",
       candidateSha,
       specRevision: 1,
       reason: "new_commit",
     });
-    expect(state.stage).toBe("human_controlled");
-    expect(state.suspendedStage).toBe("revision");
+    // Bebop's projection reaches the same conclusion as Swordfish: the work moved, control did not.
+    expect(state.stage).toBe("revision");
+    expect(state.suspendedStage).toBeNull();
+    expect(state.controller).toBe("human");
   });
 
   test("resumes the underlying projected stage after repeated attention events", () => {
     let state = initialProjection();
     state = apply(state, 1, { type: "effective_spec_set", spec });
-    state = apply(state, 2, { type: "attention_required", reason: "Inspect the repository." });
+    state = apply(state, 2, { type: "attention_required", kind: "operational", reason: "Inspect the repository." });
     expect(state).toMatchObject({ stage: "needs_attention", suspendedStage: "implementing" });
-    state = apply(state, 3, { type: "attention_required", reason: "Still blocked." });
+    state = apply(state, 3, { type: "attention_required", kind: "operational", reason: "Still blocked." });
     expect(state).toMatchObject({ stage: "needs_attention", suspendedStage: "implementing" });
-    state = apply(state, 4, { type: "stage_changed", stage: "implementing" });
-    expect(state).toMatchObject({ stage: "implementing", suspendedStage: null });
+    expect(state.attention).toMatchObject({ reason: "Still blocked." });
+    state = apply(state, 4, { type: "attention_cleared", resolution: "resume" });
+    expect(state).toMatchObject({ stage: "implementing", suspendedStage: null, attention: null });
   });
 
-  test("preserves the projected pre-takeover stage when attention arrives", () => {
+  test("projects attention during human control without releasing control", () => {
     let state = initialProjection();
     state = apply(state, 1, { type: "effective_spec_set", spec });
     state = apply(state, 2, { type: "candidate_submitted", candidate });
@@ -410,12 +414,15 @@ describe("Bebop Swordfish projection reducer", () => {
       outcome: "passed",
     });
     state = apply(state, 4, { type: "stage_changed", stage: "pushed_candidate" });
-    state = apply(state, 5, { type: "stage_changed", stage: "human_controlled" });
-    state = apply(state, 6, { type: "attention_required", reason: "Inspect the running gate." });
-    expect(state).toMatchObject({ stage: "human_controlled", suspendedStage: "pushed_candidate" });
-    state = apply(state, 7, { type: "stage_changed", stage: "needs_attention" });
-    expect(state).toMatchObject({ stage: "needs_attention", suspendedStage: "pushed_candidate" });
-    state = apply(state, 8, { type: "stage_changed", stage: "pushed_candidate" });
-    expect(state).toMatchObject({ stage: "pushed_candidate", suspendedStage: null });
+    state = apply(state, 5, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+    state = apply(state, 6, { type: "control_changed", controller: "human", reason: "takeover" });
+    state = apply(state, 7, { type: "attention_required", kind: "operational", reason: "Inspect the running gate." });
+    expect(state).toMatchObject({
+      stage: "needs_attention",
+      suspendedStage: "pushed_candidate",
+      controller: "human",
+    });
+    state = apply(state, 8, { type: "attention_cleared", resolution: "resume" });
+    expect(state).toMatchObject({ stage: "pushed_candidate", suspendedStage: null, controller: "human" });
   });
 });

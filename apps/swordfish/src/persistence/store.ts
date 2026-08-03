@@ -19,6 +19,7 @@ import {
   EvidenceBundleManifest as EvidenceBundleManifestSchema,
   EventMessage as EventMessageSchema,
   PrivatePreviewAttachments,
+  resolutionsForAttention,
   SfStatusSnapshot as SfStatusSnapshotSchema,
   SwordfishEvent as SwordfishEventSchema,
 } from "@bebop/contracts";
@@ -246,12 +247,11 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
         const at = timestampToIso(message.occurredAt);
         const event = message.event;
         switch (event.type) {
-          case "lease_changed":
+          case "cowboy_activated":
             return sql`
-            INSERT INTO seats (role, seat_id, lease_owner, updated_at)
-            VALUES (${event.seat}, ${event.seatId}, ${event.owner}, ${at})
-            ON CONFLICT (role) DO UPDATE SET
-              seat_id = excluded.seat_id, lease_owner = excluded.lease_owner, updated_at = excluded.updated_at
+            INSERT INTO seats (seat_id, role, created_at, updated_at)
+            VALUES (${event.seatId}, ${event.seat}, ${at}, ${at})
+            ON CONFLICT (seat_id) DO UPDATE SET updated_at = excluded.updated_at
           `.pipe(Effect.asVoid);
           case "effective_spec_set":
             return sql`
@@ -377,7 +377,7 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
             const workflow = yield* loadWorkflow;
             const [metadataRows, seatRows, constraintRows, eventRows, gateRows] = yield* Effect.all([
               sql`SELECT * FROM daemon_metadata WHERE singleton = 1`,
-              sql`SELECT role, seat_id, lease_owner FROM seats ORDER BY role`,
+              sql`SELECT role, seat_id FROM seats ORDER BY created_at, role`,
               sql`SELECT * FROM constraint_ledger ORDER BY constraint_key`,
               sql`SELECT sequence, occurred_at, payload FROM workflow_events ORDER BY sequence DESC LIMIT 50`,
               sql`
@@ -411,9 +411,11 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
             const seats = seatRows.map((row) => ({
               role: text(row as Row, "role"),
               seatId: text(row as Row, "seat_id"),
-              leaseOwner: text(row as Row, "lease_owner"),
             }));
-            const activeSeat = seats.find((seat) => seat.leaseOwner === "human")?.role;
+            // The active cowboy comes from the workflow state, not from scanning the seat table. The table is a
+            // history of every seat that ever ran; only one of them is being driven (ADR 0037).
+            const activeSeat = workflow.state.activeCowboy?.role;
+            const attention = workflow.state.attention;
             return decodeStatus({
               stateRevision: workflow.stateRevision,
               observedAt: timestampToIso(observedAt),
@@ -422,6 +424,19 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
               repository: config.repository,
               assignedBranch: config.assignedBranch,
               stage: workflow.state.stage,
+              controller: workflow.state.controller,
+              ...(attention === null
+                ? {}
+                : {
+                    attention: {
+                      kind: attention.kind,
+                      reason: attention.reason,
+                      ...(workflow.state.suspendedStage === null
+                        ? {}
+                        : { suspendedStage: workflow.state.suspendedStage }),
+                      resolutions: resolutionsForAttention[attention.kind],
+                    },
+                  }),
               ...(workflow.state.effectiveSpec === null
                 ? {}
                 : { effectiveSpecRevision: workflow.state.effectiveSpec.revision }),

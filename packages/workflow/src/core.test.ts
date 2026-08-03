@@ -62,7 +62,7 @@ function apply(state: TestState, sequence: number, event: typeof SwordfishEvent.
   return result.state;
 }
 
-/** Reaches `pushed_candidate` with `pr_ci` and `code_review` both pending. */
+/** Reaches `pushed_candidate` with only `pr_ci` pending — review opens when CI passes (ADR 0040). */
 function throughPushedCandidate(): TestState {
   let state = initial();
   state = apply(state, 1, { type: "effective_spec_set", spec });
@@ -76,6 +76,14 @@ function throughPushedCandidate(): TestState {
   });
   return apply(state, 4, { type: "stage_changed", stage: "pushed_candidate" });
 }
+
+const ciPassed = {
+  type: "gate_completed",
+  gate: "pr_ci",
+  candidateSha,
+  specRevision: 1,
+  outcome: "passed",
+} as const;
 
 describe("workflow core", () => {
   test("accepts a first interactive announcement from a projection that has heard nothing", () => {
@@ -99,28 +107,184 @@ describe("workflow core", () => {
     expect(!result.ok && result.error.type).toBe("illegal_transition");
   });
 
-  test("records an attention reason arriving via stage_changed", () => {
-    // The drift that made this package necessary: Swordfish recorded this reason and
-    // Bebop's projection did not, so a needs_attention bounty showed the CLI a blank
-    // reason whenever it arrived on stage_changed rather than attention_required.
+  test("attention suspends the stage it interrupted and records why", () => {
     let state = initial();
     state = apply(state, 1, { type: "effective_spec_set", spec });
-    state = apply(state, 2, { type: "stage_changed", stage: "needs_attention", reason: "hook is missing" });
+    state = apply(state, 2, { type: "attention_required", kind: "agent_blocked", reason: "hook is missing" });
 
     expect(state.stage).toBe("needs_attention");
-    expect(state.attentionReason).toBe("hook is missing");
     expect(state.suspendedStage).toBe("implementing");
+    expect(state.attention).toMatchObject({ kind: "agent_blocked", reason: "hook is missing" });
   });
 
-  test("clears the attention reason when the suspended stage resumes", () => {
+  test("a permitted resolution restores the suspended stage", () => {
     let state = initial();
     state = apply(state, 1, { type: "effective_spec_set", spec });
-    state = apply(state, 2, { type: "stage_changed", stage: "needs_attention", reason: "hook is missing" });
-    state = apply(state, 3, { type: "stage_changed", stage: "implementing" });
+    state = apply(state, 2, { type: "attention_required", kind: "agent_blocked", reason: "hook is missing" });
+    state = apply(state, 3, { type: "attention_cleared", resolution: "resume" });
 
     expect(state.stage).toBe("implementing");
     expect(state.suspendedStage).toBeNull();
-    expect(state.attentionReason).toBeNull();
+    expect(state.attention).toBeNull();
+  });
+
+  test("a generic resume cannot clear an exhausted budget", () => {
+    // The point of giving attention a kind (ADR 0038): `resume` changes no allowance, so it must not be able to
+    // revive an attempt whose watchdogs ran out. That recovery is `continue` or `rerun`, and it is a grant.
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, {
+      type: "attention_required",
+      kind: "constraint_exhausted",
+      reason: "primary turn budget exhausted",
+    });
+
+    const resumed = applyWorkflowEvent(state, message(3, { type: "attention_cleared", resolution: "resume" }));
+    expect(resumed).toMatchObject({
+      ok: false,
+      error: { type: "resolution_not_permitted", kind: "constraint_exhausted", resolution: "resume" },
+    });
+
+    const continued = apply(state, 3, { type: "attention_cleared", resolution: "continue" });
+    expect(continued.stage).toBe("implementing");
+    expect(continued.attention).toBeNull();
+  });
+
+  test("clearing attention nobody raised is refused", () => {
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+
+    const result = applyWorkflowEvent(state, message(2, { type: "attention_cleared", resolution: "resume" }));
+    expect(result).toMatchObject({ ok: false, error: { type: "no_attention_raised" } });
+  });
+
+  test("attention raised while cancelling does not make the cancellation resumable", () => {
+    let state = throughPushedCandidate();
+    state = apply(state, 5, { type: "stage_changed", stage: "cancelling" });
+    state = apply(state, 6, { type: "attention_required", kind: "environment", reason: "the VM is unreachable" });
+
+    expect(state.stage).toBe("cancelling");
+    expect(state.attention).toMatchObject({ kind: "environment" });
+
+    // Clearing it drops the reason without reviving the run.
+    state = apply(state, 7, { type: "attention_cleared", resolution: "cancel" });
+    expect(state.stage).toBe("cancelling");
+    expect(state.attention).toBeNull();
+  });
+
+  test("takeover changes the controller and leaves the stage alone", () => {
+    // The whole of ADR 0037 in one assertion: taking over during review used to look like leaving review.
+    let state = throughPushedCandidate();
+    state = apply(state, 5, { ...ciPassed });
+    state = apply(state, 6, { type: "cowboy_activated", seat: "jet", seatId: "seat-jet-1" });
+    expect(state.stage).toBe("code_review");
+
+    state = apply(state, 7, { type: "control_changed", controller: "human", reason: "takeover" });
+    expect(state.controller).toBe("human");
+    expect(state.stage).toBe("code_review");
+    expect(state.suspendedStage).toBeNull();
+
+    state = apply(state, 8, { type: "control_changed", controller: "swordfish", reason: "handoff" });
+    expect(state.controller).toBe("swordfish");
+    expect(state.stage).toBe("code_review");
+  });
+
+  test("takeover is refused when no cowboy is active", () => {
+    // Deterministic stages run without a cowboy (ADR 0037), and there is nothing to take over from a CI poll.
+    const state = throughPushedCandidate();
+    const result = applyWorkflowEvent(
+      state,
+      message(5, { type: "control_changed", controller: "human", reason: "takeover" }),
+    );
+    expect(result).toMatchObject({ ok: false, error: { type: "illegal_transition" } });
+  });
+
+  test("a second cowboy cannot be activated while one is active", () => {
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+
+    const second = applyWorkflowEvent(
+      state,
+      message(3, { type: "cowboy_activated", seat: "jet", seatId: "seat-jet-1" }),
+    );
+    expect(second).toMatchObject({
+      ok: false,
+      error: { type: "cowboy_already_active", active: "ein", requested: "jet" },
+    });
+
+    // Re-announcing the same seat is how ein's durable seat is reused across attempts.
+    const same = apply(state, 3, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+    expect(same.activeCowboy).toMatchObject({ role: "ein", seatId: "seat-ein" });
+  });
+
+  test("a stale deactivation cannot retire the seat that replaced it", () => {
+    // Every jet attempt gets a fresh seat (ADR 0037), so a late deactivation from the previous attempt arrives
+    // with the same role and a different ID.
+    let state = throughPushedCandidate();
+    state = apply(state, 5, { ...ciPassed });
+    state = apply(state, 6, { type: "cowboy_activated", seat: "jet", seatId: "seat-jet-2" });
+
+    const stale = applyWorkflowEvent(
+      state,
+      message(7, { type: "cowboy_deactivated", seat: "jet", seatId: "seat-jet-1" }),
+    );
+    expect(stale).toMatchObject({ ok: false, error: { type: "cowboy_not_active", requested: "jet" } });
+
+    const current = apply(state, 7, { type: "cowboy_deactivated", seat: "jet", seatId: "seat-jet-2" });
+    expect(current.activeCowboy).toBeNull();
+  });
+
+  test("review cannot be recorded for a candidate whose CI has not passed", () => {
+    // ADR 0040. Previously both gates opened at push time and either could land first, so a review result for a
+    // SHA that never reached CI was accepted and simply produced a different stage.
+    const state = throughPushedCandidate();
+    expect(state.gates.pr_ci.status).toBe("pending");
+    expect(state.gates.code_review.status).toBe("not_started");
+
+    const early = applyWorkflowEvent(
+      state,
+      message(5, {
+        type: "gate_completed",
+        gate: "code_review",
+        candidateSha,
+        specRevision: 1,
+        outcome: "passed",
+      }),
+    );
+    expect(early).toMatchObject({ ok: false, error: { type: "gate_not_pending", gate: "code_review" } });
+  });
+
+  test("passing CI is what opens review", () => {
+    let state = throughPushedCandidate();
+    state = apply(state, 5, { ...ciPassed });
+
+    expect(state.stage).toBe("code_review");
+    expect(state.gates.code_review.status).toBe("pending");
+
+    state = apply(state, 6, {
+      type: "gate_completed",
+      gate: "code_review",
+      candidateSha,
+      specRevision: 1,
+      outcome: "passed",
+    });
+    expect(state.stage).toBe("qa_preparing");
+  });
+
+  test("a failed CI gate sends the candidate to revision without opening review", () => {
+    let state = throughPushedCandidate();
+    state = apply(state, 5, {
+      type: "gate_completed",
+      gate: "pr_ci",
+      candidateSha,
+      specRevision: 1,
+      outcome: "failed",
+      feedback: { kind: "external_ci", checks: [{ name: "build", outcome: "failed" }] },
+    });
+
+    expect(state.stage).toBe("revision");
+    expect(state.gates.code_review.status).toBe("not_started");
   });
 
   test("a late gate result cannot resurrect a cancelling run", () => {
@@ -150,7 +314,11 @@ describe("workflow core", () => {
     let state = initial();
     state = apply(state, 1, { type: "effective_spec_set", spec });
     for (let sequence = 2; sequence <= fingerprintWindow + 10; sequence += 1) {
-      state = apply(state, sequence, { type: "attention_required", reason: `attention ${sequence}` });
+      state = apply(state, sequence, {
+        type: "attention_required",
+        kind: "operational",
+        reason: `attention ${sequence}`,
+      });
     }
 
     const retained = Object.keys(state.appliedEventFingerprints).map(Number);
@@ -163,13 +331,18 @@ describe("workflow core", () => {
     let state = initial();
     state = apply(state, 1, { type: "effective_spec_set", spec });
     for (let sequence = 2; sequence <= fingerprintWindow + 10; sequence += 1) {
-      state = apply(state, sequence, { type: "attention_required", reason: `attention ${sequence}` });
+      state = apply(state, sequence, {
+        type: "attention_required",
+        kind: "operational",
+        reason: `attention ${sequence}`,
+      });
     }
 
     const recent = applyWorkflowEvent(
       state,
       message(state.lastAppliedSequence, {
         type: "attention_required",
+        kind: "operational",
         reason: `attention ${state.lastAppliedSequence}`,
       }),
     );
@@ -187,7 +360,10 @@ describe("workflow core", () => {
     state = apply(state, 1, { type: "effective_spec_set", spec });
     state = apply(state, 2, { type: "candidate_submitted", candidate });
 
-    const conflicting = applyWorkflowEvent(state, message(2, { type: "attention_required", reason: "conflict" }));
+    const conflicting = applyWorkflowEvent(
+      state,
+      message(2, { type: "attention_required", kind: "operational", reason: "conflict" }),
+    );
     expect(conflicting).toMatchObject({ ok: false, error: { type: "sequence_collision", sequence: 2 } });
   });
 

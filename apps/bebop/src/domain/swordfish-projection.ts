@@ -25,7 +25,7 @@ import {
 } from "@bebop/workflow";
 import { DateTime } from "effect";
 
-export type { GateState, GateStates, ReadinessClaim, SeatLeaseState } from "@bebop/workflow";
+export type { ActiveCowboy, AttentionState, GateState, GateStates, ReadinessClaim } from "@bebop/workflow";
 
 export type SwordfishFreshness =
   | { readonly status: Extract<SwordfishFreshnessStatus, "never_connected"> }

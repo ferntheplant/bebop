@@ -66,8 +66,10 @@ a conventional migration tool will miss. `fromFileSystem` remains fine in tests,
 **A seat credential must never reach the tmux session environment or a shell profile.** `opencode attach`
 defaults `--password` to `OPENCODE_SERVER_PASSWORD`, so an inherited variable silently re-grants seat write
 access to every free shell pane in the cockpit — defeating
-[the control lease](./adr/0009-the-control-lease-is-enforced-in-four-layers.md) without any command looking
-wrong. The credential is passed only to the processes Swordfish itself spawns.
+[The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](./adr/0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md)
+without any command looking wrong. Isolated seat credentials are the layer that stops an ambient second client
+from driving a seat, so leaking one removes the protection rather than weakening it. The credential is passed
+only to the processes Swordfish itself spawns.
 
 ## Process lifecycle
 

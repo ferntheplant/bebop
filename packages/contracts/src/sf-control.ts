@@ -21,20 +21,29 @@ import {
   WorkflowRevision,
 } from "./scalars.ts";
 import { schemaLimits } from "./settings.ts";
-import { CandidateGate, GateStatus, LeaseOwner, SeatRole, SwordfishStage } from "./workflow.ts";
+import {
+  AttentionKind,
+  CandidateGate,
+  Controller,
+  GateStatus,
+  resolutionsForAttention,
+  SeatRole,
+  SwordfishStage,
+  WorkflowResolution,
+} from "./workflow.ts";
 
 export const currentSfControlVersion = 1 as const;
 export const SfControlVersion = Schema.Literal(currentSfControlVersion);
 export type SfControlVersion = typeof SfControlVersion.Type;
 
 export const SfStatusCommand = Schema.Struct({ type: Schema.Literal("status") });
-export const SfHandbackCommand = Schema.Struct({ type: Schema.Literal("handback") });
+export const SfHandoffCommand = Schema.Struct({ type: Schema.Literal("handoff") });
 export const SfApproveConfigCommand = Schema.Struct({ type: Schema.Literal("approve_config") });
 export const SfControlCommand = Schema.Union([
   SfStatusCommand,
   StopCommand,
   TakeoverCommand,
-  SfHandbackCommand,
+  SfHandoffCommand,
   ExtendConstraintCommand,
   RetryStageCommand,
   SfApproveConfigCommand,
@@ -49,12 +58,28 @@ export const SfControlRequest = Schema.Struct({
 });
 export type SfControlRequest = typeof SfControlRequest.Type;
 
+/**
+ * One seat Swordfish knows about.
+ *
+ * A seat no longer carries a lease owner. Who is driving is one workflow-wide value (`controller`), and which
+ * seat is being driven is `activeSeat`; a per-seat owner was a third representation of the same fact and could
+ * disagree with both ("One controller drives one active cowboy" (ADR 0037)). Inactive seats stay listed because
+ * they remain inspectable provenance.
+ */
 export const SfSeatSnapshot = Schema.Struct({
   role: SeatRole,
   seatId: SeatId,
-  leaseOwner: LeaseOwner,
 });
 export type SfSeatSnapshot = typeof SfSeatSnapshot.Type;
+
+/** Why the bounty stopped, and the exact commands that may clear it (`docs/capabilities/05-control-lease-and-takeover.md`). */
+export const SfAttentionSnapshot = Schema.Struct({
+  kind: AttentionKind,
+  reason: Schema.String,
+  suspendedStage: Schema.optionalKey(SwordfishStage),
+  resolutions: Schema.Array(WorkflowResolution).pipe(Schema.check(Schema.isMinLength(1))),
+});
+export type SfAttentionSnapshot = typeof SfAttentionSnapshot.Type;
 
 export const SfGateSnapshot = Schema.Struct({
   gate: CandidateGate,
@@ -105,6 +130,8 @@ const SfStatusSnapshotBase = Schema.Struct({
   repository: RepositorySlug,
   assignedBranch: GitRef,
   stage: SwordfishStage,
+  controller: Controller,
+  attention: Schema.optionalKey(SfAttentionSnapshot),
   effectiveSpecRevision: Schema.optionalKey(SpecRevision),
   activeSeat: Schema.optionalKey(SeatRole),
   seats: Schema.Array(SfSeatSnapshot),
@@ -126,6 +153,19 @@ export const SfStatusSnapshot = SfStatusSnapshotBase.pipe(
       }
       if (snapshot.activeSeat !== undefined && !seatRoles.has(snapshot.activeSeat)) {
         return "Expected the active seat to exist in the seat snapshot";
+      }
+      // Attention and the `needs_attention` stage are two views of one fact, so a snapshot that carries only
+      // one of them would let the cockpit print a stopped bounty with no exits, or exits for a bounty that is
+      // still working.
+      if ((snapshot.stage === "needs_attention") !== (snapshot.attention !== undefined)) {
+        return "Expected attention detail exactly when the stage is needs_attention";
+      }
+      const attention = snapshot.attention;
+      if (attention !== undefined) {
+        const permitted: ReadonlyArray<WorkflowResolution> = resolutionsForAttention[attention.kind];
+        if (attention.resolutions.some((resolution) => !permitted.includes(resolution))) {
+          return "Expected every offered resolution to be permitted by the attention kind";
+        }
       }
       const gates = new Set(snapshot.gates.map((gate) => gate.gate));
       if (gates.size !== snapshot.gates.length) {

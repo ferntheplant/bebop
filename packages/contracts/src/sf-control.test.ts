@@ -13,7 +13,9 @@ const baseSnapshot = {
   repository: "withco/bebop",
   assignedBranch: "bounty/bty-01jz8j3d9f4x",
   stage: "interactive",
-  seats: [{ role: "ein", seatId: "seat-ein", leaseOwner: "human" }],
+  controller: "human",
+  activeSeat: "ein",
+  seats: [{ role: "ein", seatId: "seat-ein" }],
   constraints: [{ constraint: "primary_turns", consumed: 0, limit: 40, extensionsGranted: 0 }],
   bebopConnection: { state: "connected", lastContactAt: timestamp, acknowledgedThrough: 0, pendingEventCount: 0 },
   previews: [],
@@ -25,7 +27,7 @@ const commands: ReadonlyArray<typeof SfControlCommand.Encoded> = [
   { type: "status" },
   { type: "stop", reason: "User requested stop." },
   { type: "takeover", seat: "ein", force: false },
-  { type: "handback" },
+  { type: "handoff" },
   { type: "extend_constraint", constraint: "primary_turns" },
   { type: "retry_stage", stage: "local_validation" },
   { type: "approve_config" },
@@ -105,6 +107,47 @@ describe("sf local control contracts", () => {
             updatedAt: timestamp,
           },
         ],
+      }),
+    ).toThrow();
+  });
+
+  test("rejects a status that stops without exits, or offers exits without stopping", () => {
+    // The cockpit prints attention detail whenever the stage says the bounty stopped
+    // (`docs/capabilities/05-control-lease-and-takeover.md`). A snapshot carrying one without the other would
+    // either strand a stopped bounty with nothing to print or advertise exits for work still running.
+    expect(() => Schema.decodeUnknownSync(SfStatusSnapshot)({ ...baseSnapshot, stage: "needs_attention" })).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        attention: { kind: "agent_blocked", reason: "needs a decision", resolutions: ["resume"] },
+      }),
+    ).toThrow();
+
+    const stopped = Schema.decodeUnknownSync(SfStatusSnapshot)({
+      ...baseSnapshot,
+      stage: "needs_attention",
+      attention: {
+        kind: "agent_blocked",
+        reason: "needs a decision",
+        suspendedStage: "implementing",
+        resolutions: ["resume", "takeover"],
+      },
+    });
+    expect(stopped.attention?.resolutions).toEqual(["resume", "takeover"]);
+  });
+
+  test("rejects an exit the attention kind does not permit", () => {
+    // An exhausted budget is revived by `continue` or `rerun`, never by a plain `resume`
+    // ("Continue preserves an attempt; rerun replaces it" (ADR 0041)). A snapshot cannot offer otherwise.
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        stage: "needs_attention",
+        attention: {
+          kind: "constraint_exhausted",
+          reason: "primary turn budget exhausted",
+          resolutions: ["resume"],
+        },
       }),
     ).toThrow();
   });

@@ -1,11 +1,12 @@
 import type {
+  AttentionKind,
   Candidate,
   CandidateGate,
+  Controller,
   EffectiveSpec,
   EventSequence,
   GateStatus,
   GitSha,
-  LeaseOwner,
   PrivatePreviewAttachment,
   SeatId,
   SeatRole,
@@ -21,9 +22,28 @@ export interface GateState {
 
 export type GateStates = Readonly<Record<CandidateGate, GateState>>;
 
-export interface SeatLeaseState {
+/**
+ * The one cowboy seat currently being driven, if any.
+ *
+ * At most one is active ("One controller drives one active cowboy" (ADR 0037)), and a deterministic stage —
+ * local validation, the CI poll, evidence upload — legitimately runs with none. Who is driving it is
+ * `controller`, not a property of the seat: a taken-over seat is the same seat with a different driver.
+ */
+export interface ActiveCowboy {
+  readonly role: SeatRole;
   readonly seatId: SeatId;
-  readonly owner: LeaseOwner;
+}
+
+/**
+ * Why the workflow stopped, and what the stage was when it did.
+ *
+ * The permitted exits are not stored: they are a function of `kind` alone, so `resolutionsForAttention` derives
+ * them on read and a record can never offer an exit its kind forbids.
+ */
+export interface AttentionState {
+  readonly kind: AttentionKind;
+  readonly reason: string;
+  readonly raisedAt: Timestamp;
 }
 
 export interface ReadinessClaim {
@@ -37,20 +57,28 @@ export interface ReadinessClaim {
  * `stage` is nullable here because Bebop's projection starts before it has heard anything
  * from a Swordfish, while Swordfish itself starts at `interactive` (`docs/capabilities/06-autonomous-implementation.md`).
  * Each app narrows the field in its own state type; the core never writes null to it.
+ *
+ * Stage, `controller`, and `attention` are three independent dimensions
+ * ("One controller drives one active cowboy" (ADR 0037)). Stage says what work is happening, `controller` says
+ * who is directing it, and `attention` says why it stopped. Reading any one of them never requires the others,
+ * which is what a single `stage` field encoding all three could not offer: taking over review used to look like
+ * leaving review.
  */
 export interface WorkflowCoreState {
   readonly lastAppliedSequence: EventSequence;
   readonly appliedEventFingerprints: Readonly<Record<number, string>>;
   readonly fingerprintFloor: number;
   readonly stage: SwordfishStage | null;
+  /** The work stage to resume into once `needs_attention` clears; null whenever the stage is not suspended. */
   readonly suspendedStage: SwordfishStage | null;
+  readonly controller: Controller;
+  readonly activeCowboy: ActiveCowboy | null;
   readonly effectiveSpec: EffectiveSpec | null;
   readonly candidate: Candidate | null;
   readonly gates: GateStates;
   readonly readinessClaim: ReadinessClaim | null;
-  readonly leases: Readonly<Partial<Record<SeatRole, SeatLeaseState>>>;
   readonly previews: ReadonlyArray<PrivatePreviewAttachment>;
-  readonly attentionReason: string | null;
+  readonly attention: AttentionState | null;
 }
 
 /**
@@ -80,12 +108,13 @@ export function initialWorkflowCoreState(): Omit<WorkflowCoreState, "stage"> {
     appliedEventFingerprints: {},
     fingerprintFloor: 1,
     suspendedStage: null,
+    controller: "swordfish",
+    activeCowboy: null,
     effectiveSpec: null,
     candidate: null,
     gates: initialGates(),
     readinessClaim: null,
-    leases: {},
     previews: [],
-    attentionReason: null,
+    attention: null,
   };
 }

@@ -131,8 +131,10 @@ _Avoid_: terminal, dashboard, console.
 Connecting a human to a bounty's cockpit. Attaching is observation; it grants no authority to type into a leased seat.
 
 **control lease**:
-The record of which single actor — `human` or `swordfish` — may submit prompts to a given seat. Durable: taking and releasing it are recorded state transitions, not terminal modes.
-_Avoid_: lock, mutex, ownership.
+The enforcement at the harness that only one actor submits model turns to the active seat. It is derived from
+the workflow controller rather than stored per seat: a seat does not carry its own owner, because two records of
+who is driving can disagree.
+_Avoid_: lock, mutex, ownership, lease owner (retired with the per-seat record).
 
 **workflow controller**:
 The actor — `human` or `swordfish` — responsible for directing the current stage. Control is orthogonal to stage
@@ -160,6 +162,25 @@ _Avoid_: safe point (implies consistency that cannot be proved).
 
 **intrusion**:
 A message or tool execution on a leased seat that Swordfish did not originate. Recorded and escalated rather than silently absorbed.
+
+**active cowboy**:
+The single cowboy seat currently being driven. At most one exists at a time, and a deterministic stage — local
+validation, the CI poll, evidence upload — legitimately runs with none. Which one it is says nothing about who
+is driving it; that is the workflow controller.
+_Avoid_: current seat (a bounty keeps many seats; only one is active), lease holder.
+
+**attention record**:
+Why a bounty stopped, carried alongside the `needs_attention` stage: a kind, a human-readable reason, and the
+stage that was suspended. Its kind determines which **resolutions** may clear it, so status can print the exact
+command that applies rather than a reason a human must interpret.
+_Avoid_: error, alert, attention reason (the bare string this replaced).
+
+**resolution**:
+A named action permitted to clear a specific attention record — `resume`, `continue`, `rerun`, `takeover`,
+`cancel`, or bebop-side `approve-config`. Derived from the attention's kind rather than stored with it, so a
+record can never offer an exit its kind forbids. `resume` changes no allowance; reviving an exhausted attempt is
+a grant and is therefore `continue` or `rerun`.
+_Avoid_: fix, remedy, unblock.
 
 ## Verification
 

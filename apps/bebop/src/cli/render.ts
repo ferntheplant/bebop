@@ -54,8 +54,9 @@ export function printBounty(bounty: BountyDetail): string {
     `spec        ${bounty.specRevision === undefined ? "-" : `revision ${bounty.specRevision}`}`,
     `updated     ${instant(bounty.updatedAt)}`,
   ];
-  if (bounty.attentionReason !== undefined) {
-    lines.push(`attention   ${bounty.attentionReason}`);
+  if (bounty.attention !== undefined) {
+    lines.push(`attention   ${bounty.attention.kind}: ${bounty.attention.reason}`);
+    lines.push(`resolve     ${bounty.attention.resolutions.join(", ")}`);
   }
   if (bounty.readinessClaimSha !== undefined) {
     // Named a claim, not a state, because "Readiness is a claim, not authority" (ADR 0003) makes readiness something Bebop

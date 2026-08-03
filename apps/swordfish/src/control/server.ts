@@ -191,13 +191,12 @@ const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
 
   let command: BebopCommand;
   switch (request.command.type) {
-    case "handback": {
+    case "handoff": {
       const status = yield* workflow.status;
-      const seat = status.seats.find((entry) => entry.leaseOwner === "human");
-      if (seat === undefined) {
-        return { response: responseError(request, "lease_not_held", "No seat is held by a human."), stop: false };
+      if (status.controller !== "human") {
+        return { response: responseError(request, "lease_not_held", "Human control is not held."), stop: false };
       }
-      command = { type: "handback", seat: seat.role };
+      command = { type: "handoff" };
       break;
     }
     case "approve_config":

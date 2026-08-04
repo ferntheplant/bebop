@@ -280,9 +280,17 @@ export const WorkflowServiceLayer: Layer.Layer<
             outcome = result(message, "completed", at);
             break;
           }
-          case "approve_config":
-            outcome = result(message, "rejected", at, "No configuration approval is pending for this candidate.");
+          case "approve_config": {
+            const candidate = workflow.state.candidate;
+            const pending = workflow.state.attention.some((record) => record.kind === "config_approval");
+            if (candidate === null || candidate.commitSha !== command.candidateSha || !pending) {
+              outcome = result(message, "rejected", at, "No configuration approval is pending for this candidate.");
+              break;
+            }
+            yield* appendUnsafe({ type: "attention_cleared", resolution: "approve_config" }, at);
+            outcome = result(message, "completed", at);
             break;
+          }
           case "external_ci_completed": {
             const current = yield* store.loadWorkflow;
             const candidate = current.state.candidate;

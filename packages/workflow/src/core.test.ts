@@ -811,6 +811,43 @@ describe("constraint ledger", () => {
     ]);
   });
 
+  test("refuses another candidate after the spec allowance is spent", () => {
+    const specified = apply(initial(), 1, { type: "effective_spec_set", spec });
+    const spent: TestState = {
+      ...specified,
+      stage: "revision",
+      validatedCandidatesConsumed: 3,
+    };
+
+    expect(applyWorkflowEvent(spent, message(2, { type: "candidate_submitted", candidate }))).toMatchObject({
+      ok: false,
+      error: { type: "validated_candidates_exhausted", consumed: 3, allowed: 3 },
+    });
+  });
+
+  test("a new spec clears obsolete constraint attention but preserves unrelated reasons", () => {
+    const specified = apply(initial(), 1, { type: "effective_spec_set", spec });
+    let state: TestState = {
+      ...specified,
+      stage: "revision",
+      controller: "human",
+      validatedCandidatesConsumed: 3,
+    };
+    state = apply(state, 2, {
+      type: "attention_required",
+      kind: "constraint_exhausted",
+      reason: "the spec has used all 3 validated candidates",
+    });
+    state = apply(state, 3, { type: "attention_required", kind: "environment", reason: "the VM is unreachable" });
+
+    state = apply(state, 4, { type: "effective_spec_set", spec: { ...spec, revision: 2 } });
+
+    expect(state.validatedCandidatesConsumed).toBe(0);
+    expect(state.attention.map((record) => record.kind)).toEqual(["environment"]);
+    expect(state.stage).toBe("needs_attention");
+    expect(state.suspendedStage).toBe("implementing");
+  });
+
   test("stands the attempt down with the cowboy when the workflow ends", () => {
     let state = readyToBuild();
     state = apply(state, 3, { type: "attempt_started" });

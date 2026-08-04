@@ -105,6 +105,34 @@ suite("bebop CLI", () => {
     expect(second.bountyId).toBe(first.bountyId);
   });
 
+  test("approves privileged configuration for an exact candidate SHA", async () => {
+    const created = await runCli(harness, [
+      "bounty",
+      "create",
+      "--repository",
+      "withco/bebop",
+      "--base-ref",
+      "main",
+      "--json",
+    ]);
+    const bountyId = (JSON.parse(created.stdout) as { bountyId: string }).bountyId;
+    const candidateSha = "b".repeat(40);
+
+    const approved = await runCli(harness, [
+      "bounty",
+      "approve-config",
+      "--bounty",
+      bountyId,
+      "--sha",
+      candidateSha,
+      "--json",
+    ]);
+
+    expect(approved.exitCode).toBe(0);
+    expect((JSON.parse(approved.stdout) as { bountyId: string }).bountyId).toBe(bountyId);
+    expect(await harness.commandCountForBounty(bountyId)).toBe(1);
+  });
+
   test("reconnects the event tail after the server idle timeout", async () => {
     const created = await runCli(harness, [
       "bounty",

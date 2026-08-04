@@ -37,7 +37,6 @@ export type SfControlVersion = typeof SfControlVersion.Type;
 
 export const SfStatusCommand = Schema.Struct({ type: Schema.Literal("status") });
 export const SfHandoffCommand = Schema.Struct({ type: Schema.Literal("handoff") });
-export const SfApproveConfigCommand = Schema.Struct({ type: Schema.Literal("approve_config") });
 export const SfControlCommand = Schema.Union([
   SfStatusCommand,
   StopCommand,
@@ -46,7 +45,6 @@ export const SfControlCommand = Schema.Union([
   ContinueCommand,
   RerunCommand,
   ResumeCommand,
-  SfApproveConfigCommand,
 ]);
 export type SfControlCommand = typeof SfControlCommand.Type;
 
@@ -83,7 +81,7 @@ export const SfActiveCowboy = Schema.Struct({
 });
 export type SfActiveCowboy = typeof SfActiveCowboy.Type;
 
-/** Executable `sf` commands that status may offer to clear an attention record. */
+/** Executable local commands that status may offer to clear an attention record. */
 export const sfResolutionCommands = [
   "resume",
   "continue",
@@ -95,12 +93,24 @@ export const sfResolutionCommands = [
   "takeover jet",
   "takeover faye",
   "stop",
-  "approve-config",
 ] as const;
-export const SfResolutionCommand = Schema.Literals(sfResolutionCommands);
+type SfLocalResolutionCommand = (typeof sfResolutionCommands)[number];
+
+/** The SHA-pinned Bebop command for the one attention kind whose authority is outside Swordfish. */
+export const BebopApproveConfigResolutionCommand = Schema.TemplateLiteral([
+  "bebop bounty approve-config --bounty ",
+  BountyId,
+  " --sha ",
+  GitSha,
+]);
+
+export const SfResolutionCommand = Schema.Union([
+  Schema.Literals(sfResolutionCommands),
+  BebopApproveConfigResolutionCommand,
+]);
 export type SfResolutionCommand = typeof SfResolutionCommand.Type;
 
-const workflowResolutionForSfCommand: Readonly<Record<SfResolutionCommand, WorkflowResolution>> = {
+const workflowResolutionForSfCommand: Readonly<Record<SfLocalResolutionCommand, WorkflowResolution>> = {
   resume: "resume",
   continue: "continue",
   "rerun building": "rerun",
@@ -111,15 +121,20 @@ const workflowResolutionForSfCommand: Readonly<Record<SfResolutionCommand, Workf
   "takeover jet": "takeover",
   "takeover faye": "takeover",
   stop: "cancel",
-  "approve-config": "approve_config",
 };
 
-const attentionKindForTargetedSfCommand: Readonly<Partial<Record<SfResolutionCommand, AttentionKind>>> = {
+const attentionKindForTargetedSfCommand: Readonly<Partial<Record<SfLocalResolutionCommand, AttentionKind>>> = {
   "rerun building": "constraint_exhausted",
   "rerun review": "constraint_exhausted",
   "rerun qa": "constraint_exhausted",
   "rerun validation": "uncertain_gate",
 };
+
+function workflowResolutionForStatusCommand(command: SfResolutionCommand): WorkflowResolution {
+  return command.startsWith("bebop bounty approve-config --bounty ")
+    ? "approve_config"
+    : workflowResolutionForSfCommand[command as SfLocalResolutionCommand];
+}
 
 /** One reason the bounty stopped, with the exact commands that clear it (`docs/capabilities/05-control-lease-and-takeover.md`). */
 export const SfAttentionSnapshot = Schema.Struct({
@@ -274,12 +289,17 @@ export const SfStatusSnapshot = SfStatusSnapshotBase.pipe(
       }
       for (const record of snapshot.attention) {
         const permitted: ReadonlyArray<WorkflowResolution> = resolutionsForAttention[record.kind];
+        const expectedApprovalCommand =
+          snapshot.candidateSha === undefined
+            ? null
+            : `bebop bounty approve-config --bounty ${snapshot.bountyId} --sha ${snapshot.candidateSha}`;
         if (
           record.resolutions.some((command) => {
-            const targetKind = attentionKindForTargetedSfCommand[command];
+            const targetKind = attentionKindForTargetedSfCommand[command as SfLocalResolutionCommand];
             return (
-              !permitted.includes(workflowResolutionForSfCommand[command]) ||
-              (targetKind !== undefined && targetKind !== record.kind)
+              !permitted.includes(workflowResolutionForStatusCommand(command)) ||
+              (targetKind !== undefined && targetKind !== record.kind) ||
+              (command.startsWith("bebop bounty approve-config --bounty ") && command !== expectedApprovalCommand)
             );
           })
         ) {
@@ -352,7 +372,6 @@ export const sfControlErrorCodes = [
   // commands are gone: `continue`, `rerun`, and `resume` are refused for the same reason — the outstanding
   // attention does not permit the verb, or there is nothing outstanding to resolve.
   "recovery_not_available",
-  "config_approval_not_pending",
   "bebop_unavailable",
   "internal_error",
 ] as const;

@@ -5,6 +5,7 @@ import {
   CommandMessage as CommandMessageSchema,
   EvidenceBundleManifest,
   EventSequence,
+  GitSha,
   SwordfishEvent,
   Timestamp,
 } from "@bebop/contracts";
@@ -21,7 +22,7 @@ import { startSwordfishHarness } from "#test/component/support/harness.ts";
 let harness: SwordfishHarness | undefined;
 const zeroSequence = Schema.decodeUnknownSync(EventSequence)(0);
 const firstSequence = Schema.decodeUnknownSync(EventSequence)(1);
-const candidateSha = "b".repeat(40);
+const candidateSha = Schema.decodeUnknownSync(GitSha)("b".repeat(40));
 const decodeEvent = Schema.decodeUnknownSync(SwordfishEvent);
 const decodeTimestamp = Schema.decodeUnknownSync(Timestamp);
 const encodeTimestamp = Schema.encodeSync(Timestamp);
@@ -80,6 +81,44 @@ const exhaustBuildingAttempts = Effect.gen(function* () {
     yield* workflow.append(decodeEvent({ type: "attempt_started" }));
     yield* workflow.append(decodeEvent({ type: "attempt_ended", outcome: "no_result" }));
   }
+});
+
+const requireConfigApproval = Effect.gen(function* () {
+  const workflow = yield* WorkflowService;
+  yield* workflow.append(
+    decodeEvent({
+      type: "effective_spec_set",
+      spec: {
+        revision: 1,
+        title: "Approve privileged configuration",
+        goal: "Require approval for the candidate's configuration change.",
+        context: [],
+        constraints: [],
+        nonGoals: [],
+        acceptanceCriteria: [{ id: "ac-1", description: "Approval is pinned to the candidate." }],
+        suggestedQaScenarios: [],
+        createdFromSeatId: "seat-ein",
+        createdAt: "2026-07-29T00:00:01.000Z",
+      },
+    }),
+  );
+  yield* workflow.append(
+    decodeEvent({
+      type: "candidate_submitted",
+      candidate: {
+        commitSha: candidateSha,
+        specRevision: 1,
+        summary: "Change privileged configuration.",
+        claimedLocalChecks: [],
+        activeDevelopmentServers: [],
+        knownLimitations: [],
+        disposition: "candidate_ready",
+      },
+    }),
+  );
+  yield* workflow.append(
+    decodeEvent({ type: "attention_required", kind: "config_approval", reason: "Approve this candidate." }),
+  );
 });
 
 function takeoverCommand(commandId = "cmd-takeover"): CommandMessage {
@@ -395,6 +434,52 @@ describe("Swordfish SQLite authority", () => {
     ]);
     // Status shows the arithmetic that stopped the bounty, not just the daemon's assertion that something did.
     expect(raised.status.exhausted).toEqual([{ constraint: "attempts", scope: "building", consumed: 3, allowed: 3 }]);
+  });
+
+  test("prints the bebop-side approval command for configuration attention", async () => {
+    harness = await startSwordfishHarness("config-approval-status");
+    const status = await harness.run(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowService;
+        yield* requireConfigApproval;
+        return yield* workflow.status;
+      }),
+    );
+
+    expect(status.attention).toEqual([
+      {
+        kind: "config_approval",
+        reason: "Approve this candidate.",
+        resolutions: [`bebop bounty approve-config --bounty bty-component --sha ${candidateSha}`, "stop"],
+      },
+    ]);
+  });
+
+  test("applies Bebop configuration approval only to the matching candidate", async () => {
+    harness = await startSwordfishHarness("config-approval-command");
+    const observed = await harness.run(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowService;
+        yield* requireConfigApproval;
+        const rejected = yield* workflow.applyCommand(
+          recoveryCommand(
+            { type: "approve_config", candidateSha: Schema.decodeUnknownSync(GitSha)("c".repeat(40)) },
+            "cmd-approve-wrong",
+          ),
+        );
+        const beforeApproval = yield* workflow.status;
+        const approved = yield* workflow.applyCommand(
+          recoveryCommand({ type: "approve_config", candidateSha }, "cmd-approve-candidate"),
+        );
+        return { rejected, beforeApproval, approved, afterApproval: yield* workflow.status };
+      }),
+    );
+
+    expect(observed.rejected.status).toBe("rejected");
+    expect(observed.beforeApproval.attention.map((record) => record.kind)).toEqual(["config_approval"]);
+    expect(observed.approved.status).toBe("completed");
+    expect(observed.afterApproval.attention).toEqual([]);
+    expect(observed.afterApproval.stage).toBe("local_validation");
   });
 
   test("accrues a running attempt through the status observation without persisting it", async () => {

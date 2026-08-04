@@ -11,11 +11,13 @@
 // GitHub, evidence with the blob store.
 
 import {
+  BountyActionResponse,
   BountyEventEnvelope,
   BountyId as BountyIdSchema,
   CreateBountyRequest as CreateBountyRequestSchema,
   CreateBountyResponse,
   GetBountyResponse,
+  GitSha,
   HealthResponse,
   IdempotencyKey as IdempotencyKeySchema,
   ListBountiesResponse,
@@ -119,6 +121,29 @@ const bountyStatus = Command.make(
     }),
 );
 
+const bountyApproveConfig = Command.make(
+  "approve-config",
+  {
+    ...connectionFlags,
+    bounty: Flag.string("bounty").pipe(Flag.withDescription("The bounty id.")),
+    sha: Flag.string("sha").pipe(Flag.withDescription("The candidate commit SHA to approve.")),
+  },
+  (options) =>
+    Effect.gen(function* () {
+      const { client } = yield* connect(options);
+      const response = yield* client.bounties.approveConfig({
+        params: { bountyId: Schema.decodeUnknownSync(BountyIdSchema)(options.bounty) },
+        payload: { candidateSha: Schema.decodeUnknownSync(GitSha)(options.sha) },
+      });
+      yield* emit({
+        asJson: options.json,
+        schema: BountyActionResponse,
+        value: response,
+        human: () => printBounty(response),
+      });
+    }),
+);
+
 const bountyCreate = Command.make(
   "create",
   {
@@ -195,7 +220,7 @@ const bountyEvents = Command.make(
 );
 
 const bounty = Command.make("bounty", {}, () => Console.log("Run `bebop bounty --help`.")).pipe(
-  Command.withSubcommands([bountyCreate, bountyList, bountyStatus, bountyEvents]),
+  Command.withSubcommands([bountyCreate, bountyList, bountyStatus, bountyEvents, bountyApproveConfig]),
 );
 
 const root = Command.make("bebop", {}, () => Console.log("Run `bebop --help`.")).pipe(

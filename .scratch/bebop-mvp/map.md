@@ -9,8 +9,9 @@ reviewed, QA'd, and caught — with every acceptance criterion in [`ABSTRACT.md`
 against an automated test, a provider smoke test, or an explicitly documented manual inspection.
 
 The control plane exists already: bebop and Swordfish are real processes with real persistence that reconnect
-safely and share one workflow core. What remains is everything that touches the outside world — real VMs, real
-repositories, real models, real GitHub — and the decisions those force.
+safely and share one workflow core. The orthogonal control model and its constraint ledger are built. What
+remains includes the production modules that drive seats and deterministic gates, plus everything that touches
+the outside world — real VMs, real repositories, real models, real GitHub — and the decisions those force.
 
 ## Notes
 
@@ -134,11 +135,6 @@ which is the fog under "Repository configuration in practice" below.
 
 In scope, not yet sharp enough to ticket. Graduates as the frontier advances.
 
-- **The end-to-end protocol under real failure.** Both processes exist and both reconnect, but they have never
-  run as separate processes across a network that can break. What the two are supposed to guarantee each other
-  is written down ([recovery and reliability](../../docs/capabilities/13-recovery-and-reliability.md)) — what
-  isn't known is which failures turn out to need a decision rather than a test. Expect this patch to graduate
-  into a small number of tickets and one brief.
 - **Repository configuration in practice.** `.bebop/config.yml`, the setup and hook contracts, and the
   clean-room worktree are designed but have never been run against a real repository. The shape of the failure
   modes — a hook that hangs, a service that never becomes healthy, a port that collides — will decide how much

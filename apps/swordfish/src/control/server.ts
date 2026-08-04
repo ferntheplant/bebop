@@ -199,11 +199,6 @@ const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
       command = { type: "handoff" };
       break;
     }
-    case "approve_config":
-      return {
-        response: responseError(request, "config_approval_not_pending", "No configuration approval is pending."),
-        stop: false,
-      };
     default:
       command = request.command;
   }

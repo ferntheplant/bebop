@@ -72,6 +72,7 @@ export type WorkflowError =
       readonly consumed: number;
       readonly allowed: number;
     }
+  | { readonly type: "validated_candidates_exhausted"; readonly consumed: number; readonly allowed: number }
   /**
    * The daemon claimed a budget ran out and the reducer's own arithmetic disagrees
    * ("Constraint exhaustion is computed, not announced" (ADR 0042)).
@@ -179,16 +180,17 @@ function changesFor(
           error: { type: "spec_revision_mismatch", expected, received: event.spec.revision },
         };
       }
-      // Reopening the spec is legitimate work, not a resolution. It does not answer an unreachable VM or an
-      // intrusion, so outstanding reasons survive it and keep the workflow suspended — otherwise `reopen-spec`
-      // would be a way to clear any attention record without the resolution its kind requires, including kinds
-      // whose only permitted exit is `cancel`.
-      const suspended = state.attention.length > 0;
+      // A new spec resets every constraint ledger, so any constraint attention against the old spec is obsolete.
+      // It does not answer an unreachable VM or an intrusion, though: unrelated reasons survive and keep the
+      // workflow suspended rather than letting `reopen-spec` bypass their permitted resolutions.
+      const attention = state.attention.filter((record) => record.kind !== "constraint_exhausted");
+      const suspended = attention.length > 0;
       return {
         ok: true,
         changes: {
           stage: suspended ? "needs_attention" : "implementing",
           suspendedStage: suspended ? "implementing" : null,
+          attention,
           effectiveSpec: event.spec,
           candidate: null,
           gates: initialGates(),
@@ -208,6 +210,17 @@ function changesFor(
     case "candidate_submitted": {
       if (state.stage !== "implementing" && state.stage !== "revision") {
         return { ok: false, error: illegal(state, event.type) };
+      }
+      const allowed = state.constraints.validatedCandidatesPerSpec;
+      if (state.validatedCandidatesConsumed >= allowed) {
+        return {
+          ok: false,
+          error: {
+            type: "validated_candidates_exhausted",
+            consumed: state.validatedCandidatesConsumed,
+            allowed,
+          },
+        };
       }
       if (state.effectiveSpec === null || event.candidate.specRevision !== state.effectiveSpec.revision) {
         return {

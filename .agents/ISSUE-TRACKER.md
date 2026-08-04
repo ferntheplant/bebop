@@ -36,5 +36,8 @@ Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
 ## Active efforts
 
 - [Bebop MVP](../.scratch/bebop-mvp/map.md) — the route from the current control plane to a merged bounty.
-- [The orthogonal control model](../.scratch/workflow-control-model/brief.md) — building out ADRs 0036–0042.
-  The first slice shipped; the brief's scope section carries what the constraint ledger still needs.
+
+## Completed efforts
+
+- [The orthogonal control model](../.scratch/workflow-control-model/brief.md) — ADRs 0036–0043 shipped in the
+  orthogonal model and constraint-ledger slices.

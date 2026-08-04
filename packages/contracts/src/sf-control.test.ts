@@ -34,7 +34,6 @@ const commands: ReadonlyArray<typeof SfControlCommand.Encoded> = [
   { type: "continue" },
   { type: "rerun", target: "validation" },
   { type: "resume" },
-  { type: "approve_config" },
 ];
 
 describe("sf local control contracts", () => {
@@ -65,23 +64,32 @@ describe("sf local control contracts", () => {
   });
 
   test("accepts candidate-bound gate and approval status", () => {
+    const candidateSha = "b".repeat(40);
     const encoded = {
       ...baseSnapshot,
       stateRevision: 12,
-      stage: "local_validation",
+      stage: "needs_attention",
+      suspendedStage: "local_validation",
       effectiveSpecRevision: 1,
-      candidateSha: "b".repeat(40),
+      candidateSha,
+      attention: [
+        {
+          kind: "config_approval",
+          reason: "The candidate changes privileged configuration.",
+          resolutions: [`bebop bounty approve-config --bounty ${baseSnapshot.bountyId} --sha ${candidateSha}`, "stop"],
+        },
+      ],
       gates: [
         {
           gate: "local_validation",
-          candidateSha: "b".repeat(40),
+          candidateSha,
           specRevision: 1,
           status: "pending",
           attempts: 1,
           updatedAt: timestamp,
         },
       ],
-      pendingConfigApproval: { candidateSha: "b".repeat(40), unifiedDiff: "diff --git a/.bebop/config.yml" },
+      pendingConfigApproval: { candidateSha, unifiedDiff: "diff --git a/.bebop/config.yml" },
     } as const;
     const decoded = Schema.decodeUnknownSync(SfStatusSnapshot)(encoded);
     expect(Schema.encodeSync(SfStatusSnapshot)(decoded)).toEqual(encoded);
@@ -113,6 +121,25 @@ describe("sf local control contracts", () => {
             status: "pending",
             attempts: 1,
             updatedAt: timestamp,
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        stage: "needs_attention",
+        suspendedStage: "local_validation",
+        effectiveSpecRevision: 1,
+        candidateSha: "b".repeat(40),
+        attention: [
+          {
+            kind: "config_approval",
+            reason: "The candidate changes privileged configuration.",
+            resolutions: [
+              `bebop bounty approve-config --bounty ${baseSnapshot.bountyId} --sha ${"c".repeat(40)}`,
+              "stop",
+            ],
           },
         ],
       }),

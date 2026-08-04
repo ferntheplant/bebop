@@ -4,6 +4,7 @@ import { lstat } from "node:fs/promises";
 import type {
   BebopCommand,
   AttentionKind,
+  BountyId,
   CommandId,
   CommandResultMessage,
   EvidenceBundleManifest,
@@ -15,6 +16,7 @@ import type {
 } from "@bebop/contracts";
 import {
   attemptAllowance,
+  BebopApproveConfigResolutionCommand,
   CommandResultMessage as CommandResultMessageSchema,
   constraintScopes,
   EvidenceBundleManifest as EvidenceBundleManifestSchema,
@@ -162,7 +164,11 @@ function commandHash(command: BebopCommand): string {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
 }
 
-function statusResolutions(state: SwordfishWorkflowState, kind: AttentionKind): ReadonlyArray<SfResolutionCommand> {
+function statusResolutions(
+  state: SwordfishWorkflowState,
+  kind: AttentionKind,
+  bountyId: BountyId,
+): ReadonlyArray<SfResolutionCommand> {
   const permitted = resolutionsForAttention[kind];
   const commands: Array<SfResolutionCommand> = [];
   if (permitted.includes("resume")) commands.push("resume");
@@ -182,7 +188,13 @@ function statusResolutions(state: SwordfishWorkflowState, kind: AttentionKind): 
   if (permitted.includes("takeover") && state.controller === "swordfish" && state.activeCowboy !== null) {
     commands.push(`takeover ${state.activeCowboy.role}`);
   }
-  if (permitted.includes("approve_config")) commands.push("approve-config");
+  if (permitted.includes("approve_config") && state.candidate !== null) {
+    commands.push(
+      Schema.decodeUnknownSync(BebopApproveConfigResolutionCommand)(
+        `bebop bounty approve-config --bounty ${bountyId} --sha ${state.candidate.commitSha}`,
+      ),
+    );
+  }
   if (permitted.includes("cancel")) commands.push("stop");
   return commands;
 }
@@ -445,7 +457,7 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
               attention: attention.map((record) => ({
                 kind: record.kind,
                 reason: record.reason,
-                resolutions: statusResolutions(state, record.kind),
+                resolutions: statusResolutions(state, record.kind, config.bountyId),
               })),
               ...(workflow.state.effectiveSpec === null
                 ? {}

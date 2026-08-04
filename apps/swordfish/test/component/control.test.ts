@@ -279,7 +279,7 @@ describe("Swordfish local control", () => {
     }
   });
 
-  test("drives takeover, handoff, extend, retry, and approve-config over the socket", async () => {
+  test("drives takeover, handoff, and recovery commands over the socket", async () => {
     harness = await startSwordfishHarness("commands");
     // There has to be an active cowboy to take over from ("One controller drives one active cowboy" (ADR 0037)).
     await harness.run(
@@ -342,10 +342,6 @@ describe("Swordfish local control", () => {
         expect(status.result.snapshot.validatedCandidates).toEqual({ consumed: 0, base: 3, granted: 0 });
         expect(status.result.snapshot.exhausted).toEqual([]);
       }
-
-      const approve = await send("sf-cmd-approve", { type: "approve_config" });
-      expect(approve.type).toBe("error");
-      if (approve.type === "error") expect(approve.error.code).toBe("config_approval_not_pending");
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
     }

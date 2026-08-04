@@ -98,8 +98,7 @@ function minutes(value: SfBudgetSnapshot): SfBudgetSnapshot {
 }
 
 function rejectTrailingArguments(command: SfControlCommand): Effect.Effect<void, Error> {
-  const commandName = command.type === "approve_config" ? "approve-config" : command.type;
-  const commandIndex = process.argv.indexOf(commandName);
+  const commandIndex = process.argv.indexOf(command.type);
   if (commandIndex < 0) return Effect.void;
 
   const positionals: Array<string> = [];
@@ -146,9 +145,6 @@ const execute = Effect.fnUntraced(function* (options: {
 const status = Command.make("status", common, (options) => execute({ ...options, command: { type: "status" } }));
 const stop = Command.make("stop", common, (options) => execute({ ...options, command: { type: "stop" } }));
 const handoff = Command.make("handoff", common, (options) => execute({ ...options, command: { type: "handoff" } }));
-const approveConfig = Command.make("approve-config", common, (options) =>
-  execute({ ...options, command: { type: "approve_config" } }),
-);
 const takeover = Command.make(
   "takeover",
   {
@@ -167,7 +163,7 @@ const rerun = Command.make("rerun", { ...common, target: Argument.choice("target
 const resume = Command.make("resume", common, (options) => execute({ ...options, command: { type: "resume" } }));
 
 const root = Command.make("sf", {}, () => Console.log("Run `sf --help`.")).pipe(
-  Command.withSubcommands([status, stop, takeover, handoff, proceed, rerun, resume, approveConfig]),
+  Command.withSubcommands([status, stop, takeover, handoff, proceed, rerun, resume]),
 );
 
 function describeFailure(error: unknown): string {

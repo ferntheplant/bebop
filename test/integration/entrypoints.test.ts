@@ -13,13 +13,20 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
-import { adminDatabaseUrl, createDisposableDatabase } from "@bebop/testkit";
+import {
+  adminDatabaseUrl,
+  createDisposableDatabase,
+  requestSwordfishStatus,
+  waitForSwordfishControl,
+} from "@bebop/testkit";
 import { describe, expect, test } from "vite-plus/test";
 
 interface Outcome {
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number | null;
+  /** Set when `timeoutMs` elapsed and the process had to be killed, rather than exiting itself. */
+  readonly killed: boolean;
 }
 
 interface RunningProcess {
@@ -51,10 +58,14 @@ function run(
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
-    const timer = setTimeout(() => child.kill("SIGTERM"), options?.timeoutMs ?? 10_000);
+    let killed = false;
+    const timer = setTimeout(() => {
+      killed = true;
+      child.kill("SIGTERM");
+    }, options?.timeoutMs ?? 10_000);
     child.on("close", (exitCode) => {
       clearTimeout(timer);
-      resolve({ stdout, stderr, exitCode });
+      resolve({ stdout, stderr, exitCode, killed });
     });
   });
 }
@@ -79,7 +90,7 @@ function startProcess(entrypoint: string, env: Readonly<Record<string, string>>)
         const timer = setTimeout(() => {
           child.kill("SIGKILL");
           reject(new Error(`process did not stop after SIGTERM:\n${output}`));
-        }, 5_000);
+        }, 15_000);
         child.once("close", () => {
           clearTimeout(timer);
           resolve();
@@ -105,24 +116,36 @@ function availablePort(): Promise<number> {
   });
 }
 
+/**
+ * Waits for the daemon to answer, then reads its status through the packed CLI.
+ *
+ * The wait and the read are deliberately different mechanisms. Waiting spawns nothing:
+ * `waitForSwordfishControl` probes over the socket in this process, so what it measures is the
+ * daemon rather than how quickly a loaded runner can cold-start `bun`. Reading then runs the
+ * packed `cli.mjs` as a real process, on the default timeout, because proving the entrypoint
+ * works as a process is what this file is for — it just must not be the stopwatch that decides
+ * whether the daemon is up.
+ */
 async function waitForControlStatus(path: string, daemon: RunningProcess): Promise<Outcome> {
-  const deadline = Date.now() + 10_000;
-  let lastOutcome: Outcome | undefined;
-  while (Date.now() < deadline) {
-    lastOutcome = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", path, "--json"], {
-      timeoutMs: 1_000,
-    });
-    if (lastOutcome.exitCode === 0) return lastOutcome;
-    if (daemon.child.exitCode !== null || daemon.child.signalCode !== null) break;
-    await new Promise((resolve) => setTimeout(resolve, 25));
+  await waitForSwordfishControl({
+    path,
+    timeoutMillis: 30_000,
+    isRunning: () => daemon.child.exitCode === null && daemon.child.signalCode === null,
+    describeDaemon: () => `Daemon output:\n${daemon.output()}`,
+  });
+  const outcome = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", path, "--json"]);
+  if (outcome.exitCode !== 0) {
+    throw new Error(
+      `The daemon answered the control probe but the packed sf status exited ${outcome.exitCode}:\n${outcome.stderr}${daemon.output()}`,
+    );
   }
-  throw new Error(
-    `Swordfish control socket did not become ready at ${path}:\n${lastOutcome?.stderr ?? ""}${daemon.output()}`,
-  );
+  return outcome;
 }
 
+// 30s rather than 10s: a passing run never waits longer, but `vp run ready` fans five tasks out
+// at once and an oversubscribed runner stretches every step under observation here.
 async function waitForCondition(condition: () => boolean | Promise<boolean>, description: string): Promise<void> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (await condition()) return;
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -133,7 +156,7 @@ async function waitForCondition(condition: () => boolean | Promise<boolean>, des
 function waitForProcessExit(process: RunningProcess): Promise<number | null> {
   if (process.child.exitCode !== null) return Promise.resolve(process.child.exitCode);
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`process did not exit:\n${process.output()}`)), 5_000);
+    const timer = setTimeout(() => reject(new Error(`process did not exit:\n${process.output()}`)), 30_000);
     process.child.once("close", (code) => {
       clearTimeout(timer);
       resolve(code);
@@ -146,7 +169,7 @@ async function waitForResponse(
   init?: RequestInit,
   accept: (response: Response) => boolean = (response) => response.status < 500,
 ): Promise<Response> {
-  const deadline = Date.now() + 10_000;
+  const deadline = Date.now() + 30_000;
   let lastError: unknown;
   while (Date.now() < deadline) {
     try {
@@ -239,7 +262,7 @@ describe("process entrypoints", () => {
     ]);
     expect(trailing.exitCode).not.toBe(0);
     expect(`${trailing.stdout}${trailing.stderr}`).toContain("Unexpected argument");
-  });
+  }, 30_000);
 
   test("the Swordfish daemon refuses to start without configuration", async () => {
     const outcome = await run("apps/swordfish/src/daemon.ts", [], {
@@ -250,9 +273,12 @@ describe("process entrypoints", () => {
   });
 
   test("a shutdown deadline forces process exit when a finalizer never completes", async () => {
-    const startedAt = Date.now();
-    const outcome = await run("apps/swordfish/test/shutdown-timeout-fixture.ts", [], { timeoutMs: 2_000 });
-    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    // The fixture leaves a listening server handle open and a finalizer that never returns, so
+    // without the deadline the process stays alive forever and we have to kill it. Asserting on
+    // `killed` states that directly; the old wall-clock bound inferred it from an elapsed time
+    // that also contained `bun` cold start, and so failed on a slow runner for unrelated reasons.
+    const outcome = await run("apps/swordfish/test/shutdown-timeout-fixture.ts", [], { timeoutMs: 30_000 });
+    expect(outcome.killed).toBe(false);
     expect(outcome.exitCode).not.toBe(0);
     expect(`${outcome.stdout}${outcome.stderr}`).toContain("Swordfish shutdown timed out");
     expect(`${outcome.stdout}${outcome.stderr}`).toContain("ShutdownTimeoutError");
@@ -387,7 +413,7 @@ describe("process entrypoints", () => {
       void peer?.stop(true);
       await rm(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   test("a SIGKILL before acknowledgement preserves the durable event for replay after restart", async () => {
     const root = await mkdtemp(join(tmpdir(), "bebop-swordfish-process-"));
@@ -493,15 +519,14 @@ describe("process entrypoints", () => {
       daemon = startProcess("apps/swordfish/dist/daemon.mjs", env);
       await waitForControlStatus(socketPath, daemon);
       await waitForCondition(() => eventSequences.length >= 2, "the restarted process replay");
+      // Polled in-process rather than by spawning `sf` every 25ms: this waits on the daemon's
+      // acknowledgement cursor, and a spawned probe would make the poll interval hostage to
+      // `bun` cold-start instead. The packed CLI is still driven below, where it is the subject.
       await waitForCondition(async () => {
-        const outcome = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", socketPath, "--json"], {
-          timeoutMs: 1_000,
-        });
-        if (outcome.exitCode !== 0) return false;
-        const status = JSON.parse(outcome.stdout) as {
-          bebopConnection?: { acknowledgedThrough?: unknown; pendingEventCount?: unknown };
-        };
-        return status.bebopConnection?.acknowledgedThrough === 1 && status.bebopConnection.pendingEventCount === 0;
+        const response = await requestSwordfishStatus(socketPath).catch(() => undefined);
+        if (response?.type !== "success") return false;
+        const connection = response.result.snapshot.bebopConnection;
+        return connection.acknowledgedThrough === 1 && connection.pendingEventCount === 0;
       }, "the restarted process acknowledgement");
       expect(eventSequences).toEqual([1, 1]);
 
@@ -522,7 +547,7 @@ describe("process entrypoints", () => {
       void peer.stop(true);
       await rm(root, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   const postgresTest = adminDatabaseUrl() === null ? test.skip : test;
 
@@ -618,7 +643,7 @@ describe("process entrypoints", () => {
         await database.drop();
       }
     },
-    30_000,
+    60_000,
   );
 
   postgresTest("a fresh packed API requires an explicit bootstrap token", async () => {

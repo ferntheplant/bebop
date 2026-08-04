@@ -125,6 +125,33 @@ The set the MVP needs:
 - evidence blobs with duplicate content, hash mismatches, and interrupted uploads;
 - a GitHub smoke repository outside this one.
 
+## How process-level suites wait
+
+A suite that spawns real processes has to decide when the thing it started is ready. Two tempting answers are
+both wrong, and both have already cost a day of CI archaeology:
+
+- **A file appeared.** The Swordfish control socket is bound before migrations and bootstrap run, so it accepts
+  connections for the whole of startup and parks them — see [gotchas](./gotchas.md#process-lifecycle).
+- **A freshly spawned CLI finished inside a short timeout.** Cold-starting `bun` and loading a packed entrypoint
+  costs ~130ms idle, ~600ms at 4× CPU oversubscription and ~1.4s at 8×. `vp run ready` fans five tasks out at
+  once, so CI reaches those levels routinely. A readiness poll that spawns a process on a one-second budget
+  stops measuring the daemon and starts measuring the scheduler, and past that cliff it can never succeed no
+  matter how healthy the daemon is: every probe is killed before it connects. Worse, a killed Effect CLI exits
+  130 having printed nothing, so the failure reports an empty error and blames the process it was watching.
+
+Readiness is therefore **the daemon answered a request**. `waitForSwordfishControl` in `@bebop/testkit` is that
+wait for Swordfish: it probes over the socket in-process, so it costs what it measures, cannot be killed
+mid-flight, and reports per-attempt detail when it gives up. `waitForResponse` in `test/integration` is the HTTP
+equivalent.
+
+This does not mean process-level suites stop driving the real CLI — driving it is what they are for. It means
+the CLI is the **subject** of an assertion, never the **stopwatch** for a readiness decision. Wait in-process,
+then invoke the packed binary once, on a generous timeout, and assert on what it said.
+
+The same reasoning applies to any budget that silently includes a process spawn. A test asserting "this
+finished within 2 seconds" where the two seconds contain a cold start is asserting something about the runner.
+Assert the property instead — that the process exited on its own rather than having to be killed.
+
 ## Where to put the next test
 
 - A pure function or schema round-trip next to a single source file? → colocate at `src/<area>.test.ts`.

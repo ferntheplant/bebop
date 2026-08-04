@@ -1,6 +1,8 @@
-import { lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+import { waitForSwordfishControl } from "@bebop/testkit";
 
 const workspace = join(import.meta.dir, "..");
 const daemonEntrypoint = join(workspace, "dist", "daemon.mjs");
@@ -27,18 +29,21 @@ async function run(
   return { code, stdout, stderr };
 }
 
-async function waitForSocket(path: string, daemon: ReturnType<typeof Bun.spawn>): Promise<void> {
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    if (daemon.exitCode !== null) throw new Error("packed daemon exited before creating its control socket");
-    try {
-      if ((await lstat(path)).isSocket()) return;
-    } catch {
-      // The daemon is still applying its bundled migration.
-    }
-    await Bun.sleep(25);
-  }
-  throw new Error(`packed daemon did not create ${path}`);
+/**
+ * Waits until the daemon answers, not until its socket file appears.
+ *
+ * The file appears in `makeControlSocket`, which runs before the bundled migration and before
+ * `runControlServer` is forked, so the socket accepts connections and parks them for the whole
+ * of startup. Waiting on the file and then immediately running `sf status` sent that first real
+ * request into the parked window and left it racing the CLI's own 5s response timeout — which a
+ * loaded runner is entirely capable of winning.
+ */
+async function waitForDaemon(path: string, daemon: ReturnType<typeof Bun.spawn>): Promise<void> {
+  await waitForSwordfishControl({
+    path,
+    timeoutMillis: 30_000,
+    isRunning: () => daemon.exitCode === null && daemon.signalCode === null,
+  });
 }
 
 const root = await mkdtemp(join(tmpdir(), "bebop-swordfish-smoke-"));
@@ -70,7 +75,7 @@ const daemon = Bun.spawn(["bun", daemonEntrypoint], {
   stderr: "pipe",
 });
 try {
-  await waitForSocket(socketPath, daemon);
+  await waitForDaemon(socketPath, daemon);
   const status = await run(["status", "--socket", socketPath, "--json"], env);
   if (status.code !== 0) throw new Error(`packed sf status failed: ${status.stderr}`);
   const snapshot = JSON.parse(status.stdout) as { stage?: unknown; bebopConnection?: { pendingEventCount?: unknown } };

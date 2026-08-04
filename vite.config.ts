@@ -1,6 +1,8 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  root: ".",
+  logLevel: "error",
   staged: {
     "*": "vp check --fix",
   },
@@ -94,6 +96,25 @@ export default defineConfig({
   run: {
     cache: true,
     tasks: {
+      // Names each package build explicitly rather than `vp run -r build`. A nested `vp run`
+      // is *inlined* by Vite Task as fresh task nodes, which do not dedupe against the same
+      // builds reached through a `dependsOn: { task: "build", from: [...] }` closure — so
+      // `ready` scheduled every package's build twice, and two `vp pack` processes running
+      // concurrently in one directory would empty `dist` under each other (surfacing as
+      // `Cannot find module '@bebop/contracts'` inside a smoke). Listing the task IDs keeps
+      // one node per build. Do not collapse this back into `vp run -r build`.
+      build: {
+        command: "echo 'build: all packages packed'",
+        dependsOn: [
+          "@bebop/contracts#build",
+          "@bebop/workflow#build",
+          "@bebop/testkit#build",
+          "@bebop/server#build",
+          "@bebop/swordfish#build",
+          "@bebop/opencode-plugin#build",
+        ],
+      },
+      dev: { command: "vp run @bebop/server#dev", cache: false },
       // `check` and the test tasks type-check and import `@bebop/contracts`, which
       // resolves through its built `dist`, so every one of them needs a build first.
       check: { command: "vp check", dependsOn: ["build"] },
@@ -103,7 +124,7 @@ export default defineConfig({
       // every test — unit, component, and process-level — runs on the runtime production
       // uses. `vp test` remains the right command for an ad-hoc run of the pure tests.
       test: {
-        command: "bun node_modules/vitest/vitest.mjs run apps packages",
+        command: "bun node_modules/vitest/vitest.mjs run --reporter=minimal apps packages",
         dependsOn: ["build"],
         // The component suites read this to decide whether a database is available, so it
         // belongs in the cache key: a run with a database and a run without are not the same
@@ -112,12 +133,12 @@ export default defineConfig({
         env: ["BEBOP_TEST_DATABASE_URL"],
       },
       "test:integration": {
-        command: "bun node_modules/vitest/vitest.mjs run test/integration",
+        command: "bun node_modules/vitest/vitest.mjs run --reporter=minimal test/integration",
         dependsOn: ["build"],
         env: ["BEBOP_TEST_DATABASE_URL"],
       },
       "test:e2e": {
-        command: "bun node_modules/vitest/vitest.mjs run --passWithNoTests test/e2e",
+        command: "bun node_modules/vitest/vitest.mjs run --reporter=minimal  --passWithNoTests test/e2e",
         dependsOn: ["build"],
         env: ["BEBOP_TEST_DATABASE_URL"],
       },

@@ -104,3 +104,14 @@ exceeding `SWORDFISH_SHUTDOWN_TIMEOUT`, so a stuck socket close cannot outlive t
 **`httpIdleTimeout` defaults to Bun's maximum of 255 seconds rather than being disabled.** An unbounded idle
 connection is a resource a half-dead client can hold forever, and the event stream is resumable by construction —
 a dropped subscriber reconnects with `Last-Event-ID` and misses nothing.
+
+**The Swordfish control socket accepts connections before anything answers on them.** `makeControlSocket` binds
+the listener first, then `initializeDatabase` and `workflow.bootstrap` run, and only then is `runControlServer`
+forked. That order is deliberate: the listener is how a second daemon on the same database is refused _before_
+reconciliation mutates state, which is what `apps/swordfish/src/daemon.ts` acquires both listeners up front to
+guarantee. Nothing is dropped in the meantime — `NodeSocketServer.make` queues arriving connections and `run`
+replays them — so a client simply waits, well inside its own response timeout. The consequence is that **the
+socket file existing is not the daemon being ready**, and neither is a connection succeeding. Measured on an
+idle machine the parked window is 16–309ms; on a loaded runner it is longer. Waiting on `lstat(path).isSocket()`
+is the tidying that reintroduces this, and it reintroduces it as a timeout in whatever request happens to go
+first. Wait on an answered control request instead — `waitForSwordfishControl` in `@bebop/testkit` is that wait.

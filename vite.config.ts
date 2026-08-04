@@ -163,5 +163,22 @@ export default defineConfig({
   },
   test: {
     passWithNoTests: false,
+    // Vitest's 5s default is smaller than waits the suites already declare — an SSE reader
+    // asking for 10s, a process probe allowing 20s — so those waits could never fire and the
+    // generic "Test timed out in 5000ms" always won. That is worse than a slow test: the
+    // reader's own `Expected 206 SSE frames, received 3` and the entrypoint suite's `killed`
+    // assertion are the diagnostics that say what actually broke, and neither was reachable.
+    //
+    // A budget must therefore exceed the longest wait the test can perform. 30s clears every
+    // declared wait in the repo with room for a loaded runner — `vp run ready` fans five tasks
+    // out at once, and at the resulting oversubscription real work runs ~10x slower. Passing
+    // tests never spend this; only a test that was going to fail waits longer to say so.
+    //
+    // Tests needing more than 30s still say so explicitly, and that stays the convention:
+    // `docs/testing.md` covers when a budget belongs on the test instead of here.
+    testTimeout: 30_000,
+    // Component suites build a real harness against Postgres in `beforeAll`, which the 10s
+    // default leaves no margin for on the same loaded runner.
+    hookTimeout: 30_000,
   },
 });

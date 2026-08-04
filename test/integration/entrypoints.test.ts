@@ -277,7 +277,8 @@ describe("process entrypoints", () => {
     // without the deadline the process stays alive forever and we have to kill it. Asserting on
     // `killed` states that directly; the old wall-clock bound inferred it from an elapsed time
     // that also contained `bun` cold start, and so failed on a slow runner for unrelated reasons.
-    const outcome = await run("apps/swordfish/test/shutdown-timeout-fixture.ts", [], { timeoutMs: 30_000 });
+    // Under the 30s test budget, so a regression reports `killed` rather than a bare timeout.
+    const outcome = await run("apps/swordfish/test/shutdown-timeout-fixture.ts", [], { timeoutMs: 20_000 });
     expect(outcome.killed).toBe(false);
     expect(outcome.exitCode).not.toBe(0);
     expect(`${outcome.stdout}${outcome.stderr}`).toContain("Swordfish shutdown timed out");

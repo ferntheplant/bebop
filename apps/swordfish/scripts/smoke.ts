@@ -77,21 +77,11 @@ try {
   if (snapshot.stage !== "interactive" || snapshot.bebopConnection?.pendingEventCount !== 1) {
     throw new Error(`packed daemon returned an unexpected status: ${status.stdout}`);
   }
-  const stop = await run(["stop", "--socket", socketPath], env);
-  if (stop.code !== 0) throw new Error(`packed sf stop failed: ${stop.stderr}`);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error("packed daemon did not stop through sf")), 5_000);
-  });
-  const code = await Promise.race([daemon.exited, timeout]).finally(() => {
-    if (timer !== undefined) clearTimeout(timer);
-  });
-  if (code !== 0) {
-    const [stdout, stderr] = await Promise.all([
-      new Response(daemon.stdout).text(),
-      new Response(daemon.stderr).text(),
-    ]);
-    throw new Error(`packed daemon exited ${code}:\n${stdout}\n${stderr}`);
+  const cancel = await run(["cancel", "--socket", socketPath], env);
+  if (cancel.code !== 0) throw new Error(`packed sf cancel failed: ${cancel.stderr}`);
+  const cancelled = await run(["status", "--socket", socketPath, "--json"], env);
+  if (cancelled.code !== 0 || (JSON.parse(cancelled.stdout) as { stage?: unknown }).stage !== "cancelled") {
+    throw new Error(`packed daemon was unavailable after sf cancel: ${cancelled.stderr}${cancelled.stdout}`);
   }
 } finally {
   if (daemon.exitCode === null) {

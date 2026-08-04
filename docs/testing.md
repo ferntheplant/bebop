@@ -67,9 +67,16 @@ passes. `smoke` is gated by `vp run ready` (`vite.config.ts:124-132`).
 
 `prototypes/*/run.ts` are throwaway probe drivers run on demand via `vp run @bebop/prototype-<name>#prototype`,
 excluded from `vp run test`. Each validates a single design assumption (persistence durability, Effect-on-Bun
-HTTP/SSE/WS, lease guard, tmux lock). Their recorded findings — bigint-as-string, `jsonb` reorder, security
-middleware, `BunStdio`, graceful stop — get re-pinned as named assertions in downstream unit and component tests,
-and the ones that shaped the design are written up in [`docs/adr/`](./adr/).
+HTTP/SSE/WS, lease guard, tmux lock, packed-process protocol composition). Their recorded findings —
+bigint-as-string, `jsonb` reorder, security middleware, `BunStdio`, bounded shutdown, retry-stable replay, and
+stop delivery — get re-pinned as named assertions in downstream unit, component, or integration tests, and the
+ones that shaped the design are written up in [`docs/adr/`](./adr/).
+
+The [real-process loopback prototype](../prototypes/real-process-local-protocol/README.md) is the process-level
+exception that proves two applications compose rather than proving one entrypoint starts. It launches only packed
+artifacts and drives public HTTP, WebSocket, CLI, and Unix-socket interfaces; it does not import app source or
+write either database. Its production follow-up belongs in the integration layer once the lifecycle provider can
+hand its existing machine credential to a local supervisor without a second credential path.
 
 ## Database gating: `BEBOP_TEST_DATABASE_URL`
 

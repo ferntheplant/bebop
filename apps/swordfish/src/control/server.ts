@@ -23,7 +23,6 @@ import { Data, Deferred, Duration, Effect, Fiber, Schema } from "effect";
 import { Socket, SocketServer } from "effect/unstable/socket";
 
 import { SwordfishConfiguration } from "#src/config.ts";
-import { ShutdownSignal } from "#src/daemon/shutdown.ts";
 import { SwordfishIdentity } from "#src/domain/identity.ts";
 import { WorkflowService } from "#src/workflow/service.ts";
 import { commandMessage } from "#src/workflow/service.ts";
@@ -165,10 +164,7 @@ function internalErrorResponse(request: SfControlRequest, kind: string, error: u
   return Effect.logWarning(`Swordfish control request failed with a ${kind}.`).pipe(
     Effect.annotateLogs("error_tag", error instanceof Error ? error.name : String(error)),
     Effect.annotateLogs("error_message", error instanceof Error ? error.message : String(error)),
-    Effect.as({
-      response: responseError(request, "internal_error", "Swordfish could not apply the request; see daemon logs."),
-      stop: false,
-    }),
+    Effect.as(responseError(request, "internal_error", "Swordfish could not apply the request; see daemon logs.")),
   );
 }
 
@@ -179,22 +175,22 @@ const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
 
   if (request.command.type === "status") {
     return {
-      response: {
-        type: "success",
-        controlVersion: currentSfControlVersion,
-        correlationId: request.correlationId,
-        result: { command: request.command, snapshot: yield* workflow.status },
-      } satisfies SfControlResponse,
-      stop: false,
-    };
+      type: "success",
+      controlVersion: currentSfControlVersion,
+      correlationId: request.correlationId,
+      result: { command: request.command, snapshot: yield* workflow.status },
+    } satisfies SfControlResponse;
   }
 
   let command: BebopCommand;
   switch (request.command.type) {
+    case "cancel":
+      command = { type: "stop" };
+      break;
     case "handoff": {
       const status = yield* workflow.status;
       if (status.controller !== "human") {
-        return { response: responseError(request, "lease_not_held", "Human control is not held."), stop: false };
+        return responseError(request, "lease_not_held", "Human control is not held.");
       }
       command = { type: "handoff" };
       break;
@@ -214,23 +210,19 @@ const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
         : command.type === "continue" || command.type === "rerun" || command.type === "resume"
           ? "recovery_not_available"
           : "invalid_state";
-    return { response: responseError(request, code, result.error ?? "The command was rejected."), stop: false };
+    return responseError(request, code, result.error ?? "The command was rejected.");
   }
 
   return {
-    response: {
-      type: "success",
-      controlVersion: currentSfControlVersion,
-      correlationId: request.correlationId,
-      result: { command: request.command, snapshot: yield* workflow.status },
-    } satisfies SfControlResponse,
-    stop: command.type === "stop",
-  };
+    type: "success",
+    controlVersion: currentSfControlVersion,
+    correlationId: request.correlationId,
+    result: { command: request.command, snapshot: yield* workflow.status },
+  } satisfies SfControlResponse;
 });
 
 const connectionHandler = Effect.fnUntraced(function* (socket: Socket.Socket) {
   const identity = yield* SwordfishIdentity;
-  const shutdown = yield* ShutdownSignal;
   const writer = yield* socket.writer;
   const requestFrame = yield* Deferred.make<string, ControlSocketSetupError>();
   let buffer = "";
@@ -274,7 +266,6 @@ const connectionHandler = Effect.fnUntraced(function* (socket: Socket.Socket) {
   );
 
   let response: SfControlResponse;
-  let stop = false;
   if (decoded._tag === "Failure") {
     const correlationId = yield* identity.correlationId;
     const cause = decoded.failure;
@@ -291,16 +282,15 @@ const connectionHandler = Effect.fnUntraced(function* (socket: Socket.Socket) {
       },
     };
   } else {
-    const handled = yield* handleRequest(decoded.success).pipe(
+    response = yield* handleRequest(decoded.success).pipe(
       Effect.catchTag("CommandConflictError", () =>
-        Effect.succeed({
-          response: responseError(
+        Effect.succeed(
+          responseError(
             decoded.success,
             "correlation_conflict",
             "This correlation id was already used for another command.",
           ),
-          stop: false,
-        }),
+        ),
       ),
       // Once a request is decoded it owns a correlation id: every expected internal
       // failure becomes a schema-valid error response on that id rather than a closed
@@ -311,14 +301,11 @@ const connectionHandler = Effect.fnUntraced(function* (socket: Socket.Socket) {
           internalErrorResponse(decoded.success, "workflow transition failure", error),
       }),
     );
-    response = handled.response;
-    stop = handled.stop;
   }
 
   yield* writer(`${JSON.stringify(Schema.encodeUnknownSync(SfControlResponseSchema)(response))}\n`);
   yield* writer(new Socket.CloseEvent(1000, "response complete"));
   yield* Fiber.interrupt(reader);
-  if (stop) yield* shutdown.request;
 });
 
 export const runControlServer = Effect.gen(function* () {

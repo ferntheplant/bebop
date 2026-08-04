@@ -50,7 +50,7 @@ async function waitForSocket(path: string): Promise<void> {
 }
 
 describe("Swordfish local control", () => {
-  test("serves status and stop over a mode-0600 Unix socket", async () => {
+  test("serves status and cancellation over a mode-0600 Unix socket", async () => {
     harness = await startSwordfishHarness("control");
     const fiber = harness.fork(runControlSocket);
     try {
@@ -92,13 +92,28 @@ describe("Swordfish local control", () => {
       await Effect.runPromise(requestControl(harness.config.controlSocketPath, firstUse).pipe(Effect.scoped));
       const conflictingUse = Schema.decodeUnknownSync(SfControlRequest)({
         ...Schema.encodeUnknownSync(SfControlRequest)(firstUse),
-        command: { type: "stop" },
+        command: { type: "cancel" },
       });
       const conflict = await Effect.runPromise(
         requestControl(harness.config.controlSocketPath, conflictingUse).pipe(Effect.scoped),
       );
       expect(conflict.type).toBe("error");
       if (conflict.type === "error") expect(conflict.error.code).toBe("correlation_conflict");
+
+      const cancelled = await Effect.runPromise(
+        requestControl(harness.config.controlSocketPath, controlRequest("sf-cancel", { type: "cancel" })).pipe(
+          Effect.scoped,
+        ),
+      );
+      expect(cancelled.type).toBe("success");
+      if (cancelled.type === "success") expect(cancelled.result.snapshot.stage).toBe("cancelled");
+      const afterCancellation = await Effect.runPromise(
+        requestControl(harness.config.controlSocketPath, controlRequest("sf-after-cancel", { type: "status" })).pipe(
+          Effect.scoped,
+        ),
+      );
+      expect(afterCancellation.type).toBe("success");
+      if (afterCancellation.type === "success") expect(afterCancellation.result.snapshot.stage).toBe("cancelled");
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
     }
@@ -191,7 +206,7 @@ describe("Swordfish local control", () => {
       });
       // A schema-valid success response answering a different command than requested.
       await serveOnce((encoded) => {
-        (encoded["result"] as Record<string, unknown>)["command"] = { type: "stop" };
+        (encoded["result"] as Record<string, unknown>)["command"] = { type: "cancel" };
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
@@ -217,7 +232,7 @@ describe("Swordfish local control", () => {
     try {
       await waitForSocket(harness.config.controlSocketPath);
       const response = await Effect.runPromise(
-        requestControl(harness.config.controlSocketPath, controlRequest("sf-internal", { type: "stop" })).pipe(
+        requestControl(harness.config.controlSocketPath, controlRequest("sf-internal", { type: "cancel" })).pipe(
           Effect.scoped,
         ),
       );

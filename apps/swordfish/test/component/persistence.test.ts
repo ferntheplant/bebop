@@ -429,7 +429,7 @@ describe("Swordfish SQLite authority", () => {
         kind: "constraint_exhausted",
         reason: "Autonomous work stopped because building has used all 3 attempts.",
         // There is no attempt to continue, and every command shown can be executed exactly as printed.
-        resolutions: ["rerun building", "takeover ein", "stop"],
+        resolutions: ["rerun building", "takeover ein", "cancel"],
       },
     ]);
     // Status shows the arithmetic that stopped the bounty, not just the daemon's assertion that something did.
@@ -450,7 +450,7 @@ describe("Swordfish SQLite authority", () => {
       {
         kind: "config_approval",
         reason: "Approve this candidate.",
-        resolutions: [`bebop bounty approve-config --bounty bty-component --sha ${candidateSha}`, "stop"],
+        resolutions: [`bebop bounty approve-config --bounty bty-component --sha ${candidateSha}`, "cancel"],
       },
     ]);
   });

@@ -195,7 +195,7 @@ function statusResolutions(
       ),
     );
   }
-  if (permitted.includes("cancel")) commands.push("stop");
+  if (permitted.includes("cancel")) commands.push("cancel");
   return commands;
 }
 

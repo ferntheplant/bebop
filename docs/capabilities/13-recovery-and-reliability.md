@@ -34,11 +34,13 @@ merge.
 **Partial.** This is the most-built capability. Both processes reconnect, replay, deduplicate, and reconcile;
 sequence gaps, conflicting replays, and stale-connection traffic are all rejected with reasons. Constraint
 exhaustion parks work as promised: the scoped ledger is real, Swordfish evaluates it on the heartbeat it already
-sends, and `continue`, `rerun <target>`, and `resume` are distinct authenticated recoveries whose grants are
-durable events rather than counter edits. Daemon downtime counts toward the attempt that was running, because
-the running-since mark is in the durable snapshot rather than in a timer. What has never happened is the two
-processes running across a network that can actually break — and no cowboy has yet produced an attempt for the
-ledger to bound.
+sends, and `continue`, `rerun <target>`, and `resume` are distinct local recoveries whose grants are durable events
+rather than counter edits. Their settled operator authentication is not built. Daemon downtime counts toward the
+attempt that was running, because the running-since mark is in the durable snapshot rather than in a timer. The
+[real-process loopback prototype](../../prototypes/real-process-local-protocol/README.md) runs both packed peers
+against Postgres and SQLite: listener loss, API restart, daemon `SIGKILL`, event replay, and an offline stop all
+recover without duplicate projection or command delivery. It does not exercise VM loss or a remote network, and
+no cowboy has yet produced an attempt for the ledger to bound.
 
 ## Acceptance criteria
 
@@ -68,6 +70,10 @@ Swordfish or bebop does not duplicate VMs, prompts, PRs, or merges).
   — a recovery grant answers the one reason it addresses, so clearing an exhausted budget cannot also clear an
   unrelated uncertain gate.
 
+The packed-process evidence and the implementation gaps it exposed are recorded in the
+[real-process loopback prototype](../../prototypes/real-process-local-protocol/README.md). No new recovery or
+protocol decision was needed.
+
 Bounded shutdown behaviour and the connection-lifetime constraints behind it are in
 [`docs/gotchas.md`](../gotchas.md#process-lifecycle).
 
@@ -75,5 +81,6 @@ Bounded shutdown behaviour and the connection-lifetime constraints behind it are
 
 - [Should the scheduled Effect loops be virtualized with `TestClock`?](../../.scratch/bebop-mvp/issues/15-testclock-for-the-scheduled-loops.md)
 - [What happens when bebop declares a bounty's runtime manifest defective?](../../.scratch/bebop-mvp/issues/19-runtime-manifest-defect-recovery.md)
-- **The end-to-end protocol under real failure** and **release qualification** — both still fog on
-  [the map](../../.scratch/bebop-mvp/map.md).
+- **The protocol under remote-network and VM failure** and **release qualification** — both still fog on
+  [the map](../../.scratch/bebop-mvp/map.md). Local process and listener failure is now covered by the loopback
+  prototype; no real VM has run either peer.

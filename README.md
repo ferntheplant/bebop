@@ -25,14 +25,15 @@ Prototypes are excluded from `vp run test` and are run on demand. Each one recor
 `README.md`, and any assumption it invalidates is reflected in [`docs/adr/`](./docs/adr/) before implementation
 continues.
 
-| Prototype                                  | Proves                                                       | Needs                     |
-| ------------------------------------------ | ------------------------------------------------------------ | ------------------------- |
-| `prototypes/cockpit`                       | Managed seat windows preserve operator-shaped tmux layout    | a running Docker daemon   |
-| `prototypes/effect-runtime`                | Effect HTTP, SSE, WebSocket, and CLI run as processes on Bun | nothing beyond loopback   |
-| `prototypes/lease-guard`                   | The OpenCode plugin can refuse prompts on a leased seat      | `opencode` 1.18.5 on PATH |
-| `prototypes/opencode-seat-mutation-events` | Unmatched shell, abort, revert, and unrevert are observable  | network on first run      |
-| `prototypes/persistence`                   | Effect round-trips durable state through Postgres and SQLite | a running Docker daemon   |
-| `prototypes/tmux-input-lock`               | tmux locks input to one pane without hiding its output       | `tmux` on PATH            |
+| Prototype                                  | Proves                                                        | Needs                     |
+| ------------------------------------------ | ------------------------------------------------------------- | ------------------------- |
+| `prototypes/cockpit`                       | Managed seat windows preserve operator-shaped tmux layout     | a running Docker daemon   |
+| `prototypes/effect-runtime`                | Effect HTTP, SSE, WebSocket, and CLI run as processes on Bun  | nothing beyond loopback   |
+| `prototypes/lease-guard`                   | The OpenCode plugin can refuse prompts on a leased seat       | `opencode` 1.18.5 on PATH |
+| `prototypes/opencode-seat-mutation-events` | Unmatched shell, abort, revert, and unrevert are observable   | network on first run      |
+| `prototypes/persistence`                   | Effect round-trips durable state through Postgres and SQLite  | a running Docker daemon   |
+| `prototypes/real-process-local-protocol`   | Packed Bebop and Swordfish reconnect and replay over loopback | a running Docker daemon   |
+| `prototypes/tmux-input-lock`               | tmux locks input to one pane without hiding its output        | `tmux` on PATH            |
 
 ```bash
 vp run @bebop/prototype-persistence#prototype
@@ -163,8 +164,9 @@ vp run @bebop/swordfish#dev
 
 The daemon owns SQLite and exposes only the mode-`0600` Unix control socket. Point `sf` at that socket with
 `SWORDFISH_CONTROL_SOCKET_PATH` or `--socket`; commands never read or mutate the database directly. The current
-CLI scaffold has not yet adopted the settled surface: compact status/watch and events; authenticated takeover,
-attach, handoff, resume, rerun, workflow actions, and cancel. Config approval and VM lifecycle remain bebop-side.
+CLI implements status, cancel, takeover, handoff, continue, rerun, and resume. It still lacks compact watch and
+events, operator authentication for mutations, attach, and the role-aware workflow actions. Config approval and
+VM lifecycle remain bebop-side.
 
 All commits must follow Conventional Commits. Vite+ installs the pre-commit and commit-message hooks through the
 root `prepare` script.

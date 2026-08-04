@@ -122,6 +122,12 @@ prototypes rather than tickets.
   accounting does not support. Swordfish's existing heartbeat loop is the wake-up for the silent case, so the
   ledger adds no timer; Bebop re-verifies elapsed time as a defect signal about the daemon rather than as an
   exhaustion of its own.
+- [Real packed Bebop and Swordfish processes compose over loopback](./issues/20-real-process-local-protocol.md) —
+  worker-first and daemon-first startup, API and daemon restart, event replay, acknowledgement, projection, local
+  cancellation, and offline command delivery all preserve one history without duplication. The probe reaches
+  only `interactive` and cancellation because OpenCode events still have no production producer. It found no new
+  protocol decision; it produced [the local system harness brief](../local-system-harness/brief.md) so that floor
+  can become maintained before the OpenCode driver lands.
 
 These seven ADRs have been built out under [the orthogonal control model](../workflow-control-model/brief.md).
 Its first slice — stage, controller, and attention as independent dimensions, one active cowboy, and CI before

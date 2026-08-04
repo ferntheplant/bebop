@@ -9,7 +9,7 @@
 import { Schema } from "effect";
 import { describe, expect, test } from "vite-plus/test";
 
-import { sharedCommands } from "#src/commands.ts";
+import { sharedCommands, StopCommand } from "#src/commands.ts";
 import { currentProtocolVersion } from "#src/scalars.ts";
 import { currentSfControlVersion } from "#src/sf-control.ts";
 
@@ -23,7 +23,6 @@ describe("shared command payloads", () => {
 
   test("every shared command encodes to its committed shape", () => {
     const committed = {
-      StopCommand: { type: "stop", reason: "operator requested a stop" },
       TakeoverCommand: { type: "takeover", seat: "ein", force: false },
       ContinueCommand: { type: "continue" },
       RerunCommand: { type: "rerun", target: "building" },
@@ -41,9 +40,9 @@ describe("shared command payloads", () => {
     }
   });
 
-  test("an optional field omitted on the wire stays omitted after a round trip", () => {
+  test("the Bebop-only stop reason remains optional", () => {
     const encoded = { type: "stop" } as const;
-    const decoded = Schema.decodeUnknownSync(sharedCommands.StopCommand)(encoded);
-    expect(Schema.encodeSync(sharedCommands.StopCommand)(decoded)).toEqual(encoded);
+    const decoded = Schema.decodeUnknownSync(StopCommand)(encoded);
+    expect(Schema.encodeSync(StopCommand)(decoded)).toEqual(encoded);
   });
 });

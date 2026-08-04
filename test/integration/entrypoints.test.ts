@@ -231,7 +231,12 @@ describe("process entrypoints", () => {
     expect(absent.exitCode).not.toBe(0);
     expect(absent.stderr).toContain("Swordfish daemon is unavailable");
 
-    const trailing = await run("apps/swordfish/src/cli.ts", ["stop", "typo", "--socket", "/tmp/swordfish-absent.sock"]);
+    const trailing = await run("apps/swordfish/src/cli.ts", [
+      "cancel",
+      "typo",
+      "--socket",
+      "/tmp/swordfish-absent.sock",
+    ]);
     expect(trailing.exitCode).not.toBe(0);
     expect(`${trailing.stdout}${trailing.stderr}`).toContain("Unexpected argument");
   });
@@ -362,9 +367,18 @@ describe("process entrypoints", () => {
         recentEvents: [{ sequence: 1 }, { sequence: 2, event: { type: "attention_required" } }],
       });
 
-      const stopped = await run("apps/swordfish/dist/cli.mjs", ["stop", "--socket", socketPath]);
-      expect(stopped.exitCode).toBe(0);
-      expect(await waitForProcessExit(daemon)).toBe(0);
+      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath]);
+      expect(cancelled.exitCode).toBe(0);
+      await waitForCondition(() => receivedEvents.some((event) => event.sequence === 4), "local cancellation delivery");
+      expect(receivedEvents.slice(-2)).toEqual([
+        { sequence: 3, type: "stage_changed" },
+        { sequence: 4, type: "stage_changed" },
+      ]);
+      expect(daemon.child.exitCode).toBeNull();
+      const cancelledStatus = await run("apps/swordfish/dist/cli.mjs", ["status", "--socket", socketPath, "--json"]);
+      expect(cancelledStatus.exitCode).toBe(0);
+      expect(JSON.parse(cancelledStatus.stdout)).toMatchObject({ stage: "cancelled" });
+      await daemon.stop();
       daemon = undefined;
     } finally {
       if (daemon !== undefined && daemon.child.exitCode === null && daemon.child.signalCode === null) {
@@ -491,8 +505,9 @@ describe("process entrypoints", () => {
       }, "the restarted process acknowledgement");
       expect(eventSequences).toEqual([1, 1]);
 
-      const stopped = await run("apps/swordfish/dist/cli.mjs", ["stop", "--socket", socketPath]);
-      expect(stopped.exitCode).toBe(0);
+      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath]);
+      expect(cancelled.exitCode).toBe(0);
+      expect(daemon.child.exitCode).toBeNull();
     } finally {
       if (
         competingDaemon !== undefined &&

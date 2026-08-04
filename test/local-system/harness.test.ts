@@ -308,6 +308,11 @@ async function superviseBounty(fleet: LocalFleet, bebop: BebopEnv, bountyId: str
       SWORDFISH_RECONNECT_MINIMUM_DELAY: "50 millis",
       SWORDFISH_RECONNECT_MAXIMUM_DELAY: "500 millis",
       SWORDFISH_SHUTDOWN_TIMEOUT: "2 seconds",
+      // Provisioned but not yet enforced: the daemon accepts the verifier and does nothing
+      // with it until the retrieval route lands
+      // (`.scratch/bebop-mvp/issues/22-operator-credential-retrieval-and-enforcement.md`).
+      // Passing it now proves the injection path works before anything depends on it.
+      SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: identity.operatorCredentialVerifier,
     },
   };
 }

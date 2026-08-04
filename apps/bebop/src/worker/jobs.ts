@@ -25,7 +25,12 @@ import { LifecycleJobRepository } from "#src/persistence/jobs.ts";
 import { SwordfishProjectionRepository } from "#src/persistence/swordfish.ts";
 import { requireBounty, transitionLifecycle } from "#src/service/bounties.ts";
 import { applyProjectionInput } from "#src/service/projection.ts";
-import { hashSwordfishToken, swordfishTokenForBounty } from "#src/swordfish-gateway/credentials.ts";
+import {
+  hashSwordfishToken,
+  operatorCredentialForBounty,
+  operatorCredentialVerifier,
+  swordfishTokenForBounty,
+} from "#src/swordfish-gateway/credentials.ts";
 
 /** A failure, rendered for the `last_error` column without becoming `[object Object]`. */
 function describeFailure(failure: unknown): string {
@@ -68,10 +73,16 @@ const runProvision = Effect.fnUntraced(function* (job: LifecycleJob, workerId: s
 
   const bounty = yield* requireBounty(job.bountyId);
   const swordfishToken = swordfishTokenForBounty(config.swordfishCredentialKey, bounty.bountyId);
+  // Both credentials are derived here and injected by the provider, never stored in plaintext:
+  // the machine one Swordfish authenticates with, and the verifier for the operator credential
+  // a human presents to mutate locally (ADR 0014, ADR 0038).
   const provisioned = yield* provider.provision({
     bountyId: bounty.bountyId,
     computeProfile: bounty.computeProfile,
     swordfishToken,
+    operatorCredentialVerifier: operatorCredentialVerifier(
+      operatorCredentialForBounty(config.swordfishCredentialKey, bounty.bountyId),
+    ),
   });
   const at = yield* identity.now;
   if (!(yield* jobs.renew({ jobId: job.jobId, workerId, attempt: job.attempts, at }))) {

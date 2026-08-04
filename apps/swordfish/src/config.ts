@@ -30,6 +30,26 @@ const WebSocketUrl = Schema.URL.pipe(
   ),
 );
 
+/**
+ * The verifier for this bounty's operator credential, as a SHA-256 hex digest.
+ *
+ * Swordfish stores only this. The plaintext is derived by Bebop, retrieved through an
+ * authenticated Bebop client, and entered at a hidden prompt; it is never provisioned,
+ * logged, or persisted ("Workflow actions have role-aware adapters" (ADR 0038)).
+ *
+ * Nothing reads it yet — enforcement arrives with the retrieval route it depends on
+ * (`.scratch/bebop-mvp/issues/22-operator-credential-retrieval-and-enforcement.md`), because a
+ * daemon that refuses every mutation before a human can obtain the credential is worse than
+ * one that refuses none.
+ */
+export const OperatorCredentialVerifier = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter<string>((value) =>
+      /^[0-9a-f]{64}$/.test(value) ? undefined : "Expected a SHA-256 verifier as 64 lowercase hex characters",
+    ),
+  ),
+);
+
 const SwordfishConfigBase = Schema.Struct({
   bountyId: BountyId,
   vmId: VmId,
@@ -46,6 +66,7 @@ const SwordfishConfigBase = Schema.Struct({
   reconnectMinimumDelay: PositiveDuration,
   reconnectMaximumDelay: PositiveDuration,
   shutdownTimeout: PositiveDuration,
+  operatorCredentialVerifier: Schema.optionalKey(OperatorCredentialVerifier),
 });
 
 export const SwordfishConfigSchema = SwordfishConfigBase.pipe(

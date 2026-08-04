@@ -134,8 +134,20 @@ prototypes rather than tickets.
   `SIGKILL`, local `sf cancel`, and an offline Bebop stop all pass repeatedly over disposable Postgres. The
   machine credential travels from Bebop derivation through `LifecycleProvider.provision` into a one-shot bootstrap
   artifact the supervisor consumes and destroys, never through an operator retrieval route. The `bebop` CLI gained
-  `bounty stop`. This is the floor the OpenCode driver now consumes. Operator authentication for mutating `sf`
-  commands is still outstanding.
+  `bounty stop`. This is the floor the OpenCode driver now consumes.
+- **The operator credential is derived and provisioned; enforcing it is the next ticket.**
+  [Workflow actions have role-aware adapters (ADR 0038)](../../docs/adr/0038-workflow-actions-have-role-aware-adapters.md)
+  was amended on three points a grilling session settled: the credential stops a _confused_ cowboy and explicitly
+  not a compromised one, since a hostile same-uid process inside the VM is already outside
+  [The VM is the sandbox (ADR 0012)](../../docs/adr/0012-the-vm-is-the-sandbox.md); it is derived
+  deterministically and never rotates, matching
+  [Swordfish tokens are bounty-scoped (ADR 0014)](../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md);
+  and the verifier is a plain SHA-256 digest, because a 256-bit derived secret has no dictionary to precompute
+  and salting would cost the determinism that keeps provisioning retries stable. Bebop now derives both
+  credentials in one place and the provider injects both. Nothing enforces the credential yet, deliberately:
+  refusing every mutation before a human can obtain one would be worse than refusing none. The next work is
+  [ticket 22](./issues/22-operator-credential-retrieval-and-enforcement.md) — retrieval route, wire field,
+  enforcement, and prompt, in one change.
 
 These seven ADRs have been built out under [the orthogonal control model](../workflow-control-model/brief.md).
 Its first slice — stage, controller, and attention as independent dimensions, one active cowboy, and CI before

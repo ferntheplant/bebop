@@ -59,6 +59,15 @@ export interface LifecycleProviderService {
      * Bebop keeps nothing but its hash.
      */
     readonly swordfishToken: Redacted.Redacted<string>;
+    /**
+     * The verifier for this bounty's operator credential, injected at bootstrap beside the
+     * machine credential ("Workflow actions have role-aware adapters" (ADR 0038)).
+     *
+     * It travels the same path for the same reason: the provider is the component that puts
+     * things on the VM. It is a digest rather than a secret, so unlike `swordfishToken` it is
+     * not redacted — a leaked verifier grants nothing.
+     */
+    readonly operatorCredentialVerifier: string;
   }) => Effect.Effect<ProvisionedVm, LifecycleError>;
 
   /** Destroys the VM. Destroying an already-destroyed or unknown VM succeeds. */
@@ -87,15 +96,17 @@ const decodeHttpsUrl = Schema.decodeUnknownSync(HttpsUrl);
  * credential and hands the plaintext to `LifecycleProvider.provision`, and the provider is
  * the component that puts it on the VM. Here the artifact is that injection.
  *
- * It carries only the three fields a supervisor needs, is written atomically under a
+ * It carries only what a supervisor needs to start the daemon, is written atomically under a
  * mode-`0700` directory as a mode-`0600` file, and is rewritten on every provision so a
  * retried provision yields the same identity and credential — the property ADR 0014 chose
- * HMAC derivation over a random token to get.
+ * HMAC derivation over a random token to get. The operator verifier is derived the same way
+ * for the same reason, so the artifact is byte-stable across retries.
  */
 export interface LocalBootstrapArtifact {
   readonly bountyId: BountyId;
   readonly vmId: VmId;
   readonly swordfishToken: string;
+  readonly operatorCredentialVerifier: string;
 }
 
 function artifactPath(root: string, bountyId: BountyId): string {
@@ -179,7 +190,7 @@ export function fakeLifecycleProviderLayer(options?: {
   let failDestroyAttempts = options?.failDestroyAttempts ?? 0;
 
   return Layer.sync(LifecycleProvider)(() => ({
-    provision: ({ bountyId, swordfishToken }) =>
+    provision: ({ bountyId, swordfishToken, operatorCredentialVerifier }) =>
       Effect.gen(function* () {
         options?.onProvisionAttempt?.();
         if (failProvisionAttempts > 0) {
@@ -205,6 +216,7 @@ export function fakeLifecycleProviderLayer(options?: {
           yield* writeBootstrapArtifact(harnessRoot, {
             bountyId,
             vmId: provisioned.vmId,
+            operatorCredentialVerifier,
             swordfishToken: RedactedModule.value(swordfishToken),
           });
         }

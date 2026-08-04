@@ -30,6 +30,42 @@ export function swordfishTokenForBounty(
   return Redacted.make(`${swordfishTokenPrefix}${digest}`);
 }
 
+// The per-bounty operator credential ("Workflow actions have role-aware adapters" (ADR 0038)).
+//
+// It proves a human — not a cowboy spawning `sf` — issued a mutating local command. It shares
+// this module with the machine credential because it shares everything that matters about one:
+// the same master key, the same per-bounty scope, the same death with the VM, and the same
+// refusal to rotate. Only the domain string differs, which is what keeps knowledge of one from
+// yielding the other.
+//
+// It is derived rather than stored so that retrieval recomputes instead of reading, leaving no
+// plaintext at rest and making a retried provision yield the same credential.
+
+/** Distinguishes a leaked operator credential from a leaked machine credential at a glance. */
+export const operatorCredentialPrefix = "bebop_op_";
+
+export function operatorCredentialForBounty(
+  credentialKey: Redacted.Redacted<string>,
+  bountyId: BountyId,
+): Redacted.Redacted<string> {
+  const digest = createHmac("sha256", Redacted.value(credentialKey))
+    .update(`bebop-operator:${bountyId}`)
+    .digest("base64url");
+  return Redacted.make(`${operatorCredentialPrefix}${digest}`);
+}
+
+/**
+ * The verifier Swordfish stores, so a daemon read cannot recover a working credential.
+ *
+ * Plain SHA-256 rather than a salted KDF: the credential is a 256-bit digest, not a
+ * human-chosen secret, so there is no dictionary to precompute. Salting would add cost and
+ * cost determinism — and determinism is what keeps a retried provision writing the same
+ * verifier (ADR 0038).
+ */
+export function operatorCredentialVerifier(credential: Redacted.Redacted<string>): string {
+  return createHash("sha256").update(Redacted.value(credential)).digest("hex");
+}
+
 /**
  * Pulls the credential out of an upgrade request.
  *

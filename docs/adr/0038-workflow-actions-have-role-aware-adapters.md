@@ -8,10 +8,28 @@ creating a second state machine.
 
 The local CLI adapter needs separate proof of operator authority. A same-user Unix socket cannot distinguish a
 human shell from a cowboy spawning `sf`, so every mutating or access-granting local command requires hidden
-interactive entry of a random per-bounty operator credential. Bebop derives it from a master-held secret and
-Swordfish receives only a salted verifier. An authenticated Bebop client retrieves or rotates the plaintext
-explicitly; it is never placed in VM configuration, attachment metadata, or logs. Read-only status and events
-remain unprompted; automation uses Bebop's authenticated interface rather than a noninteractive local bypass.
+interactive entry of a per-bounty operator credential. Bebop derives it from a master-held secret and Swordfish
+receives only a verifier. An authenticated Bebop client retrieves the plaintext explicitly; it is never placed in
+VM configuration, attachment metadata, or logs. Read-only status and events remain unprompted; automation uses
+Bebop's authenticated interface rather than a noninteractive local bypass.
+
+The credential stops a **confused** cowboy, not a compromised one, and that limit is deliberate. A cowboy that
+hallucinates `sf cancel` or is prompt-injected into running it cannot produce a secret it was never given. A
+cowboy that is actually adversarial runs at the same uid inside the VM and can shim `sf` earlier on `PATH`,
+`ptrace` the running process, or `capture-pane` the tmux session the operator typed into — all of which
+[The VM is the sandbox (ADR 0012)](./0012-the-vm-is-the-sandbox.md) already places outside the model, which is
+why high-value authority lives with bebop instead. Defending the local socket against a hostile same-uid process
+is not attempted here, and an implementation should not spend complexity pretending otherwise.
+
+The credential is therefore derived deterministically by HMAC from the master key under a domain string distinct
+from the machine credential's, and never rotates, matching
+[Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR 0014)](./0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)
+for a credential of identical scope and lifetime. Derivation means retrieval recomputes rather than reads, so
+there is no stored plaintext to lose, and a retried provision yields the same credential. Recovery from a
+suspected leak is destroying the bounty's VM, which the operator can already do. Because the credential is a
+256-bit digest rather than a human-chosen secret, the verifier Swordfish stores is a plain SHA-256 digest like
+`hashSwordfishToken` — there is no dictionary to precompute, so salting and key stretching would add ceremony
+and cost the determinism that keeps provisioning retries stable.
 
 ## Consequences
 

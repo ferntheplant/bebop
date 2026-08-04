@@ -8,14 +8,15 @@ This repo runs **one test runner** — `vitest` launched by Bun, via `vp run tes
 tasks). Tests are layered by _what they bring up_, not by file location, and each layer has a deliberate
 colocation convention:
 
-| Layer       | Location                                                 | What's stubbed                                  |
-| ----------- | -------------------------------------------------------- | ----------------------------------------------- |
-| Unit        | `src/<area>/<area>.test.ts` (co-located)                 | Nothing — pure functions / schemas / reducers   |
-| Component   | `apps/<app>/test/component/`                             | `Identity` + `LifecycleProvider` only           |
-| Integration | `test/integration/`                                      | Nothing — real spawned `bun` child processes    |
-| Smoke       | `apps/<app>/scripts/smoke.ts` (via `vp run <app>#smoke`) | Nothing — runs the packed `dist/*.mjs` artifact |
-| Prototypes  | `prototypes/*/run.ts`                                    | Throwaway — excluded from `vp run test`         |
-| E2E         | `test/e2e/` (placeholder)                                | —                                               |
+| Layer        | Location                                                 | What's stubbed                                  |
+| ------------ | -------------------------------------------------------- | ----------------------------------------------- |
+| Unit         | `src/<area>/<area>.test.ts` (co-located)                 | Nothing — pure functions / schemas / reducers   |
+| Component    | `apps/<app>/test/component/`                             | `Identity` + `LifecycleProvider` only           |
+| Integration  | `test/integration/`                                      | Nothing — real spawned `bun` child processes    |
+| Local system | `test/local-system/`                                     | Nothing — packed processes over loopback        |
+| Smoke        | `apps/<app>/scripts/smoke.ts` (via `vp run <app>#smoke`) | Nothing — runs the packed `dist/*.mjs` artifact |
+| Prototypes   | `prototypes/*/run.ts`                                    | Throwaway — excluded from `vp run test`         |
+| E2E          | `test/e2e/` (placeholder)                                | —                                               |
 
 ## Why unit tests are colocated
 
@@ -72,11 +73,13 @@ bigint-as-string, `jsonb` reorder, security middleware, `BunStdio`, bounded shut
 stop delivery — get re-pinned as named assertions in downstream unit, component, or integration tests, and the
 ones that shaped the design are written up in [`docs/adr/`](./adr/).
 
-The [real-process loopback prototype](../prototypes/real-process-local-protocol/README.md) is the process-level
-exception that proves two applications compose rather than proving one entrypoint starts. It launches only packed
-artifacts and drives public HTTP, WebSocket, CLI, and Unix-socket interfaces; it does not import app source or
-write either database. Its production follow-up belongs in the integration layer once the lifecycle provider can
-hand its existing machine credential to a local supervisor without a second credential path.
+The [real-process loopback prototype](../prototypes/real-process-local-protocol/README.md) was the process-level
+exception that proved two applications compose rather than proving one entrypoint starts. It launched only packed
+artifacts and drove public HTTP, WebSocket, CLI, and Unix-socket interfaces; it did not import app source or write
+either database. Its production follow-up is the [local system harness](../.scratch/local-system-harness/brief.md),
+maintained under `test/local-system/` and run via `vp run local-system`: the same packed peers over disposable
+Postgres, with the fake lifecycle provider handing the machine credential to the supervisor through the one-shot
+bootstrap artifact instead of a second credential path.
 
 ## Database gating: `BEBOP_TEST_DATABASE_URL`
 

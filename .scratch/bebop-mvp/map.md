@@ -128,6 +128,14 @@ prototypes rather than tickets.
   only `interactive` and cancellation because OpenCode events still have no production producer. It found no new
   protocol decision; it produced [the local system harness brief](../local-system-harness/brief.md) so that floor
   can become maintained before the OpenCode driver lands.
+- [The local system harness is maintained](./../local-system-harness/brief.md) — the packed-process floor now lives
+  at `test/local-system/` and runs via `vp run local-system`: worker-first and API-first startup, idempotent
+  create with a retry-stable bootstrap identity, Swordfish-before-listener registration, API restart, daemon
+  `SIGKILL`, local `sf cancel`, and an offline Bebop stop all pass repeatedly over disposable Postgres. The
+  machine credential travels from Bebop derivation through `LifecycleProvider.provision` into a one-shot bootstrap
+  artifact the supervisor consumes and destroys, never through an operator retrieval route. The `bebop` CLI gained
+  `bounty stop`. This is the floor the OpenCode driver now consumes. Operator authentication for mutating `sf`
+  commands is still outstanding.
 
 These seven ADRs have been built out under [the orthogonal control model](../workflow-control-model/brief.md).
 Its first slice — stage, controller, and attention as independent dimensions, one active cowboy, and CI before

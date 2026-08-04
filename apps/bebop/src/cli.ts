@@ -21,6 +21,7 @@ import {
   HealthResponse,
   IdempotencyKey as IdempotencyKeySchema,
   ListBountiesResponse,
+  StopBountyRequest as StopBountyRequestSchema,
 } from "@bebop/contracts";
 import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as BunServices from "@effect/platform-bun/BunServices";
@@ -219,8 +220,36 @@ const bountyEvents = Command.make(
     }).pipe(Effect.scoped),
 );
 
+const bountyStop = Command.make(
+  "stop",
+  {
+    ...connectionFlags,
+    bounty: Flag.string("bounty").pipe(Flag.withDescription("The bounty id.")),
+    reason: Flag.string("reason").pipe(
+      Flag.withDescription("Why the bounty is being stopped; shown to whoever inspects it."),
+      Flag.optional,
+    ),
+  },
+  (options) =>
+    Effect.gen(function* () {
+      const { client } = yield* connect(options);
+      const response = yield* client.bounties.stopBounty({
+        params: { bountyId: Schema.decodeUnknownSync(BountyIdSchema)(options.bounty) },
+        payload: Schema.decodeUnknownSync(StopBountyRequestSchema)(
+          options.reason._tag === "Some" ? { reason: options.reason.value } : {},
+        ),
+      });
+      yield* emit({
+        asJson: options.json,
+        schema: BountyActionResponse,
+        value: response,
+        human: () => printBounty(response),
+      });
+    }),
+);
+
 const bounty = Command.make("bounty", {}, () => Console.log("Run `bebop bounty --help`.")).pipe(
-  Command.withSubcommands([bountyCreate, bountyList, bountyStatus, bountyEvents, bountyApproveConfig]),
+  Command.withSubcommands([bountyCreate, bountyList, bountyStatus, bountyEvents, bountyApproveConfig, bountyStop]),
 );
 
 const root = Command.make("bebop", {}, () => Console.log("Run `bebop --help`.")).pipe(

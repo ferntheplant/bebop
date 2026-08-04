@@ -8,11 +8,11 @@
 
 import type { PgClient } from "@effect/sql-pg";
 import type { Config } from "effect";
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 import type { SqlClient, SqlError } from "effect/unstable/sql";
 
 import type { BebopConfiguration } from "#src/config.ts";
-import { BebopConfigurationLayer } from "#src/config.ts";
+import { BebopConfiguration as BebopConfigurationTag, BebopConfigurationLayer } from "#src/config.ts";
 import type { Identity } from "#src/domain/identity.ts";
 import { IdentityLayer } from "#src/domain/identity.ts";
 import type { LifecycleProvider } from "#src/lifecycle/provider.ts";
@@ -70,5 +70,20 @@ export const BebopRuntimeLayer: Layer.Layer<
   Layer.provideMerge(Layer.mergeAll(BebopConfigurationLayer, IdentityLayer)),
 );
 
-/** The lifecycle provider that runs today: the fake one. */
-export const LocalLifecycleProviderLayer: Layer.Layer<LifecycleProvider> = fakeLifecycleProviderLayer();
+/** The lifecycle provider that runs today: the fake one, with the local harness root from config. */
+export const LocalLifecycleProviderLayer: Layer.Layer<LifecycleProvider, never, BebopConfiguration> = Layer.unwrap(
+  Effect.gen(function* () {
+    const config = yield* BebopConfigurationTag;
+    if (config.localHarnessRoot !== undefined) {
+      // `BEBOP_LOCAL_HARNESS_ROOT` makes every provision write a Swordfish machine
+      // credential to disk in plaintext. That is the whole point of it locally, and a
+      // deployment accident anywhere else, so it never starts quietly.
+      yield* Effect.logWarning(
+        "local harness bootstrap artifacts are enabled; every provision writes a plaintext Swordfish credential to disk",
+      ).pipe(Effect.annotateLogs("local_harness_root", config.localHarnessRoot));
+    }
+    return fakeLifecycleProviderLayer(
+      config.localHarnessRoot === undefined ? {} : { localHarnessRoot: config.localHarnessRoot },
+    );
+  }),
+);

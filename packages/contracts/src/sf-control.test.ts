@@ -163,9 +163,9 @@ describe("sf local control contracts", () => {
       ...baseSnapshot,
       stage: "needs_attention",
       suspendedStage: "implementing",
-      attention: [{ kind: "agent_blocked", reason: "needs a decision", resolutions: ["resume", "takeover"] }],
+      attention: [{ kind: "agent_blocked", reason: "needs a decision", resolutions: ["resume", "takeover ein"] }],
     });
-    expect(stopped.attention[0]?.resolutions).toEqual(["resume", "takeover"]);
+    expect(stopped.attention[0]?.resolutions).toEqual(["resume", "takeover ein"]);
   });
 
   test("accepts attention retained through cancellation", () => {
@@ -174,7 +174,7 @@ describe("sf local control contracts", () => {
     const cancelling = Schema.decodeUnknownSync(SfStatusSnapshot)({
       ...baseSnapshot,
       stage: "cancelling",
-      attention: [{ kind: "environment", reason: "the VM is unreachable", resolutions: ["cancel"] }],
+      attention: [{ kind: "environment", reason: "the VM is unreachable", resolutions: ["stop"] }],
     });
     expect(cancelling.attention).toHaveLength(1);
   });
@@ -187,6 +187,22 @@ describe("sf local control contracts", () => {
         ...baseSnapshot,
         stage: "needs_attention",
         attention: [{ kind: "constraint_exhausted", reason: "turn budget exhausted", resolutions: ["resume"] }],
+      }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        stage: "needs_attention",
+        attention: [{ kind: "constraint_exhausted", reason: "turn budget exhausted", resolutions: ["rerun"] }],
+      }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        stage: "needs_attention",
+        attention: [
+          { kind: "constraint_exhausted", reason: "turn budget exhausted", resolutions: ["rerun validation"] },
+        ],
       }),
     ).toThrow();
   });

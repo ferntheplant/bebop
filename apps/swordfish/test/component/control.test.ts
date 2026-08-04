@@ -252,7 +252,7 @@ describe("Swordfish local control", () => {
 
     const before = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.status));
     expect(before.stage).toBe("needs_attention");
-    expect(before.attention[0]?.resolutions).toContain("takeover");
+    expect(before.attention[0]?.resolutions).toContain("takeover ein");
 
     const fiber = harness.fork(runControlSocket);
     try {

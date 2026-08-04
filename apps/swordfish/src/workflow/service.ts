@@ -356,10 +356,14 @@ export const WorkflowServiceLayer: Layer.Layer<
             at,
           );
           yield* Effect.logWarning("constraint exhausted; entering needs_attention").pipe(
-            Effect.annotateLogs("bounty_id", config.bountyId),
-            Effect.annotateLogs("vm_id", config.vmId),
-            Effect.annotateLogs("stage", state.stage),
-            Effect.annotateLogs("constraints", exhausted.map((entry) => entry.constraint).join(",")),
+            Effect.annotateLogs({
+              bounty_id: config.bountyId,
+              vm_id: config.vmId,
+              stage: state.stage,
+              ...(state.activeCowboy === null ? {} : { seat: state.activeCowboy.role }),
+              ...(state.candidate === null ? {} : { candidate_sha: state.candidate.commitSha }),
+              constraints: exhausted.map((entry) => entry.constraint).join(","),
+            }),
           );
           return true;
         }),

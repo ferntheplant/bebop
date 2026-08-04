@@ -3,12 +3,14 @@ import { lstat } from "node:fs/promises";
 
 import type {
   BebopCommand,
+  AttentionKind,
   CommandId,
   CommandResultMessage,
   EvidenceBundleManifest,
   EventMessage,
   EventSequence,
   SfStatusSnapshot,
+  SfResolutionCommand,
   Timestamp,
 } from "@bebop/contracts";
 import {
@@ -22,7 +24,7 @@ import {
   SfStatusSnapshot as SfStatusSnapshotSchema,
   SwordfishEvent as SwordfishEventSchema,
 } from "@bebop/contracts";
-import { attemptBudget, clockRuns, eventFingerprint, exhaustedConstraints } from "@bebop/workflow";
+import { accrueAttemptClock, attemptBudget, clockRuns, eventFingerprint, exhaustedConstraints } from "@bebop/workflow";
 import { Context, Data, Effect, Layer, Schema } from "effect";
 import type { SqlError } from "effect/unstable/sql";
 import { SqlClient } from "effect/unstable/sql";
@@ -158,6 +160,30 @@ function optionalText(row: Row, key: string): string | undefined {
 
 function commandHash(command: BebopCommand): string {
   return createHash("sha256").update(JSON.stringify(command)).digest("hex");
+}
+
+function statusResolutions(state: SwordfishWorkflowState, kind: AttentionKind): ReadonlyArray<SfResolutionCommand> {
+  const permitted = resolutionsForAttention[kind];
+  const commands: Array<SfResolutionCommand> = [];
+  if (permitted.includes("resume")) commands.push("resume");
+  if (permitted.includes("continue") && state.attempt !== null) commands.push("continue");
+  if (permitted.includes("rerun")) {
+    if (kind === "uncertain_gate") {
+      commands.push("rerun validation");
+    } else {
+      const exhaustedScopes = new Set(
+        exhaustedConstraints(state).flatMap((entry) => (entry.scope === null ? [] : [entry.scope])),
+      );
+      for (const scope of constraintScopes) {
+        if (exhaustedScopes.has(scope)) commands.push(`rerun ${scope}`);
+      }
+    }
+  }
+  if (permitted.includes("takeover") && state.controller === "swordfish" && state.activeCowboy !== null) {
+    commands.push(`takeover ${state.activeCowboy.role}`);
+  }
+  if (permitted.includes("cancel")) commands.push("stop");
+  return commands;
 }
 
 export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.SqlClient | SwordfishConfiguration> =
@@ -400,7 +426,9 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
             // The whole ledger comes from the workflow state, which is derived from the event stream by the same
             // reducer Bebop runs. Nothing here reads a counter table, because there is no counter table to
             // disagree with the events (ADR 0042).
-            const state = workflow.state;
+            // Status is a read projection: accrue through its observation time without writing a second copy of
+            // derived elapsed time back to SQLite (ADR 0042).
+            const state = accrueAttemptClock(workflow.state, observedAt);
             const attempt = state.attempt;
             const attemptBudgets = attempt === null ? null : attemptBudget(state, attempt);
             return decodeStatus({
@@ -416,7 +444,7 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
               attention: attention.map((record) => ({
                 kind: record.kind,
                 reason: record.reason,
-                resolutions: resolutionsForAttention[record.kind],
+                resolutions: statusResolutions(state, record.kind),
               })),
               ...(workflow.state.effectiveSpec === null
                 ? {}

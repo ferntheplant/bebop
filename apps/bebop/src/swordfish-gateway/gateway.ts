@@ -43,6 +43,7 @@ import { BebopConfiguration } from "#src/config.ts";
 import { Identity } from "#src/domain/identity.ts";
 import type { BebopSwordfishProjection } from "#src/domain/swordfish-projection.ts";
 import { unreportedBudgetOverrun } from "#src/domain/swordfish-projection.ts";
+import { withLogContext } from "#src/observability/logging.ts";
 import { BountyRepository } from "#src/persistence/bounties.ts";
 import { CommandRepository } from "#src/persistence/commands.ts";
 import { applyProjectionInput } from "#src/service/projection.ts";
@@ -238,12 +239,16 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
           // stop enforcing anything during exactly the partition it would exist to cover (ADR 0042).
           const overrun = unreportedBudgetOverrun(applied.projection, observedAt, budgetCrossCheckGraceMs(config));
           if (overrun.length > 0) {
-            yield* Effect.logError("swordfish has not reported a budget its own events say is exhausted").pipe(
-              Effect.annotateLogs("bounty_id", current.bountyId),
-              Effect.annotateLogs("vm_id", current.vmId),
-              Effect.annotateLogs("stage", String(applied.projection.stage)),
-              Effect.annotateLogs("constraints", overrun.map((entry) => entry.constraint).join(",")),
-            );
+            yield* withLogContext(
+              {
+                bountyId: current.bountyId,
+                vmId: current.vmId,
+                stage: applied.projection.stage,
+                seat: applied.projection.activeCowboy?.role,
+                candidateSha: applied.projection.candidate?.commitSha,
+              },
+              Effect.logError("swordfish has not reported a budget its own events say is exhausted"),
+            ).pipe(Effect.annotateLogs("constraints", overrun.map((entry) => entry.constraint).join(",")));
           }
           // A heartbeat is also the moment to hand over anything queued while the socket was
           // idle, so a command does not wait for the poll interval.

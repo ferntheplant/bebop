@@ -51,7 +51,7 @@ const verifyIdentity = (
     ? Effect.fail(new BebopSessionError({ reason: "Bebop sent a message for a different bounty or VM." }))
     : Effect.void;
 
-const session = (onRegistered: Effect.Effect<void>) =>
+const session = (onRegistered: Effect.Effect<void>, heartbeatTick: Effect.Effect<void>) =>
   Effect.gen(function* () {
     const config = yield* SwordfishConfiguration;
     const identity = yield* SwordfishIdentity;
@@ -138,13 +138,7 @@ const session = (onRegistered: Effect.Effect<void>) =>
     yield* drain(delivery.lastProduced);
 
     const heartbeat = Effect.gen(function* () {
-      // The constraint wake-up rides the heartbeat rather than a timer of its own. Swordfish already wakes on
-      // `heartbeatInterval`, and seconds of cadence is far finer resolution than budgets measured in tens of
-      // minutes ("Constraint exhaustion is computed, not announced" (ADR 0042)). It runs here, where the
-      // heartbeat is produced rather than where it is received, because the ledger is Swordfish's state and
-      // Swordfish keeps enforcing it through a disconnection — which is exactly when a Bebop-side detector would
-      // stop.
-      yield* workflow.evaluateConstraints;
+      yield* heartbeatTick;
       const current = yield* store.deliveryState;
       const sentAt = yield* identity.now;
       yield* send({
@@ -160,7 +154,7 @@ const session = (onRegistered: Effect.Effect<void>) =>
       // send cursor drains each new event once; reconnect resets it to Bebop's durable cursor
       // and is the retry boundary for unacknowledged events.
       yield* drain(current.lastProduced);
-    }).pipe(Effect.repeat(Schedule.spaced(config.heartbeatInterval)));
+    }).pipe(Effect.forever);
     const heartbeatFiber = yield* Effect.forkScoped(heartbeat);
 
     const handleRegistered = (_message: RegisteredMessage) =>
@@ -195,7 +189,15 @@ const session = (onRegistered: Effect.Effect<void>) =>
             return;
           }
           case "command": {
-            const result = yield* workflow.applyCommand(message);
+            const result = yield* workflow
+              .applyCommand(message)
+              .pipe(
+                Effect.catchTag("WorkflowTransitionError", (error: WorkflowTransitionError) =>
+                  Effect.fail(
+                    new BebopSessionError({ reason: `A Bebop command violated the workflow: ${error.error.type}.` }),
+                  ),
+                ),
+              );
             yield* send(result);
             if (message.command.type === "stop" && result.status === "completed") {
               yield* shutdown.request;
@@ -231,8 +233,6 @@ const session = (onRegistered: Effect.Effect<void>) =>
         Effect.fail(
           new BebopSessionError({ reason: `Command id ${error.commandId} was reused with another payload.` }),
         ),
-      WorkflowTransitionError: (error: WorkflowTransitionError) =>
-        Effect.fail(new BebopSessionError({ reason: `A Bebop command violated the workflow: ${error.error.type}.` })),
     }),
     Effect.scoped,
   );
@@ -246,36 +246,52 @@ export const runBebopClient = Effect.gen(function* () {
   const config = yield* SwordfishConfiguration;
   const identity = yield* SwordfishIdentity;
   const store = yield* SwordfishStore;
-  let delay = Duration.toMillis(config.reconnectMinimumDelay);
-  const maximum = Duration.toMillis(config.reconnectMaximumDelay);
+  const workflow = yield* WorkflowService;
+  const heartbeatTicks = yield* Queue.bounded<void>(1);
 
-  for (;;) {
-    // `Effect.result` captures only typed failures; defects and interruption still
-    // terminate the daemon for its supervisor instead of being retried forever.
-    const outcome = yield* Effect.result(
-      session(Effect.sync(() => (delay = Duration.toMillis(config.reconnectMinimumDelay)))).pipe(
-        Effect.provide(
-          BunSocket.layerWebSocket(config.bebopWebSocketUrl.href, {
-            protocols: `bebop-token.${Redacted.value(config.bebopToken)}`,
-            openTimeout: config.reconnectMaximumDelay,
-          }),
+  const reconnect = Effect.gen(function* () {
+    let delay = Duration.toMillis(config.reconnectMinimumDelay);
+    const maximum = Duration.toMillis(config.reconnectMaximumDelay);
+
+    for (;;) {
+      // `Effect.result` captures only typed failures; defects and interruption still
+      // terminate the daemon for its supervisor instead of being retried forever.
+      const outcome = yield* Effect.result(
+        session(
+          Effect.sync(() => (delay = Duration.toMillis(config.reconnectMinimumDelay))),
+          Queue.take(heartbeatTicks),
+        ).pipe(
+          Effect.provide(
+            BunSocket.layerWebSocket(config.bebopWebSocketUrl.href, {
+              protocols: `bebop-token.${Redacted.value(config.bebopToken)}`,
+              openTimeout: config.reconnectMaximumDelay,
+            }),
+          ),
         ),
-      ),
-    );
-    // A session only ends in a typed failure: a clean close is mapped to
-    // BebopSessionError inside `session`, so a success here is unreachable.
-    if (outcome._tag === "Success") continue;
-    if (outcome.failure._tag !== "BebopSessionError" && outcome.failure._tag !== "SocketError") {
-      return yield* Effect.fail(outcome.failure);
+      );
+      // A session only ends in a typed failure: a clean close is mapped to
+      // BebopSessionError inside `session`, so a success here is unreachable.
+      if (outcome._tag === "Success") continue;
+      if (outcome.failure._tag !== "BebopSessionError" && outcome.failure._tag !== "SocketError") {
+        return yield* Effect.fail(outcome.failure);
+      }
+      const disconnectedAt = yield* identity.now;
+      yield* store.setConnected(false, disconnectedAt);
+      yield* Effect.logWarning("Bebop connection ended; reconnecting").pipe(
+        Effect.annotateLogs("retry_delay_ms", String(delay)),
+        Effect.annotateLogs("error_tag", outcome.failure._tag),
+        Effect.annotateLogs("reason", describeSessionFailure(outcome.failure)),
+      );
+      yield* Effect.sleep(Duration.millis(delay));
+      delay = Math.min(maximum, delay * 2);
     }
-    const disconnectedAt = yield* identity.now;
-    yield* store.setConnected(false, disconnectedAt);
-    yield* Effect.logWarning("Bebop connection ended; reconnecting").pipe(
-      Effect.annotateLogs("retry_delay_ms", String(delay)),
-      Effect.annotateLogs("error_tag", outcome.failure._tag),
-      Effect.annotateLogs("reason", describeSessionFailure(outcome.failure)),
-    );
-    yield* Effect.sleep(Duration.millis(delay));
-    delay = Math.min(maximum, delay * 2);
-  }
+  });
+
+  // This cadence outlives every connection. Its size-one signal queue drops redundant disconnected ticks, while
+  // constraint evaluation keeps running and any reducer disagreement fails this client fiber for supervision.
+  const heartbeatCadence = Effect.gen(function* () {
+    yield* workflow.evaluateConstraints;
+    Queue.offerUnsafe(heartbeatTicks, undefined);
+  }).pipe(Effect.repeat(Schedule.spaced(config.heartbeatInterval)));
+  yield* Effect.raceFirst(heartbeatCadence, reconnect);
 });

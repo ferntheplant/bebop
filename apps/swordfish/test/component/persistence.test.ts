@@ -6,6 +6,7 @@ import {
   EvidenceBundleManifest,
   EventSequence,
   SwordfishEvent,
+  Timestamp,
 } from "@bebop/contracts";
 import { Effect, Schema } from "effect";
 import { SqlClient } from "effect/unstable/sql";
@@ -22,6 +23,8 @@ const zeroSequence = Schema.decodeUnknownSync(EventSequence)(0);
 const firstSequence = Schema.decodeUnknownSync(EventSequence)(1);
 const candidateSha = "b".repeat(40);
 const decodeEvent = Schema.decodeUnknownSync(SwordfishEvent);
+const decodeTimestamp = Schema.decodeUnknownSync(Timestamp);
+const encodeTimestamp = Schema.encodeSync(Timestamp);
 
 afterEach(async () => {
   await harness?.close();
@@ -386,12 +389,55 @@ describe("Swordfish SQLite authority", () => {
       {
         kind: "constraint_exhausted",
         reason: "Autonomous work stopped because building has used all 3 attempts.",
-        // Every exit the kind permits, and `resume` is deliberately not among them.
-        resolutions: ["continue", "rerun", "takeover", "cancel"],
+        // There is no attempt to continue, and every command shown can be executed exactly as printed.
+        resolutions: ["rerun building", "takeover ein", "stop"],
       },
     ]);
     // Status shows the arithmetic that stopped the bounty, not just the daemon's assertion that something did.
     expect(raised.status.exhausted).toEqual([{ constraint: "attempts", scope: "building", consumed: 3, allowed: 3 }]);
+  });
+
+  test("accrues a running attempt through the status observation without persisting it", async () => {
+    harness = await startSwordfishHarness("status-attempt-clock");
+    const observed = await harness.run(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowService;
+        const store = yield* SwordfishStore;
+        yield* workflow.append(decodeEvent({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" }));
+        yield* workflow.append(
+          decodeEvent({
+            type: "effective_spec_set",
+            spec: {
+              revision: 1,
+              title: "Observe the running clock",
+              goal: "Status reports elapsed autonomous time.",
+              context: [],
+              constraints: [],
+              nonGoals: [],
+              acceptanceCriteria: [{ id: "ac-1", description: "Elapsed time is current." }],
+              suggestedQaScenarios: [],
+              createdFromSeatId: "seat-ein",
+              createdAt: "2026-07-29T00:00:01.000Z",
+            },
+          }),
+        );
+        yield* workflow.append(decodeEvent({ type: "attempt_started" }));
+        const before = (yield* store.loadWorkflow).state;
+        const runningSince = before.attempt?.runningSince;
+        if (runningSince === null || runningSince === undefined)
+          return yield* Effect.die("attempt clock did not start");
+        const observedAt = decodeTimestamp(
+          new Date(Date.parse(encodeTimestamp(runningSince)) + 89 * 60_000).toISOString(),
+        );
+        const status = yield* store.status(observedAt);
+        const after = (yield* store.loadWorkflow).state;
+        return { status, persistedElapsedMs: after.attempt?.elapsedMs };
+      }),
+    );
+
+    expect(observed.status.attempt?.wallClockMs).toEqual({ consumed: 89 * 60_000, base: 90 * 60_000, granted: 0 });
+    expect(observed.status.exhausted).toEqual([]);
+    expect(observed.persistedElapsedMs).toBe(0);
   });
 
   test("rolls back a recovery grant when recording its command result aborts", async () => {

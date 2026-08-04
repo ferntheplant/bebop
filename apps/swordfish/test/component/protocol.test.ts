@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test } from "vite-plus/test";
 import { SwordfishConfiguration } from "#src/config.ts";
 import { SwordfishStore } from "#src/persistence/store.ts";
 import { runBebopClient } from "#src/protocol/client.ts";
-import { WorkflowService } from "#src/workflow/service.ts";
+import { WorkflowService, WorkflowTransitionError } from "#src/workflow/service.ts";
 import type { SwordfishHarness } from "#test/component/support/harness.ts";
 import { startSwordfishHarness } from "#test/component/support/harness.ts";
 
@@ -117,6 +117,54 @@ function registeredMessage(registrations: number, acknowledgedThrough = 0): stri
 }
 
 describe("Swordfish outbound protocol", () => {
+  test("keeps evaluating constraints while Bebop is unavailable", async () => {
+    harness = await startSwordfishHarness("disconnected-constraint-watchdog");
+    const realWorkflow = await harness.run(WorkflowService);
+    let evaluations = 0;
+    const fiber = harness.fork(
+      runBebopClient.pipe(
+        Effect.provideService(SwordfishConfiguration, {
+          ...harness.config,
+          heartbeatInterval: Duration.millis(10),
+        }),
+        Effect.provideService(WorkflowService, {
+          ...realWorkflow,
+          evaluateConstraints: Effect.sync(() => {
+            evaluations += 1;
+            return false;
+          }),
+        }),
+      ),
+    );
+    try {
+      await waitFor(() => evaluations >= 2, "constraint checks during disconnection");
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
+  test("does not retry a reducer disagreement from the constraint watchdog", async () => {
+    harness = await startSwordfishHarness("constraint-watchdog-transition");
+    const realWorkflow = await harness.run(WorkflowService);
+    const failure = new WorkflowTransitionError({
+      error: { type: "exhaustion_unsupported", claim: "component test disagreement" },
+    });
+    const fiber = harness.fork(
+      runBebopClient.pipe(
+        Effect.provideService(WorkflowService, {
+          ...realWorkflow,
+          evaluateConstraints: Effect.fail(failure),
+        }),
+      ),
+    );
+    const exit = await Effect.runPromise(Fiber.await(fiber).pipe(Effect.timeout("2 seconds")));
+    expect(exit._tag).toBe("Failure");
+    if (exit._tag === "Failure") {
+      expect(String(exit.cause)).toContain("WorkflowTransitionError");
+      expect(String(exit.cause)).not.toContain("BebopSessionError");
+    }
+  });
+
   test.each([
     {
       label: "typed failures",

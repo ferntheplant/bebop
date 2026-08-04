@@ -20,6 +20,7 @@ import {
   WorkflowRevision,
 } from "./scalars.ts";
 import { schemaLimits } from "./settings.ts";
+import type { WorkflowResolution } from "./workflow.ts";
 import {
   AttentionKind,
   CandidateGate,
@@ -28,7 +29,6 @@ import {
   resolutionsForAttention,
   SeatRole,
   SwordfishStage,
-  WorkflowResolution,
 } from "./workflow.ts";
 
 export const currentSfControlVersion = 1 as const;
@@ -83,11 +83,49 @@ export const SfActiveCowboy = Schema.Struct({
 });
 export type SfActiveCowboy = typeof SfActiveCowboy.Type;
 
+/** Executable `sf` commands that status may offer to clear an attention record. */
+export const sfResolutionCommands = [
+  "resume",
+  "continue",
+  "rerun building",
+  "rerun validation",
+  "rerun review",
+  "rerun qa",
+  "takeover ein",
+  "takeover jet",
+  "takeover faye",
+  "stop",
+  "approve-config",
+] as const;
+export const SfResolutionCommand = Schema.Literals(sfResolutionCommands);
+export type SfResolutionCommand = typeof SfResolutionCommand.Type;
+
+const workflowResolutionForSfCommand: Readonly<Record<SfResolutionCommand, WorkflowResolution>> = {
+  resume: "resume",
+  continue: "continue",
+  "rerun building": "rerun",
+  "rerun validation": "rerun",
+  "rerun review": "rerun",
+  "rerun qa": "rerun",
+  "takeover ein": "takeover",
+  "takeover jet": "takeover",
+  "takeover faye": "takeover",
+  stop: "cancel",
+  "approve-config": "approve_config",
+};
+
+const attentionKindForTargetedSfCommand: Readonly<Partial<Record<SfResolutionCommand, AttentionKind>>> = {
+  "rerun building": "constraint_exhausted",
+  "rerun review": "constraint_exhausted",
+  "rerun qa": "constraint_exhausted",
+  "rerun validation": "uncertain_gate",
+};
+
 /** One reason the bounty stopped, with the exact commands that clear it (`docs/capabilities/05-control-lease-and-takeover.md`). */
 export const SfAttentionSnapshot = Schema.Struct({
   kind: AttentionKind,
   reason: Schema.String,
-  resolutions: Schema.Array(WorkflowResolution).pipe(Schema.check(Schema.isMinLength(1))),
+  resolutions: Schema.Array(SfResolutionCommand).pipe(Schema.check(Schema.isMinLength(1))),
 });
 export type SfAttentionSnapshot = typeof SfAttentionSnapshot.Type;
 
@@ -236,7 +274,15 @@ export const SfStatusSnapshot = SfStatusSnapshotBase.pipe(
       }
       for (const record of snapshot.attention) {
         const permitted: ReadonlyArray<WorkflowResolution> = resolutionsForAttention[record.kind];
-        if (record.resolutions.some((resolution) => !permitted.includes(resolution))) {
+        if (
+          record.resolutions.some((command) => {
+            const targetKind = attentionKindForTargetedSfCommand[command];
+            return (
+              !permitted.includes(workflowResolutionForSfCommand[command]) ||
+              (targetKind !== undefined && targetKind !== record.kind)
+            );
+          })
+        ) {
           return "Expected every offered resolution to be permitted by the attention kind";
         }
       }

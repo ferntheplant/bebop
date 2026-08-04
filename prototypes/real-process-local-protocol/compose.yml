@@ -1,0 +1,20 @@
+# PROTOTYPE ONLY: disposable Postgres for the packed-process loopback probe.
+name: bebop-prototype-real-process-local-protocol
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bebop
+      POSTGRES_PASSWORD: prototype-password
+      POSTGRES_DB: bebop_prototype
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - "5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bebop -d bebop_prototype"]
+      interval: 1s
+      timeout: 3s
+      retries: 40

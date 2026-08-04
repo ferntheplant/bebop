@@ -147,6 +147,14 @@
         "vite-plus": "catalog:",
       },
     },
+    "prototypes/real-process-local-protocol": {
+      "name": "@bebop/prototype-real-process-local-protocol",
+      "version": "0.0.0",
+      "devDependencies": {
+        "typescript": "catalog:",
+        "vite-plus": "catalog:",
+      },
+    },
     "prototypes/tmux-input-lock": {
       "name": "@bebop/prototype-tmux-input-lock",
       "version": "0.0.0",
@@ -197,6 +205,8 @@
     "@bebop/prototype-opencode-seat-mutation-events": ["@bebop/prototype-opencode-seat-mutation-events@workspace:prototypes/opencode-seat-mutation-events"],
 
     "@bebop/prototype-persistence": ["@bebop/prototype-persistence@workspace:prototypes/persistence"],
+
+    "@bebop/prototype-real-process-local-protocol": ["@bebop/prototype-real-process-local-protocol@workspace:prototypes/real-process-local-protocol"],
 
     "@bebop/prototype-tmux-input-lock": ["@bebop/prototype-tmux-input-lock@workspace:prototypes/tmux-input-lock"],
 

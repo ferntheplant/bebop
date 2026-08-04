@@ -1,0 +1,10 @@
+{
+  "name": "@bebop/prototype-real-process-local-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

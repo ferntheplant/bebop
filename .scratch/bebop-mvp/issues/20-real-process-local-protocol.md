@@ -1,7 +1,7 @@
 # What breaks when real Bebop and Swordfish processes run together locally?
 
 Type: prototype
-Status: open
+Status: resolved
 
 ## Question
 
@@ -27,3 +27,23 @@ Keep the probe hermetic and subscription-free. Do not add a local compute provid
 event endpoint, OpenCode prompting, repository hooks, GitHub, or claims that the autonomous loop runs locally.
 Resolve with the observed failures and a brief for the smallest production-quality local system harness that the
 probe justifies.
+
+## Resolution
+
+Resolved by [`prototypes/real-process-local-protocol`](../../../prototypes/real-process-local-protocol/README.md):
+six of six packed-process scenarios pass over disposable Postgres and SQLite. Both startup orders, API restart,
+daemon `SIGKILL`, replay, acknowledgement, projection, local cancellation, and an offline Bebop stop preserve one
+history without duplication.
+
+The retry-stable machine credential has no packed fake-provider bootstrap handoff. The probe derived it in its
+trusted throwaway driver to open the seam; product code must instead let the fake lifecycle provider hand the same
+credential to a local supervisor through a one-shot protected bootstrap artifact. No operator retrieval API or
+second credential derivation is justified.
+
+The furthest production path remains `interactive`, reconnect/replay, and cancellation. `sf stop` commits
+`cancelled` but exits before sending it, so Bebop sees the cancellation only after a daemon restart. The settled
+`sf cancel` behavior should keep the daemon alive. The packed CLI surfaces also remain behind their capability
+docs, and SSE idle closure remains the already-open ticket 18. None of these observations requires a new protocol
+decision or ADR.
+
+Implementation brief: [a production-quality local system harness](../../local-system-harness/brief.md).

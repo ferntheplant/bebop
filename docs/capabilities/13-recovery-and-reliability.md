@@ -35,12 +35,15 @@ merge.
 sequence gaps, conflicting replays, and stale-connection traffic are all rejected with reasons. Constraint
 exhaustion parks work as promised: the scoped ledger is real, Swordfish evaluates it on the heartbeat it already
 sends, and `continue`, `rerun <target>`, and `resume` are distinct local recoveries whose grants are durable events
-rather than counter edits. Their settled operator authentication is not built. Daemon downtime counts toward the
-attempt that was running, because the running-since mark is in the durable snapshot rather than in a timer. The
-[real-process loopback prototype](../../prototypes/real-process-local-protocol/README.md) runs both packed peers
-against Postgres and SQLite: listener loss, API restart, daemon `SIGKILL`, event replay, and an offline stop all
-recover without duplicate projection or command delivery. It does not exercise VM loss or a remote network, and
-no cowboy has yet produced an attempt for the ledger to bound.
+rather than counter edits. Operator authentication is built for `sf cancel` — hidden credential entry verified
+against a provisioned salted verifier — while the other local recovery verbs still authenticate by socket ownership
+alone. Daemon downtime counts toward the attempt that was running, because the running-since mark is in the durable
+snapshot rather than in a timer. The [real-process loopback prototype](../../prototypes/real-process-local-protocol/README.md)
+ran both packed peers against Postgres and SQLite: listener loss, API restart, daemon `SIGKILL`, event replay, and
+an offline stop all recover without duplicate projection or command delivery. The maintained follow-up is the
+[local system harness](../../.scratch/local-system-harness/brief.md) under `test/local-system/`, run via
+`vp run local-system`. It does not exercise VM loss or a remote network, and no cowboy has yet produced an attempt
+for the ledger to bound.
 
 ## Acceptance criteria
 

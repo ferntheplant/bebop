@@ -58,6 +58,16 @@ Run the complete local readiness check:
 vp run ready
 ```
 
+Run the maintained local system harness — packed Bebop API, worker, CLI, Swordfish daemon, and `sf` CLI over
+loopback against disposable Postgres, proving the packed-process protocol floor
+([`.scratch/local-system-harness/brief.md`](./.scratch/local-system-harness/brief.md)):
+
+```bash
+docker compose up -d --wait postgres
+export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
+vp run local-system
+```
+
 ### Postgres for component tests
 
 Bebop's component tests run against a **real disposable Postgres** — the behaviour they cover is behaviour a
@@ -164,9 +174,10 @@ vp run @bebop/swordfish#dev
 
 The daemon owns SQLite and exposes only the mode-`0600` Unix control socket. Point `sf` at that socket with
 `SWORDFISH_CONTROL_SOCKET_PATH` or `--socket`; commands never read or mutate the database directly. The current
-CLI implements status, cancel, takeover, handoff, continue, rerun, and resume. It still lacks compact watch and
-events, operator authentication for mutations, attach, and the role-aware workflow actions. Config approval and
-VM lifecycle remain bebop-side.
+CLI implements status, cancel, takeover, handoff, continue, rerun, and resume. Status is read-only; every mutating
+command requires the per-bounty operator credential, entered hidden at the prompt and verified against the salted
+verifier the daemon was provisioned with (`SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER`). The CLI still lacks compact
+watch and events, attach, and the role-aware workflow actions. Config approval and VM lifecycle remain bebop-side.
 
 All commits must follow Conventional Commits. Vite+ installs the pre-commit and commit-message hooks through the
 root `prepare` script.

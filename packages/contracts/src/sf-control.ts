@@ -31,7 +31,11 @@ import {
   SwordfishStage,
 } from "./workflow.ts";
 
-export const currentSfControlVersion = 1 as const;
+// Version 2: `SfControlRequest` gained the optional `operatorCredential` field, which the
+// daemon requires for mutating local commands ("Workflow actions have role-aware adapters"
+// (ADR 0038)). A v1 client cannot satisfy that requirement, so it is refused with
+// `unsupported_version` rather than a misleading per-command error.
+export const currentSfControlVersion = 2 as const;
 export const SfControlVersion = Schema.Literal(currentSfControlVersion);
 export type SfControlVersion = typeof SfControlVersion.Type;
 
@@ -54,6 +58,17 @@ export const SfControlRequest = Schema.Struct({
   controlVersion: SfControlVersion,
   correlationId: CorrelationId,
   command: SfControlCommand,
+  /**
+   * The per-bounty operator credential proving a human issued a mutating command.
+   *
+   * Present only on commands that mutate or grant (ADR 0038). It is `Redacted` so an
+   * accidental interpolation into a log line cannot print it, and `RedactedFromValue` rather
+   * than `Redacted` because the wire form is a plain string that travels from the hidden
+   * terminal prompt to the daemon inside this frame.
+   */
+  operatorCredential: Schema.optionalKey(
+    Schema.RedactedFromValue(Schema.NonEmptyString, { label: "operator-credential" }),
+  ),
 });
 export type SfControlRequest = typeof SfControlRequest.Type;
 
@@ -374,6 +389,9 @@ export const sfControlErrorCodes = [
   // attention does not permit the verb, or there is nothing outstanding to resolve.
   "recovery_not_available",
   "bebop_unavailable",
+  // A mutating local command was sent without a valid per-bounty operator credential, or with
+  // a verifier the daemon has not been configured with (ADR 0038).
+  "unauthorized",
   "internal_error",
 ] as const;
 export const SfControlErrorCode = Schema.Literals(sfControlErrorCodes);

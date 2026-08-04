@@ -18,7 +18,7 @@ describe("shared command payloads", () => {
     // If you are here because this failed: a shared payload changed shape. Both of these
     // must move together, and both protocols' fixtures need regenerating.
     expect(currentProtocolVersion).toBe(1);
-    expect(currentSfControlVersion).toBe(1);
+    expect(currentSfControlVersion).toBe(2);
   });
 
   test("every shared command encodes to its committed shape", () => {

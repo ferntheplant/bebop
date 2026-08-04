@@ -26,12 +26,17 @@ afterEach(async () => {
   harness = undefined;
 });
 
-function controlRequest(correlationId: string, command: SfControlCommand): SfControlRequest {
+function controlRequest(
+  correlationId: string,
+  command: SfControlCommand,
+  operatorCredential?: string,
+): SfControlRequest {
   return Schema.decodeUnknownSync(SfControlRequest)({
     type: "request",
     controlVersion: currentSfControlVersion,
     correlationId,
     command,
+    ...(operatorCredential === undefined ? {} : { operatorCredential }),
   });
 }
 
@@ -88,6 +93,7 @@ describe("Swordfish local control", () => {
         controlVersion: currentSfControlVersion,
         correlationId: "sf-conflict",
         command: { type: "takeover", seat: "ein", force: false },
+        operatorCredential: harness.operatorCredential,
       });
       await Effect.runPromise(requestControl(harness.config.controlSocketPath, firstUse).pipe(Effect.scoped));
       const conflictingUse = Schema.decodeUnknownSync(SfControlRequest)({
@@ -101,9 +107,10 @@ describe("Swordfish local control", () => {
       if (conflict.type === "error") expect(conflict.error.code).toBe("correlation_conflict");
 
       const cancelled = await Effect.runPromise(
-        requestControl(harness.config.controlSocketPath, controlRequest("sf-cancel", { type: "cancel" })).pipe(
-          Effect.scoped,
-        ),
+        requestControl(
+          harness.config.controlSocketPath,
+          controlRequest("sf-cancel", { type: "cancel" }, harness.operatorCredential),
+        ).pipe(Effect.scoped),
       );
       expect(cancelled.type).toBe("success");
       if (cancelled.type === "success") expect(cancelled.result.snapshot.stage).toBe("cancelled");
@@ -232,9 +239,10 @@ describe("Swordfish local control", () => {
     try {
       await waitForSocket(harness.config.controlSocketPath);
       const response = await Effect.runPromise(
-        requestControl(harness.config.controlSocketPath, controlRequest("sf-internal", { type: "cancel" })).pipe(
-          Effect.scoped,
-        ),
+        requestControl(
+          harness.config.controlSocketPath,
+          controlRequest("sf-internal", { type: "cancel" }, harness.operatorCredential),
+        ).pipe(Effect.scoped),
       );
       expect(response.type).toBe("error");
       if (response.type === "error") {
@@ -276,7 +284,11 @@ describe("Swordfish local control", () => {
       const response = await Effect.runPromise(
         requestControl(
           socketPath,
-          controlRequest("sf-cmd-takeover-attention", { type: "takeover", seat: "ein", force: false }),
+          controlRequest(
+            "sf-cmd-takeover-attention",
+            { type: "takeover", seat: "ein", force: false },
+            harness.operatorCredential,
+          ),
         ).pipe(Effect.scoped),
       );
 
@@ -312,8 +324,11 @@ describe("Swordfish local control", () => {
     try {
       await waitForSocket(harness.config.controlSocketPath);
       const socketPath = harness.config.controlSocketPath;
+      const operatorCredential = harness.operatorCredential;
       const send = (correlationId: string, command: SfControlCommand): Promise<SfControlResponse> =>
-        Effect.runPromise(requestControl(socketPath, controlRequest(correlationId, command)).pipe(Effect.scoped));
+        Effect.runPromise(
+          requestControl(socketPath, controlRequest(correlationId, command, operatorCredential)).pipe(Effect.scoped),
+        );
 
       const takeover = await send("sf-cmd-takeover", { type: "takeover", seat: "ein", force: false });
       expect(takeover.type).toBe("success");
@@ -357,6 +372,48 @@ describe("Swordfish local control", () => {
         expect(status.result.snapshot.validatedCandidates).toEqual({ consumed: 0, base: 3, granted: 0 });
         expect(status.result.snapshot.exhausted).toEqual([]);
       }
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
+  test("requires the operator credential for mutating commands and not for status", async () => {
+    harness = await startSwordfishHarness("operator-auth");
+    const fiber = harness.fork(runControlSocket);
+    try {
+      await waitForSocket(harness.config.controlSocketPath);
+      const socketPath = harness.config.controlSocketPath;
+
+      // Status is read-only and stays unprompted (ADR 0038).
+      const status = await Effect.runPromise(
+        requestControl(socketPath, controlRequest("sf-auth-status", { type: "status" })).pipe(Effect.scoped),
+      );
+      expect(status.type).toBe("success");
+
+      // A mutating command without the credential is refused.
+      const missing = await Effect.runPromise(
+        requestControl(socketPath, controlRequest("sf-auth-missing", { type: "cancel" })).pipe(Effect.scoped),
+      );
+      expect(missing.type).toBe("error");
+      if (missing.type === "error") expect(missing.error.code).toBe("unauthorized");
+
+      // A wrong credential is refused.
+      const wrong = await Effect.runPromise(
+        requestControl(socketPath, controlRequest("sf-auth-wrong", { type: "cancel" }, "bebop_op_wrong")).pipe(
+          Effect.scoped,
+        ),
+      );
+      expect(wrong.type).toBe("error");
+      if (wrong.type === "error") expect(wrong.error.code).toBe("unauthorized");
+
+      // The right credential is accepted.
+      const accepted = await Effect.runPromise(
+        requestControl(socketPath, controlRequest("sf-auth-ok", { type: "cancel" }, harness.operatorCredential)).pipe(
+          Effect.scoped,
+        ),
+      );
+      expect(accepted.type).toBe("success");
+      if (accepted.type === "success") expect(accepted.result.snapshot.stage).toBe("cancelled");
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
     }

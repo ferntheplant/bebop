@@ -13,6 +13,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
+import { operatorCredentialForBounty, saltedOperatorVerifier, serializeOperatorVerifier } from "@bebop/contracts";
 import { adminDatabaseUrl, createDisposableDatabase } from "@bebop/testkit";
 import { describe, expect, test } from "vite-plus/test";
 
@@ -36,6 +37,8 @@ function run(
     readonly env?: Readonly<Record<string, string>>;
     readonly unsetEnv?: ReadonlyArray<string>;
     readonly timeoutMs?: number;
+    /** Written to the child's stdin, for the hidden operator credential prompt (ADR 0038). */
+    readonly stdin?: string;
   },
 ): Promise<Outcome> {
   return new Promise((resolve) => {
@@ -45,12 +48,16 @@ function run(
     }
     const child = spawn("bun", [entrypoint, ...args], {
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    if (options?.stdin !== undefined) {
+      child.stdin.write(options.stdin);
+    }
+    child.stdin.end();
     const timer = setTimeout(() => child.kill("SIGTERM"), options?.timeoutMs ?? 10_000);
     child.on("close", (exitCode) => {
       clearTimeout(timer);
@@ -162,6 +169,17 @@ async function waitForResponse(
   }
   throw new Error(`process did not become ready: ${String(lastError)}`);
 }
+
+/**
+ * The master key shared by the process-level Swordfish fixtures. Each fixture derives its
+ * own per-bounty operator credential; mutating `sf` commands require it, entered hidden at
+ * the prompt (ADR 0038), and the daemon is configured with only the salted verifier.
+ */
+const integrationCredentialKey = "entrypoint-integration-credential-key-at-least-32-bytes";
+const integrationOperatorCredential = operatorCredentialForBounty(integrationCredentialKey, "bty-reconcile-process");
+const integrationOperatorVerifier = serializeOperatorVerifier(saltedOperatorVerifier(integrationOperatorCredential));
+const processOperatorCredential = operatorCredentialForBounty(integrationCredentialKey, "bty-process");
+const processOperatorVerifier = serializeOperatorVerifier(saltedOperatorVerifier(processOperatorCredential));
 
 /**
  * A configuration good enough to get past `loadBebopConfig`, pointing at a database that is
@@ -283,6 +301,7 @@ describe("process entrypoints", () => {
       SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
       SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
       SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
+      SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: integrationOperatorVerifier,
     } as const;
     let daemon: RunningProcess | undefined;
     let peer: ReturnType<typeof Bun.serve> | undefined;
@@ -367,7 +386,9 @@ describe("process entrypoints", () => {
         recentEvents: [{ sequence: 1 }, { sequence: 2, event: { type: "attention_required" } }],
       });
 
-      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath]);
+      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath], {
+        stdin: `${integrationOperatorCredential}\n`,
+      });
       expect(cancelled.exitCode).toBe(0);
       await waitForCondition(() => receivedEvents.some((event) => event.sequence === 4), "local cancellation delivery");
       expect(receivedEvents.slice(-2)).toEqual([
@@ -464,6 +485,7 @@ describe("process entrypoints", () => {
       SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
       SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
       SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
+      SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: processOperatorVerifier,
     } as const;
     let daemon: RunningProcess | undefined;
     let competingDaemon: RunningProcess | undefined;
@@ -505,7 +527,9 @@ describe("process entrypoints", () => {
       }, "the restarted process acknowledgement");
       expect(eventSequences).toEqual([1, 1]);
 
-      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath]);
+      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath], {
+        stdin: `${processOperatorCredential}\n`,
+      });
       expect(cancelled.exitCode).toBe(0);
       expect(daemon.child.exitCode).toBeNull();
     } finally {

@@ -2,6 +2,8 @@ import { lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { operatorCredentialForBounty, saltedOperatorVerifier, serializeOperatorVerifier } from "@bebop/contracts";
+
 const workspace = join(import.meta.dir, "..");
 const daemonEntrypoint = join(workspace, "dist", "daemon.mjs");
 const cliEntrypoint = join(workspace, "dist", "cli.mjs");
@@ -9,6 +11,7 @@ const cliEntrypoint = join(workspace, "dist", "cli.mjs");
 async function run(
   args: ReadonlyArray<string>,
   env: Readonly<Record<string, string>>,
+  stdin?: string,
 ): Promise<{
   readonly code: number;
   readonly stdout: string;
@@ -16,9 +19,14 @@ async function run(
 }> {
   const child = Bun.spawn(["bun", cliEntrypoint, ...args], {
     env: { ...process.env, ...env },
+    stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
   });
+  if (stdin !== undefined) {
+    await child.stdin.write(stdin);
+  }
+  await child.stdin.end();
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -46,6 +54,8 @@ const socketPath = join(root, "run", "control.sock");
 await Promise.all(
   ["run", "state", "repository", "artifacts"].map((directory) => mkdir(join(root, directory), { recursive: true })),
 );
+const credentialKey = "swordfish-smoke-credential-key-at-least-32-bytes";
+const operatorCredential = operatorCredentialForBounty(credentialKey, "bty-smoke");
 const env = {
   SWORDFISH_BOUNTY_ID: "bty-smoke",
   SWORDFISH_VM_ID: "vm-smoke",
@@ -62,6 +72,7 @@ const env = {
   SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
   SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
   SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
+  SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: serializeOperatorVerifier(saltedOperatorVerifier(operatorCredential)),
 } as const;
 
 const daemon = Bun.spawn(["bun", daemonEntrypoint], {
@@ -77,7 +88,7 @@ try {
   if (snapshot.stage !== "interactive" || snapshot.bebopConnection?.pendingEventCount !== 1) {
     throw new Error(`packed daemon returned an unexpected status: ${status.stdout}`);
   }
-  const cancel = await run(["cancel", "--socket", socketPath], env);
+  const cancel = await run(["cancel", "--socket", socketPath], env, `${operatorCredential}\n`);
   if (cancel.code !== 0) throw new Error(`packed sf cancel failed: ${cancel.stderr}`);
   const cancelled = await run(["status", "--socket", socketPath, "--json"], env);
   if (cancelled.code !== 0 || (JSON.parse(cancelled.stdout) as { stage?: unknown }).stage !== "cancelled") {

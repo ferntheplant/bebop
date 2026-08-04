@@ -51,9 +51,11 @@ attention record carries a kind that names the commands permitted to clear it, a
 Not built: the quiescent handoff itself — abort, the ten-second grace period, and forced restart are decided but
 unimplemented, so control changes hands today without waiting for the previous actor to stop. The settled command
 surface is partial: status, cancel, takeover, handoff, continue, rerun, and resume exist, and cancel correctly
-leaves Swordfish alive while Bebop stop owns daemon shutdown. Operator authentication, the remaining commands,
-prompt denial, isolated seat transport, unexpected-mutation detection, and role-aware action adapters are still
-outstanding.
+leaves Swordfish alive while Bebop stop owns daemon shutdown. Operator authentication is built for `sf cancel`: the
+command requires the per-bounty operator credential, entered hidden at the prompt, and the daemon verifies it
+against the salted verifier it was provisioned with; the other mutating commands still authenticate by socket
+ownership alone. Prompt denial, isolated seat transport, unexpected-mutation detection, and role-aware action
+adapters are still outstanding.
 
 ## Acceptance criteria
 

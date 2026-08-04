@@ -12,6 +12,7 @@
     "prepare": "vp config"
   },
   "devDependencies": {
+    "@bebop/contracts": "workspace:*",
     "@bebop/testkit": "workspace:*",
     "@commitlint/cli": "catalog:",
     "@commitlint/config-conventional": "catalog:",

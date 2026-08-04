@@ -30,6 +30,24 @@ const WebSocketUrl = Schema.URL.pipe(
   ),
 );
 
+/**
+ * The salted verifier of the per-bounty operator credential, as `salt:verifier` hex.
+ *
+ * Swordfish stores only this verifier; the plaintext credential enters through hidden human
+ * terminal input at the `sf` prompt and is never provisioned, logged, or persisted
+ * ("Workflow actions have role-aware adapters" (ADR 0038)). When it is absent, mutating local
+ * commands are refused: operator authentication cannot be proven, so it must not be skipped.
+ */
+export const OperatorCredentialVerifier = Schema.String.pipe(
+  Schema.check(
+    Schema.isMinLength(3),
+    Schema.isTrimmed(),
+    Schema.makeFilter<string>((value) =>
+      /^[0-9a-f]+:[0-9a-f]{64}$/.test(value) ? undefined : "Expected a verifier as salt:sha256-hex",
+    ),
+  ),
+);
+
 const SwordfishConfigBase = Schema.Struct({
   bountyId: BountyId,
   vmId: VmId,
@@ -46,6 +64,7 @@ const SwordfishConfigBase = Schema.Struct({
   reconnectMinimumDelay: PositiveDuration,
   reconnectMaximumDelay: PositiveDuration,
   shutdownTimeout: PositiveDuration,
+  operatorCredentialVerifier: Schema.optionalKey(OperatorCredentialVerifier),
 });
 
 export const SwordfishConfigSchema = SwordfishConfigBase.pipe(

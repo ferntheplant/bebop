@@ -15,11 +15,13 @@ import {
   currentSfControlVersion,
   decodeSfControlRequest,
   InvalidSfControlRequestError,
+  parseOperatorVerifier,
   SfControlResponse as SfControlResponseSchema,
   UnsupportedSfControlVersionError,
+  verifyOperatorCredential,
 } from "@bebop/contracts";
 import * as BunSocketServer from "@effect/platform-bun/BunSocketServer";
-import { Data, Deferred, Duration, Effect, Fiber, Schema } from "effect";
+import { Data, Deferred, Duration, Effect, Fiber, Redacted, Schema } from "effect";
 import { Socket, SocketServer } from "effect/unstable/socket";
 
 import { SwordfishConfiguration } from "#src/config.ts";
@@ -168,6 +170,44 @@ function internalErrorResponse(request: SfControlRequest, kind: string, error: u
   );
 }
 
+/**
+ * Proves operator authority for a mutating local command, or returns the refusal.
+ *
+ * `status` is the one read-only command and stays unprompted. Every other command changes
+ * state or grants something, so it requires the per-bounty operator credential
+ * ("Workflow actions have role-aware adapters" (ADR 0038)): a same-user mode-`0600` socket
+ * cannot distinguish a human shell from a cowboy spawning `sf`, and the hidden prompt is the
+ * proof. The daemon holds only the salted verifier; the plaintext never reaches it.
+ *
+ * Returns `null` when authorized, and the schema-valid error response otherwise, so the
+ * refusal rides the same correlation-id channel as every other expected rejection.
+ */
+const operatorAuthorizationFailure = Effect.fnUntraced(function* (request: SfControlRequest) {
+  if (request.command.type === "status") {
+    return null;
+  }
+  const config = yield* SwordfishConfiguration;
+  if (config.operatorCredentialVerifier === undefined) {
+    return responseError(
+      request,
+      "unauthorized",
+      "Operator authentication is not configured; mutating sf commands are refused.",
+    );
+  }
+  const presented = request.operatorCredential;
+  if (presented === undefined) {
+    return responseError(
+      request,
+      "unauthorized",
+      "This command requires the per-bounty operator credential, entered hidden at the prompt.",
+    );
+  }
+  if (!verifyOperatorCredential(Redacted.value(presented), parseOperatorVerifier(config.operatorCredentialVerifier))) {
+    return responseError(request, "unauthorized", "The operator credential did not verify; the command was refused.");
+  }
+  return null;
+});
+
 const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
   const config = yield* SwordfishConfiguration;
   const identity = yield* SwordfishIdentity;
@@ -181,6 +221,9 @@ const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
       result: { command: request.command, snapshot: yield* workflow.status },
     } satisfies SfControlResponse;
   }
+
+  const refused = yield* operatorAuthorizationFailure(request);
+  if (refused !== null) return refused;
 
   let command: BebopCommand;
   switch (request.command.type) {

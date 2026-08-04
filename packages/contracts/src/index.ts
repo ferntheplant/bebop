@@ -5,6 +5,7 @@ export * from "./evidence.ts";
 export * from "./feedback.ts";
 export * from "./evidence-upload.ts";
 export * from "./http.ts";
+export * from "./operator-credential.ts";
 export * from "./protocol-decode.ts";
 export * from "./protocol.ts";
 export * from "./review.ts";

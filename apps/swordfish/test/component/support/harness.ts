@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { operatorCredentialForBounty, saltedOperatorVerifier, serializeOperatorVerifier } from "@bebop/contracts";
 import type { Context, Fiber } from "effect";
 import { ConfigProvider, Effect, Exit, Layer, Logger, Scope } from "effect";
 
@@ -16,11 +17,16 @@ import { WorkflowService } from "#src/workflow/service.ts";
 export interface SwordfishHarness {
   readonly root: string;
   readonly config: SwordfishConfig;
+  /** The plaintext operator credential for this harness's bounty, for mutating commands (ADR 0038). */
+  readonly operatorCredential: string;
   readonly run: <A, E, R>(effect: Effect.Effect<A, E, R>) => Promise<A>;
   readonly fork: <A, E, R>(effect: Effect.Effect<A, E, R>) => Fiber.Fiber<A, E>;
   readonly restart: () => Promise<void>;
   readonly close: () => Promise<void>;
 }
+
+/** The master key every component harness shares; each harness derives its own bounty credential from it. */
+const harnessCredentialKey = "component-harness-credential-key-at-least-32-bytes";
 
 async function harnessConfig(root: string, options?: { bebopWebSocketUrl?: string; databasePath?: string }) {
   const paths = {
@@ -54,6 +60,9 @@ async function harnessConfig(root: string, options?: { bebopWebSocketUrl?: strin
           SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
           SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
           SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
+          SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: serializeOperatorVerifier(
+            saltedOperatorVerifier(operatorCredentialForBounty(harnessCredentialKey, "bty-component")),
+          ),
         },
       }).pipe(ConfigProvider.constantCase),
     ),
@@ -113,6 +122,7 @@ export async function startSwordfishHarness(
   const harness: SwordfishHarness = {
     root,
     config,
+    operatorCredential: operatorCredentialForBounty(harnessCredentialKey, "bty-component"),
     run,
     fork,
     restart: async () => {

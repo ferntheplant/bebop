@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 
+import { createInterface } from "node:readline";
+
 import type { SfBudgetSnapshot, SfControlCommand, SfControlRequest, SfStatusSnapshot } from "@bebop/contracts";
 import {
   currentSfControlVersion,
@@ -119,6 +121,60 @@ function rejectTrailingArguments(command: SfControlCommand): Effect.Effect<void,
     : Effect.void;
 }
 
+/**
+ * Hidden interactive entry of the per-bounty operator credential (ADR 0038).
+ *
+ * The credential is never accepted through a flag, environment variable, file, or command
+ * history, so there is no noninteractive local bypass. On a terminal the echoed characters
+ * are suppressed; when stdin is a pipe — the local harness feeding `sf cancel` the
+ * credential it derived from the master key — one line is read as the hidden prompt's input.
+ */
+function readHiddenCredential(prompt: string): Effect.Effect<string, Error> {
+  return Effect.tryPromise({
+    try: () =>
+      new Promise<string>((resolve, reject) => {
+        const isTerminal = process.stdin.isTTY === true;
+        const input = createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          terminal: isTerminal,
+        });
+        let muted = false;
+        // readline echoes input back through its output stream; swallowing those writes is
+        // what hides the typed characters.
+        if (isTerminal) {
+          type OutputMuter = { _writeToOutput: (data: string) => void };
+          const muter = input as unknown as OutputMuter;
+          const originalWrite = muter._writeToOutput.bind(muter);
+          muter._writeToOutput = (data: string) => {
+            if (muted) return;
+            originalWrite(data);
+          };
+        }
+        process.stderr.write(prompt);
+        muted = true;
+        let answered = false;
+        const finish = (value: string) => {
+          if (answered) return;
+          answered = true;
+          muted = false;
+          process.stderr.write("\n");
+          input.close();
+          resolve(value.trim());
+        };
+        input.question("", finish);
+        input.on("close", () => {
+          if (!answered) {
+            answered = true;
+            reject(new Error("The operator credential input ended before a credential was entered."));
+          }
+        });
+        input.on("error", reject);
+      }),
+    catch: (cause) => new Error(`Could not read the operator credential: ${String(cause)}`),
+  });
+}
+
 const execute = Effect.fnUntraced(function* (options: {
   readonly command: SfControlCommand;
   readonly socket: Option.Option<string>;
@@ -127,11 +183,16 @@ const execute = Effect.fnUntraced(function* (options: {
   yield* rejectTrailingArguments(options.command);
   const identity = yield* SwordfishIdentity;
   const path = yield* loadSocketPath(options.socket);
+  // `status` is read-only and stays unprompted; every mutating command proves operator
+  // authority with the per-bounty credential, entered hidden (ADR 0038).
+  const operatorCredential =
+    options.command.type === "status" ? undefined : yield* readHiddenCredential("operator credential: ");
   const request = Schema.decodeUnknownSync(SfControlRequestSchema)({
     type: "request",
     controlVersion: currentSfControlVersion,
     correlationId: yield* identity.correlationId,
     command: options.command,
+    ...(operatorCredential === undefined ? {} : { operatorCredential }),
   }) as SfControlRequest;
   const response = yield* requestControl(path, request).pipe(Effect.scoped);
   if (response.type === "error") return yield* Effect.fail(response.error);

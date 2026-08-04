@@ -5,10 +5,12 @@
     "": {
       "name": "bebop",
       "devDependencies": {
+        "@bebop/contracts": "workspace:*",
         "@bebop/testkit": "workspace:*",
         "@commitlint/cli": "catalog:",
         "@commitlint/config-conventional": "catalog:",
         "@types/bun": "catalog:",
+        "effect": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",
         "vite-plus": "catalog:",

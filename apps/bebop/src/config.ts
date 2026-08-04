@@ -102,11 +102,15 @@ const BebopConfigBase = Schema.Struct({
   ),
   /**
    * When set, the fake lifecycle provider writes each provisioned bounty's bootstrap
-   * artifact here instead of only fabricating a VM record. This is the explicitly local
-   * harness option from `.scratch/local-system-harness/brief.md`: it is how a local
-   * supervisor receives the machine credential Bebop hands to `LifecycleProvider.provision`
-   * without an operator retrieval route or a second derivation. Disabled (never set) in
-   * production, where the real provider injects the credential into a VM directly.
+   * artifact here instead of only fabricating a VM record. It is how a local supervisor
+   * receives the machine credential Bebop hands to `LifecycleProvider.provision`, with no
+   * operator retrieval route and no second derivation — the same injection
+   * [Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR
+   * 0014)](../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)
+   * gives the real provider, at a seam where the VM is a directory.
+   *
+   * Setting it writes plaintext machine credentials to disk, so the runtime logs a warning
+   * whenever it is present. Production leaves it unset; the real provider injects into a VM.
    */
   localHarnessRoot: Schema.optionalKey(AbsolutePath),
   databasePoolSize: Schema.optionalKey(PositiveCount),

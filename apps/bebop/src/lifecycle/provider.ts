@@ -80,13 +80,17 @@ const decodeHttpsUrl = Schema.decodeUnknownSync(HttpsUrl);
 /**
  * The one-shot bootstrap artifact a local supervisor consumes to start Swordfish.
  *
- * This is the explicitly local handoff the real-process probe found missing
- * (`.scratch/bebop-mvp/issues/20-real-process-local-protocol.md`): the worker already mints
- * the retry-stable machine credential and passes it to `LifecycleProvider.provision`, so the
- * provider is the component that puts it on the "VM". Here the VM is a local directory, and
- * the artifact is the injection. It contains only the three fields the brief allows, is
- * written atomically under a mode-`0700` directory as a mode-`0600` file, and is rewritten on
- * every provision so a retry yields the same identity and credential.
+ * This is not a new credential path. It is
+ * [Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR
+ * 0014)](../../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)
+ * applied where the "VM" is a local directory: the worker mints the retry-stable machine
+ * credential and hands the plaintext to `LifecycleProvider.provision`, and the provider is
+ * the component that puts it on the VM. Here the artifact is that injection.
+ *
+ * It carries only the three fields a supervisor needs, is written atomically under a
+ * mode-`0700` directory as a mode-`0600` file, and is rewritten on every provision so a
+ * retried provision yields the same identity and credential — the property ADR 0014 chose
+ * HMAC derivation over a random token to get.
  */
 export interface LocalBootstrapArtifact {
   readonly bountyId: BountyId;

@@ -364,11 +364,14 @@ suite("local system harness", () => {
       // A repeated create under one idempotency key must not mint a second identity or a
       // second credential, so the artifact is read again rather than assumed unchanged.
       //
-      // This is narrower than the brief's retry-stability claim, which is about repeated
-      // *provisioning* rewriting the same artifact. An idempotency-keyed create short-circuits
-      // at the API and never reaches the lifecycle job a second time, and nothing in Bebop
-      // re-provisions a live bounty today, so that path has no reachable trigger to test
-      // through. It becomes testable when recovery or destroy-and-replace lands.
+      // This covers the create path only: an idempotency-keyed create short-circuits at the
+      // API and never reaches the lifecycle job twice. Stability across an actual re-provision
+      // — the retry that made derivation preferable to a random token in
+      // [Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR
+      // 0014)](../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md) —
+      // is covered at the component layer, which can inject the failure that triggers it:
+      // `apps/bebop/test/component/lifecycle.test.ts`, "retries an uncertain provision with
+      // the same credential".
       const replayed = await createBounty(fleet, bebop, "local-system-alpha");
       expect(replayed.bountyId).toBe(created.bountyId);
       expect(await readBootstrapArtifact(bootstrapRoot, created.bountyId)).toEqual(provisioned);

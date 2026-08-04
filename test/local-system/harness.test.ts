@@ -361,8 +361,14 @@ suite("local system harness", () => {
       const provisioned = await readBootstrapArtifact(bootstrapRoot, created.bountyId);
       expect(provisioned.vmId).toBe(`vm-${created.bountyId}`);
 
-      // The retry must not mint a second identity or a second credential: the brief's
-      // retry-stability claim is about the artifact, so it is read again rather than assumed.
+      // A repeated create under one idempotency key must not mint a second identity or a
+      // second credential, so the artifact is read again rather than assumed unchanged.
+      //
+      // This is narrower than the brief's retry-stability claim, which is about repeated
+      // *provisioning* rewriting the same artifact. An idempotency-keyed create short-circuits
+      // at the API and never reaches the lifecycle job a second time, and nothing in Bebop
+      // re-provisions a live bounty today, so that path has no reachable trigger to test
+      // through. It becomes testable when recovery or destroy-and-replace lands.
       const replayed = await createBounty(fleet, bebop, "local-system-alpha");
       expect(replayed.bountyId).toBe(created.bountyId);
       expect(await readBootstrapArtifact(bootstrapRoot, created.bountyId)).toEqual(provisioned);

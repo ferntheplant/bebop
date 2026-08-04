@@ -54,7 +54,8 @@ export function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-export function describe(error: unknown): string {
+/** Renders an unknown thrown value for a timeout message. Not `describe`: that is vitest's. */
+export function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   try {
@@ -98,7 +99,9 @@ export async function waitFor<T>(
     }
     await delay(50);
   }
-  throw new Error(`Timed out waiting for ${description}${lastError === undefined ? "" : `: ${describe(lastError)}`}`);
+  throw new Error(
+    `Timed out waiting for ${description}${lastError === undefined ? "" : `: ${describeError(lastError)}`}`,
+  );
 }
 
 /** The bootstrap identity a local supervisor needs in order to start Swordfish. */

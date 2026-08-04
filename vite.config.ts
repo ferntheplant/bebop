@@ -137,6 +137,14 @@ export default defineConfig({
         dependsOn: ["build"],
         env: ["BEBOP_TEST_DATABASE_URL"],
       },
+      // The maintained local system harness: packed Bebop + Swordfish processes over loopback
+      // with disposable Postgres (`.scratch/local-system-harness/brief.md`). Gated on the
+      // database URL exactly like the other Postgres-backed suites.
+      "local-system": {
+        command: "bun node_modules/vitest/vitest.mjs run --reporter=minimal test/local-system",
+        dependsOn: ["build"],
+        env: ["BEBOP_TEST_DATABASE_URL"],
+      },
       "test:e2e": {
         command: "bun node_modules/vitest/vitest.mjs run --reporter=minimal  --passWithNoTests test/e2e",
         dependsOn: ["build"],
@@ -149,7 +157,7 @@ export default defineConfig({
       // Aggregator: the gate is its dependencies, not its command.
       ready: {
         command: "echo 'ready: check, tests, and artifact smokes passed'",
-        dependsOn: ["check", "test", "test:integration", "smoke"],
+        dependsOn: ["check", "test", "test:integration", "local-system", "smoke"],
       },
     },
   },

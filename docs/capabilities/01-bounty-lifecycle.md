@@ -26,8 +26,8 @@ Every command takes `--json`, and the CLI has no behaviour the API lacks.
 
 ## Where it stands
 
-**Partial.** Create, list, status, events, and config approval run against Postgres through the real API and CLI.
-Stop, recover, destroy, attachments, evidence, merge refusal, and token management have real API routes but do
+**Partial.** Create, list, status, events, stop, and config approval run against Postgres through the real API and
+CLI. Recover, destroy, attachments, evidence, merge refusal, and token management have real API routes but do
 not yet have thin CLI adapters. The lifecycle provider underneath is a fake that creates deterministic local VM
 records and is honest about being local. Status is computed on read, never stored. Swordfish currently exposes a
 local `sf cancel` that records `cancelling` and `cancelled`, projects both events to Bebop, and leaves the daemon

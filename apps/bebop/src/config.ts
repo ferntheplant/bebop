@@ -100,6 +100,19 @@ const BebopConfigBase = Schema.Struct({
   bootstrapApiToken: Schema.optionalKey(
     Schema.Redacted(ApiTokenSecret, { label: "bootstrap-api-token", disallowJsonEncode: true }),
   ),
+  /**
+   * When set, the fake lifecycle provider writes each provisioned bounty's bootstrap
+   * artifact here instead of only fabricating a VM record. It is how a local supervisor
+   * receives the machine credential Bebop hands to `LifecycleProvider.provision`, with no
+   * operator retrieval route and no second derivation — the same injection
+   * [Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR
+   * 0014)](../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)
+   * gives the real provider, at a seam where the VM is a directory.
+   *
+   * Setting it writes plaintext machine credentials to disk, so the runtime logs a warning
+   * whenever it is present. Production leaves it unset; the real provider injects into a VM.
+   */
+  localHarnessRoot: Schema.optionalKey(AbsolutePath),
   databasePoolSize: Schema.optionalKey(PositiveCount),
   eventStreamPollInterval: Schema.optionalKey(PositiveDuration),
   commandPollInterval: Schema.optionalKey(PositiveDuration),

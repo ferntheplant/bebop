@@ -9,6 +9,9 @@
 // The interface is deliberately narrow and app-local rather than a multi-provider
 // abstraction (see `AGENTS.md`, architectural rules): create, describe, destroy.
 
+import { chmod, mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import type { BountyId, ComputeProfile, Port, PrivatePreviewAttachment, SshAttachment, VmId } from "@bebop/contracts";
 import {
   HttpsUrl,
@@ -75,6 +78,65 @@ const decodePort = Schema.decodeUnknownSync(PortSchema);
 const decodeHttpsUrl = Schema.decodeUnknownSync(HttpsUrl);
 
 /**
+ * The one-shot bootstrap artifact a local supervisor consumes to start Swordfish.
+ *
+ * This is not a new credential path. It is
+ * [Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR
+ * 0014)](../../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)
+ * applied where the "VM" is a local directory: the worker mints the retry-stable machine
+ * credential and hands the plaintext to `LifecycleProvider.provision`, and the provider is
+ * the component that puts it on the VM. Here the artifact is that injection.
+ *
+ * It carries only the three fields a supervisor needs, is written atomically under a
+ * mode-`0700` directory as a mode-`0600` file, and is rewritten on every provision so a
+ * retried provision yields the same identity and credential — the property ADR 0014 chose
+ * HMAC derivation over a random token to get.
+ */
+export interface LocalBootstrapArtifact {
+  readonly bountyId: BountyId;
+  readonly vmId: VmId;
+  readonly swordfishToken: string;
+}
+
+function artifactPath(root: string, bountyId: BountyId): string {
+  return join(root, `${bountyId}.bootstrap`);
+}
+
+const writeBootstrapArtifact = Effect.fnUntraced(function* (root: string, artifact: LocalBootstrapArtifact) {
+  yield* Effect.tryPromise({
+    // `mkdir` applies `mode` only when it creates the directory, so a root that already
+    // exists keeps whatever permissions it had. The `chmod` is what actually guarantees
+    // `0700` for a file that is about to hold a plaintext credential.
+    try: async () => {
+      await mkdir(root, { recursive: true, mode: 0o700 });
+      await chmod(root, 0o700);
+    },
+    catch: (cause) =>
+      new LifecycleError("provision", artifact.bountyId, "could not create the local harness root", { cause }),
+  });
+  const path = artifactPath(root, artifact.bountyId);
+  const temporary = `${path}.${crypto.randomUUID()}.tmp`;
+  yield* Effect.tryPromise({
+    try: () => writeFile(temporary, `${JSON.stringify(artifact, null, 2)}\n`, { mode: 0o600 }),
+    catch: (cause) =>
+      new LifecycleError("provision", artifact.bountyId, "could not write the bootstrap artifact", { cause }),
+  }).pipe(
+    // A failed commit must not leave the plaintext credential behind under a temporary name
+    // that nothing will ever clean up.
+    Effect.onError(() => Effect.promise(() => unlink(temporary).catch(() => undefined))),
+  );
+  yield* Effect.tryPromise({
+    try: () => rename(temporary, path),
+    catch: (cause) =>
+      new LifecycleError("provision", artifact.bountyId, "could not commit the bootstrap artifact", { cause }),
+  }).pipe(Effect.onError(() => Effect.promise(() => unlink(temporary).catch(() => undefined))));
+  yield* Effect.logInfo("wrote local bootstrap artifact").pipe(
+    Effect.annotateLogs("bounty_id", artifact.bountyId),
+    Effect.annotateLogs("vm_id", artifact.vmId),
+  );
+});
+
+/**
  * The deterministic local provider.
  *
  * It creates no computer. What it does create is the record shape everything downstream
@@ -100,6 +162,13 @@ export function fakeLifecycleProviderLayer(options?: {
   readonly failProvisionAttempts?: number;
   readonly failProvisionAfterEffectAttempts?: number;
   readonly failDestroyAttempts?: number;
+  /**
+   * When set, provision also writes the one-shot bootstrap artifact beneath this root, so a
+   * local supervisor can start Swordfish with the machine credential. This is the explicitly
+   * local option from `.scratch/local-system-harness/brief.md`; production fake-provider
+   * behavior is unchanged when it is absent.
+   */
+  readonly localHarnessRoot?: string;
 }): Layer.Layer<LifecycleProvider> {
   const sshHost = options?.sshHost ?? "127.0.0.1";
   const sshPort = options?.sshPort ?? 2222;
@@ -111,11 +180,11 @@ export function fakeLifecycleProviderLayer(options?: {
 
   return Layer.sync(LifecycleProvider)(() => ({
     provision: ({ bountyId, swordfishToken }) =>
-      Effect.suspend(() => {
+      Effect.gen(function* () {
         options?.onProvisionAttempt?.();
         if (failProvisionAttempts > 0) {
           failProvisionAttempts -= 1;
-          return Effect.fail(new LifecycleError("provision", bountyId, "injected failure before side effect"));
+          return yield* Effect.fail(new LifecycleError("provision", bountyId, "injected failure before side effect"));
         }
         destroyed.delete(bountyId);
         const previewPort: Port = decodePort(3_000);
@@ -131,11 +200,19 @@ export function fakeLifecycleProviderLayer(options?: {
           ],
         };
         options?.onProvision?.({ ...provisioned, swordfishToken: RedactedModule.value(swordfishToken) });
+        const harnessRoot = options?.localHarnessRoot;
+        if (harnessRoot !== undefined) {
+          yield* writeBootstrapArtifact(harnessRoot, {
+            bountyId,
+            vmId: provisioned.vmId,
+            swordfishToken: RedactedModule.value(swordfishToken),
+          });
+        }
         if (failProvisionAfterEffectAttempts > 0) {
           failProvisionAfterEffectAttempts -= 1;
-          return Effect.fail(new LifecycleError("provision", bountyId, "injected failure after side effect"));
+          return yield* Effect.fail(new LifecycleError("provision", bountyId, "injected failure after side effect"));
         }
-        return Effect.succeed(provisioned);
+        return provisioned;
       }),
     destroy: ({ bountyId }) =>
       Effect.suspend(() => {

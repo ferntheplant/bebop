@@ -58,6 +58,16 @@ Run the complete local readiness check:
 vp run ready
 ```
 
+Run the maintained local system harness — packed Bebop API, worker, CLI, Swordfish daemon, and `sf` CLI over
+loopback against disposable Postgres, proving the packed-process protocol floor
+([`.scratch/local-system-harness/brief.md`](./.scratch/local-system-harness/brief.md)):
+
+```bash
+docker compose up -d --wait postgres
+export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
+vp run local-system
+```
+
 ### Postgres for component tests
 
 Bebop's component tests run against a **real disposable Postgres** — the behaviour they cover is behaviour a

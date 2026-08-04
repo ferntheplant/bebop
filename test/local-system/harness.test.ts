@@ -113,12 +113,20 @@ function workflowEventCounts(events: ReadonlyArray<PublicEvent>): Readonly<Recor
 
 async function replayPublicEvents(baseUrl: string, bountyId: string): Promise<Array<PublicEvent>> {
   const controller = new AbortController();
-  // The replay endpoint streams the backlog and then stays open for live events, so the read
-  // is ended deliberately rather than by the server. The window only has to outlast the
-  // backlog; `waitForWorkflowEventCount` is what absorbs a slow one. It must also stay well
-  // under `BEBOP_HTTP_IDLE_TIMEOUT`, or the server closes the stream first and the abort races
-  // a socket error.
-  const timeout = setTimeout(() => controller.abort(), 2_000);
+  // The endpoint streams the backlog and then stays open for live events, so it never ends on
+  // its own and the client has to decide when it has everything. Ending on a quiet period
+  // rather than a fixed deadline is what makes a read *complete* rather than merely long: the
+  // backlog arrives as a burst, so a gap in it is the only available signal that it drained.
+  // A fixed deadline cannot distinguish "drained" from "cut off mid-backlog", which is exactly
+  // how a truncated read can impersonate a stable one.
+  //
+  // The hard cap is a backstop for a stream that never goes quiet, and stays well under
+  // `BEBOP_HTTP_IDLE_TIMEOUT` so the server never closes the connection first.
+  const quietMs = 400;
+  const hardCap = setTimeout(() => controller.abort(), 5_000);
+  // One decoder for the whole stream: a per-chunk decoder cannot carry the `stream: true`
+  // state that reassembles a multi-byte character split across two chunks.
+  const decoder = new TextDecoder();
   let text = "";
   try {
     const response = await fetch(`${baseUrl}/api/bounties/${bountyId}/events`, {
@@ -128,14 +136,20 @@ async function replayPublicEvents(baseUrl: string, bountyId: string): Promise<Ar
     assert(response.ok && response.body !== null, `event replay returned ${response.status}`);
     const reader = response.body.getReader();
     for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      text += new TextDecoder().decode(chunk.value, { stream: true });
+      let quietTimer: ReturnType<typeof setTimeout> | undefined;
+      const quiet = new Promise<"quiet">((resolveQuiet) => {
+        quietTimer = setTimeout(() => resolveQuiet("quiet"), quietMs);
+      });
+      const next = await Promise.race([reader.read(), quiet]);
+      clearTimeout(quietTimer);
+      if (next === "quiet" || next.done) break;
+      text += decoder.decode(next.value, { stream: true });
     }
+    controller.abort();
   } catch (error) {
     if (text.length === 0 && !(error instanceof DOMException && error.name === "AbortError")) throw error;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(hardCap);
   }
   return text
     .split(/\r?\n\r?\n/)
@@ -168,21 +182,18 @@ async function waitForWorkflowEventCount(
     return (counts[key] ?? 0) === expected ? true : undefined;
   });
   await delay(500);
-  // The settle read retries the *transport* and asserts on the first reading it actually
-  // obtains. A dropped connection is an expected outcome on this endpoint rather than an
-  // exceptional one (issue 18), so treating one as a failed assertion would report "the event
-  // was duplicated" when what happened was "the socket closed" — which is precisely how this
-  // helper failed in CI when the read sat outside any retry.
-  const settled = await waitFor(`a settled read of ${key}`, async () =>
-    workflowEventCounts(await replayPublicEvents(baseUrl, bountyId)),
-  );
-  // Deliberately `<=`, not `===`. The convergence step above already proved the count reaches
-  // `expected`; the only thing this second read adds is that no *further* copy appeared, and
-  // the replay is an append-only log so the count cannot legitimately fall. Asserting equality
-  // here would instead turn a short read into a spurious failure.
+  // Retry until the read is *complete enough to be evidence* — at least `expected` — and only
+  // then assert equality. Two failure modes have to be told apart here, and accepting the
+  // first successful read cannot do it: a short read and a stable count look identical, so a
+  // truncated replay would satisfy a `<=` assertion and hide a duplicate that came after the
+  // frames it managed to see. A read that never reaches `expected` times out loudly instead.
+  const settled = await waitFor(`a settled read of ${key}`, async () => {
+    const counts = workflowEventCounts(await replayPublicEvents(baseUrl, bountyId));
+    return (counts[key] ?? 0) >= expected ? counts : undefined;
+  });
   assert(
-    (settled[key] ?? 0) <= expected,
-    `${key} rose to ${settled[key] ?? 0} public events after settling, expected no more than ${expected}`,
+    (settled[key] ?? 0) === expected,
+    `${key} settled at ${settled[key] ?? 0} public events, expected exactly ${expected}`,
   );
 }
 

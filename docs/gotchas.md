@@ -19,6 +19,29 @@ survive bundling fails there, and none of that is visible from a type check.
 **`check` and the test tasks depend on `build`.** They resolve `@bebop/contracts` through its built `dist`, so
 running them on a clean checkout without the dependency edge finds a stale package or none at all.
 
+**The root `build` task names every package build instead of running `vp run -r build`.** A nested `vp run` is
+_inlined_ by Vite Task as fresh task nodes, and those do not dedupe against the same builds reached through the
+`dependsOn: { task: "build", from: [...] }` closure the artifact smokes use. `ready` therefore scheduled every
+package's build twice, and two `vp pack` processes running concurrently in one directory empty `dist` under
+each other — surfacing as `Cannot find module '@bebop/contracts'` inside a smoke rather than as a build
+failure. Listing the task IDs keeps one node per build and drops `ready` from twenty tasks to fifteen. This was
+previously worked around with `VP_RUN_CONCURRENCY_LIMIT: "1"` in CI, which is no longer needed. Collapsing the
+list back into `vp run -r build` is the tidying that reintroduces the race, and it reintroduces it silently:
+the duplicate scheduling is always present, but whether it corrupts a build depends on machine timing, so it
+passes locally and fails on a CI runner with a different core count.
+
+**Quiet builds take two log settings, and neither of them belongs in the root config.** `vp pack` resolves the
+_nearest_ `vite.config.ts` and never merges the root's `pack` block — only `lint` and `fmt` take root-level
+defaults — so a `logLevel` set once at the root is dead config. Each package sets its own `pack.logLevel`,
+which quiets the per-build logger: entry, tsconfig, the size report, `Build complete`. The remaining
+`Build start` and `Cleaning N files` go through tsdown's `globalLogger`, whose level is assigned only inside
+`build()` — and the `vp pack` CLI bypasses that by calling the internal `buildWithConfigs()` directly, so
+neither a config key nor `-l silent` reaches it. Each config therefore imports `globalLogger` from
+`vite-plus/pack` and sets the level itself at load time, which lands because Vite+ loads the config in-process
+before the build starts. Both are needed; they are separate logger instances, and deleting either restores its
+half of the noise. The bypass is an upstream defect pinned to the vendored Vite+ version, so this comes off
+when `vp pack` starts routing through `build()`.
+
 **`vitest` is a direct devDependency pinned to the version Vite+ vendors.** The two must be upgraded together.
 That coupling is the one way [the Bun-launched runner](./adr/0020-vitest-is-launched-by-bun.md) can drift.
 

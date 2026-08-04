@@ -11,10 +11,6 @@
     "#src/*": "./src/*",
     "#test/*": "./test/*"
   },
-  "scripts": {
-    "build": "vp pack",
-    "dev": "bun --watch src/daemon.ts"
-  },
   "dependencies": {
     "@bebop/contracts": "workspace:*",
     "@bebop/workflow": "workspace:*",

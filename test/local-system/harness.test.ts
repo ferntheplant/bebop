@@ -80,7 +80,13 @@ function bebopEnvironment(options: {
     BEBOP_JOB_LEASE_DURATION: "2 seconds",
     BEBOP_EVENT_STREAM_POLL_INTERVAL: "50 millis",
     BEBOP_COMMAND_POLL_INTERVAL: "50 millis",
-    BEBOP_HTTP_IDLE_TIMEOUT: "2 seconds",
+    // Generous on purpose. Bun closes any connection idle longer than this, including a
+    // pooled keep-alive socket this suite is about to reuse, and a starved CI runner crosses
+    // a short window easily — which is how a two-second value produced `ECONNRESET` flakes in
+    // the component suites before they moved to a generous one
+    // (`.scratch/bebop-mvp/issues/18-sse-keepalive-and-the-http-idle-timeout.md`). Nothing
+    // here tests the idle window, so nothing here should be near it.
+    BEBOP_HTTP_IDLE_TIMEOUT: "30 seconds",
     BEBOP_SWORDFISH_CREDENTIAL_KEY: credentialKey,
     BEBOP_BOOTSTRAP_API_TOKEN: apiToken,
     BEBOP_LOCAL_HARNESS_ROOT: options.bootstrapRoot,
@@ -109,7 +115,9 @@ async function replayPublicEvents(baseUrl: string, bountyId: string): Promise<Ar
   const controller = new AbortController();
   // The replay endpoint streams the backlog and then stays open for live events, so the read
   // is ended deliberately rather than by the server. The window only has to outlast the
-  // backlog; `waitForWorkflowEventCount` is what absorbs a slow one.
+  // backlog; `waitForWorkflowEventCount` is what absorbs a slow one. It must also stay well
+  // under `BEBOP_HTTP_IDLE_TIMEOUT`, or the server closes the stream first and the abort races
+  // a socket error.
   const timeout = setTimeout(() => controller.abort(), 2_000);
   let text = "";
   try {
@@ -160,10 +168,21 @@ async function waitForWorkflowEventCount(
     return (counts[key] ?? 0) === expected ? true : undefined;
   });
   await delay(500);
-  const settled = workflowEventCounts(await replayPublicEvents(baseUrl, bountyId));
+  // The settle read retries the *transport* and asserts on the first reading it actually
+  // obtains. A dropped connection is an expected outcome on this endpoint rather than an
+  // exceptional one (issue 18), so treating one as a failed assertion would report "the event
+  // was duplicated" when what happened was "the socket closed" — which is precisely how this
+  // helper failed in CI when the read sat outside any retry.
+  const settled = await waitFor(`a settled read of ${key}`, async () =>
+    workflowEventCounts(await replayPublicEvents(baseUrl, bountyId)),
+  );
+  // Deliberately `<=`, not `===`. The convergence step above already proved the count reaches
+  // `expected`; the only thing this second read adds is that no *further* copy appeared, and
+  // the replay is an append-only log so the count cannot legitimately fall. Asserting equality
+  // here would instead turn a short read into a spurious failure.
   assert(
-    (settled[key] ?? 0) === expected,
-    `${key} settled at ${settled[key] ?? 0} public events, expected ${expected}`,
+    (settled[key] ?? 0) <= expected,
+    `${key} rose to ${settled[key] ?? 0} public events after settling, expected no more than ${expected}`,
   );
 }
 

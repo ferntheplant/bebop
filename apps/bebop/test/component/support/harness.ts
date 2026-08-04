@@ -48,6 +48,8 @@ export interface Harness {
   readonly token: ApiTokenSecret;
   /** Credentials the lifecycle provider was asked to inject, oldest first. */
   readonly provisioned: ReadonlyArray<ProvisionRecord>;
+  /** Messages emitted through the production logger during this harness run. */
+  readonly logs: ReadonlyArray<unknown>;
   readonly provisionAttempts: number;
   /** Runs the worker's job queue to exhaustion, as `bebop-worker` would. */
   readonly runJobs: () => Promise<void>;
@@ -112,7 +114,11 @@ export async function startHarness(
   const { httpIdleTimeout = "30 seconds", ...providerOptions } = options ?? {};
   const config = await testConfig(database.url, label, httpIdleTimeout);
   const provisioned: Array<ProvisionRecord> = [];
+  const logs: Array<unknown> = [];
   let provisionAttempts = 0;
+  const captureLogger = Logger.make<unknown, void>(({ message }) => {
+    logs.push(message);
+  });
 
   const baseLayer = RepositoriesLayer.pipe(
     Layer.provideMerge(PgClient.layer({ url: Redacted.make(database.url), maxConnections: 6 })),
@@ -130,7 +136,9 @@ export async function startHarness(
     ),
     // Tests assert on behaviour, not on log output, so a passing suite is silent. Set
     // `BEBOP_TEST_LOGS=1` when a failure needs the server's own account of it.
-    Layer.provideMerge(Logger.layer(process.env["BEBOP_TEST_LOGS"] === undefined ? [] : [Logger.consolePretty()])),
+    Layer.provideMerge(
+      Logger.layer([captureLogger, ...(process.env["BEBOP_TEST_LOGS"] === undefined ? [] : [Logger.consolePretty()])]),
+    ),
   );
 
   interface Running {
@@ -196,6 +204,7 @@ export async function startHarness(
     },
     token: secret,
     provisioned,
+    logs,
     get provisionAttempts() {
       return provisionAttempts;
     },

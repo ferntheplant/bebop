@@ -68,6 +68,7 @@ async function connect(harness: Harness, token: string): Promise<Peer> {
 }
 
 const at = (millis: number) => new Date(Date.UTC(2026, 6, 29, 12, 0, 0, 0) + millis).toISOString();
+const beforeHarnessClock = (millis: number) => new Date(Date.UTC(2026, 6, 28, 22, 0, 0, 0) + millis).toISOString();
 
 async function waitForMessageCount(peer: Peer, type: string, count: number): Promise<void> {
   const deadline = Date.now() + 5_000;
@@ -164,6 +165,65 @@ suite("Swordfish gateway", () => {
     expect(bountyBody.status).toBe("interactive");
     expect(bountyBody.swordfishFreshness).toBe("connected");
 
+    peer.close();
+  });
+
+  test("reports a silent Swordfish budget overrun from the heartbeat handler", async () => {
+    const bounty = await provisionedBounty("gateway-budget-overrun");
+    const peer = await connect(harness, bounty.token);
+    register(peer, bounty);
+    await peer.next("registered");
+
+    const events = [
+      { type: "stage_changed", stage: "interactive" },
+      {
+        type: "effective_spec_set",
+        spec: {
+          revision: 1,
+          title: "Exercise the watchdog",
+          goal: "Prove Bebop notices a silent daemon overrun.",
+          context: [],
+          constraints: [],
+          nonGoals: [],
+          acceptanceCriteria: [{ id: "ac-1", description: "The overrun is reported." }],
+          suggestedQaScenarios: [],
+          createdFromSeatId: "seat-ein",
+          createdAt: beforeHarnessClock(1),
+        },
+      },
+      { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" },
+      { type: "attempt_started" },
+    ];
+    for (const [index, event] of events.entries()) {
+      peer.send({
+        type: "event",
+        protocolVersion: 1,
+        bountyId: bounty.bountyId,
+        vmId: bounty.vmId,
+        sequence: index + 1,
+        occurredAt: beforeHarnessClock(index),
+        event,
+      });
+    }
+    await waitForMessageCount(peer, "event_acknowledged", events.length);
+
+    peer.send({
+      type: "heartbeat",
+      protocolVersion: 1,
+      bountyId: bounty.bountyId,
+      vmId: bounty.vmId,
+      sentAt: at(0),
+      lastProducedEventSequence: events.length,
+    });
+
+    const deadline = Date.now() + 5_000;
+    while (
+      !harness.logs.some((message) => String(message).includes("swordfish has not reported a budget")) &&
+      Date.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(harness.logs.some((message) => String(message).includes("swordfish has not reported a budget"))).toBe(true);
     peer.close();
   });
 

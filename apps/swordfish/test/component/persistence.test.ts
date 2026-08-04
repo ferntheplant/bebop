@@ -397,6 +397,23 @@ describe("Swordfish SQLite authority", () => {
     expect(raised.status.exhausted).toEqual([{ constraint: "attempts", scope: "building", consumed: 3, allowed: 3 }]);
   });
 
+  test("prints the bebop-side approval command for configuration attention", async () => {
+    harness = await startSwordfishHarness("config-approval-status");
+    const status = await harness.run(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowService;
+        yield* workflow.append(
+          decodeEvent({ type: "attention_required", kind: "config_approval", reason: "Approve this candidate." }),
+        );
+        return yield* workflow.status;
+      }),
+    );
+
+    expect(status.attention).toEqual([
+      { kind: "config_approval", reason: "Approve this candidate.", resolutions: ["approve-config", "stop"] },
+    ]);
+  });
+
   test("accrues a running attempt through the status observation without persisting it", async () => {
     harness = await startSwordfishHarness("status-attempt-clock");
     const observed = await harness.run(

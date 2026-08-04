@@ -134,9 +134,11 @@ The two open questions below are now decided. The first is settled behaviour the
    `reopen-spec` clear reasons whose kind permits no such exit — an unreachable environment or a detected
    intrusion, both of which only `cancel` resolves — so outstanding reasons now survive it. The new spec applies
    and the gates and candidate reset, but the stage stays `needs_attention` with `implementing` recorded as the
-   stage to resume into. This matters here because ticket 09 makes `reopen-spec` the only way to earn a fresh
-   validated-candidate allowance: the allowance is created by the spec revision, not by the stage resuming, and
-   the ledger must not wait on a stage that is still suspended behind an unrelated reason.
+   stage to resume into. Constraint attention against the previous spec is the exception: the new spec resets
+   every ledger, so that now-obsolete record clears while unrelated reasons survive. This matters here because
+   ticket 09 makes `reopen-spec` the only way to earn a fresh validated-candidate allowance: the allowance is
+   created by the spec revision, not by the stage resuming, and the ledger must not wait on a stage that is still
+   suspended behind an unrelated reason.
 2. **How a targeted `rerun` names the record it resolves.** Decided by
    [A rerun resolves the kind its target names (ADR 0043)](../../docs/adr/0043-a-rerun-resolves-the-kind-its-target-names.md):
    the target picks the record, because `validation` is the only deterministic operation a human reruns and an

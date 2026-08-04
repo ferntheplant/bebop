@@ -182,6 +182,7 @@ function statusResolutions(state: SwordfishWorkflowState, kind: AttentionKind): 
   if (permitted.includes("takeover") && state.controller === "swordfish" && state.activeCowboy !== null) {
     commands.push(`takeover ${state.activeCowboy.role}`);
   }
+  if (permitted.includes("approve_config")) commands.push("approve-config");
   if (permitted.includes("cancel")) commands.push("stop");
   return commands;
 }

@@ -77,3 +77,9 @@ prompt is refused), **13** (a prompt by any other route is rejected by the plugi
   — why human CLI mutations need an operator credential while cowboy tools do not.
 - [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
   — the recovery command names whether the operator is preserving context or starting again.
+
+## Still open
+
+- [Retrieve the operator credential and enforce it on mutating `sf` commands](../../.scratch/bebop-mvp/issues/22-operator-credential-retrieval-and-enforcement.md)
+  — the credential is derived and provisioned, but nothing enforces it and no human can obtain it yet.
+- [What does the cockpit tell an operator to do once `sf takeover` demands a credential?](../../.scratch/bebop-mvp/issues/23-cockpit-guidance-for-operator-authenticated-commands.md)

@@ -13,7 +13,7 @@ root.
 That is correct and deliberate locally: it is
 [Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR 0014)](../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)
 applied at a seam where the VM is a directory, and it is what lets
-[the local system harness](../local-system-harness/brief.md) start a real Swordfish without inventing a second
+[the local system harness](../../local-system-harness/brief.md) start a real Swordfish without inventing a second
 credential path or an operator retrieval route.
 
 What is unresolved is the blast radius of the same env var being set anywhere else. Today the only protection is
@@ -46,5 +46,5 @@ Naturally when the real exe.dev provider lands and the fake provider stops being
 point the option can likely be deleted outright rather than guarded. Revisit no later than that. Until then this
 is a recorded, accepted risk rather than an oversight.
 
-Raised during review of [the maintained local system harness](../local-system-harness/brief.md); see
+Raised during review of [the maintained local system harness](../../local-system-harness/brief.md); see
 `apps/bebop/src/config.ts` and `apps/bebop/src/runtime/layers.ts`.

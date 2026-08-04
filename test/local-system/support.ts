@@ -109,6 +109,8 @@ export interface BootstrapIdentity {
   readonly bountyId: string;
   readonly vmId: string;
   readonly swordfishToken: string;
+  /** The operator credential verifier the daemon is provisioned with (ADR 0038). */
+  readonly operatorCredentialVerifier: string;
 }
 
 function bootstrapPath(root: string, bountyId: string): string {
@@ -122,6 +124,10 @@ export async function readBootstrapArtifact(root: string, bountyId: string): Pro
   assert(
     typeof identity.swordfishToken === "string" && identity.swordfishToken.length > 0,
     "bootstrap artifact carried no machine credential",
+  );
+  assert(
+    /^[0-9a-f]{64}$/.test(identity.operatorCredentialVerifier),
+    "bootstrap artifact carried no operator credential verifier",
   );
   return identity;
 }

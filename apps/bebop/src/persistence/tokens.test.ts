@@ -8,6 +8,9 @@ import { fingerprintRequest } from "#src/persistence/idempotency.ts";
 import { hashApiToken } from "#src/persistence/tokens.ts";
 import {
   hashSwordfishToken,
+  operatorCredentialForBounty,
+  operatorCredentialPrefix,
+  operatorCredentialVerifier,
   presentedSwordfishToken,
   swordfishTokenPrefix,
   swordfishTokenForBounty,
@@ -56,6 +59,47 @@ describe("Swordfish credential presentation", () => {
     expect(Redacted.value(swordfishTokenForBounty(key, first))).not.toBe(
       Redacted.value(swordfishTokenForBounty(key, second)),
     );
+  });
+
+  test("derives an operator credential that is stable, per-bounty, and not the machine credential", () => {
+    const key = Redacted.make("test-swordfish-credential-key-at-least-32-bytes");
+    const first = Schema.decodeUnknownSync(BountyId)("bty-first");
+    const second = Schema.decodeUnknownSync(BountyId)("bty-second");
+
+    // Stable, so retrieval recomputes and a retried provision writes the same value (ADR 0038).
+    expect(Redacted.value(operatorCredentialForBounty(key, first))).toBe(
+      Redacted.value(operatorCredentialForBounty(key, first)),
+    );
+    expect(Redacted.value(operatorCredentialForBounty(key, first))).not.toBe(
+      Redacted.value(operatorCredentialForBounty(key, second)),
+    );
+
+    // Domain-separated: holding one credential must not yield the other, even though both are
+    // minted from the same master key.
+    expect(Redacted.value(operatorCredentialForBounty(key, first))).not.toBe(
+      Redacted.value(swordfishTokenForBounty(key, first)),
+    );
+    expect(Redacted.value(operatorCredentialForBounty(key, first)).startsWith(operatorCredentialPrefix)).toBe(true);
+
+    // A different master key yields a different credential for the same bounty.
+    expect(
+      Redacted.value(operatorCredentialForBounty(Redacted.make("another-key-at-least-32-bytes-long"), first)),
+    ).not.toBe(Redacted.value(operatorCredentialForBounty(key, first)));
+  });
+
+  test("verifies an operator credential without storing anything that recovers it", () => {
+    const key = Redacted.make("test-swordfish-credential-key-at-least-32-bytes");
+    const bountyId = Schema.decodeUnknownSync(BountyId)("bty-first");
+    const credential = operatorCredentialForBounty(key, bountyId);
+    const verifier = operatorCredentialVerifier(credential);
+
+    expect(verifier).toMatch(/^[0-9a-f]{64}$/);
+    // Deterministic, which is what keeps the bootstrap artifact byte-stable across retries.
+    expect(operatorCredentialVerifier(credential)).toBe(verifier);
+    expect(operatorCredentialVerifier(operatorCredentialForBounty(key, bountyId))).toBe(verifier);
+    // The verifier is not the credential, and a different credential does not match it.
+    expect(verifier).not.toBe(Redacted.value(credential));
+    expect(operatorCredentialVerifier(Redacted.make("bebop_op_wrong"))).not.toBe(verifier);
   });
 
   test("reads a credential from an Authorization header", () => {

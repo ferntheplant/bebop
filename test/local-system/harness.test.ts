@@ -80,7 +80,13 @@ function bebopEnvironment(options: {
     BEBOP_JOB_LEASE_DURATION: "2 seconds",
     BEBOP_EVENT_STREAM_POLL_INTERVAL: "50 millis",
     BEBOP_COMMAND_POLL_INTERVAL: "50 millis",
-    BEBOP_HTTP_IDLE_TIMEOUT: "2 seconds",
+    // Generous on purpose. Bun closes any connection idle longer than this, including a
+    // pooled keep-alive socket this suite is about to reuse, and a starved CI runner crosses
+    // a short window easily — which is how a two-second value produced `ECONNRESET` flakes in
+    // the component suites before they moved to a generous one
+    // (`.scratch/bebop-mvp/issues/18-sse-keepalive-and-the-http-idle-timeout.md`). Nothing
+    // here tests the idle window, so nothing here should be near it.
+    BEBOP_HTTP_IDLE_TIMEOUT: "30 seconds",
     BEBOP_SWORDFISH_CREDENTIAL_KEY: credentialKey,
     BEBOP_BOOTSTRAP_API_TOKEN: apiToken,
     BEBOP_LOCAL_HARNESS_ROOT: options.bootstrapRoot,
@@ -107,10 +113,20 @@ function workflowEventCounts(events: ReadonlyArray<PublicEvent>): Readonly<Recor
 
 async function replayPublicEvents(baseUrl: string, bountyId: string): Promise<Array<PublicEvent>> {
   const controller = new AbortController();
-  // The replay endpoint streams the backlog and then stays open for live events, so the read
-  // is ended deliberately rather than by the server. The window only has to outlast the
-  // backlog; `waitForWorkflowEventCount` is what absorbs a slow one.
-  const timeout = setTimeout(() => controller.abort(), 2_000);
+  // The endpoint streams the backlog and then stays open for live events, so it never ends on
+  // its own and the client has to decide when it has everything. Ending on a quiet period
+  // rather than a fixed deadline is what makes a read *complete* rather than merely long: the
+  // backlog arrives as a burst, so a gap in it is the only available signal that it drained.
+  // A fixed deadline cannot distinguish "drained" from "cut off mid-backlog", which is exactly
+  // how a truncated read can impersonate a stable one.
+  //
+  // The hard cap is a backstop for a stream that never goes quiet, and stays well under
+  // `BEBOP_HTTP_IDLE_TIMEOUT` so the server never closes the connection first.
+  const quietMs = 400;
+  const hardCap = setTimeout(() => controller.abort(), 5_000);
+  // One decoder for the whole stream: a per-chunk decoder cannot carry the `stream: true`
+  // state that reassembles a multi-byte character split across two chunks.
+  const decoder = new TextDecoder();
   let text = "";
   try {
     const response = await fetch(`${baseUrl}/api/bounties/${bountyId}/events`, {
@@ -120,14 +136,20 @@ async function replayPublicEvents(baseUrl: string, bountyId: string): Promise<Ar
     assert(response.ok && response.body !== null, `event replay returned ${response.status}`);
     const reader = response.body.getReader();
     for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      text += new TextDecoder().decode(chunk.value, { stream: true });
+      let quietTimer: ReturnType<typeof setTimeout> | undefined;
+      const quiet = new Promise<"quiet">((resolveQuiet) => {
+        quietTimer = setTimeout(() => resolveQuiet("quiet"), quietMs);
+      });
+      const next = await Promise.race([reader.read(), quiet]);
+      clearTimeout(quietTimer);
+      if (next === "quiet" || next.done) break;
+      text += decoder.decode(next.value, { stream: true });
     }
+    controller.abort();
   } catch (error) {
     if (text.length === 0 && !(error instanceof DOMException && error.name === "AbortError")) throw error;
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(hardCap);
   }
   return text
     .split(/\r?\n\r?\n/)
@@ -160,10 +182,18 @@ async function waitForWorkflowEventCount(
     return (counts[key] ?? 0) === expected ? true : undefined;
   });
   await delay(500);
-  const settled = workflowEventCounts(await replayPublicEvents(baseUrl, bountyId));
+  // Retry until the read is *complete enough to be evidence* — at least `expected` — and only
+  // then assert equality. Two failure modes have to be told apart here, and accepting the
+  // first successful read cannot do it: a short read and a stable count look identical, so a
+  // truncated replay would satisfy a `<=` assertion and hide a duplicate that came after the
+  // frames it managed to see. A read that never reaches `expected` times out loudly instead.
+  const settled = await waitFor(`a settled read of ${key}`, async () => {
+    const counts = workflowEventCounts(await replayPublicEvents(baseUrl, bountyId));
+    return (counts[key] ?? 0) >= expected ? counts : undefined;
+  });
   assert(
     (settled[key] ?? 0) === expected,
-    `${key} settled at ${settled[key] ?? 0} public events, expected ${expected}`,
+    `${key} settled at ${settled[key] ?? 0} public events, expected exactly ${expected}`,
   );
 }
 
@@ -308,6 +338,11 @@ async function superviseBounty(fleet: LocalFleet, bebop: BebopEnv, bountyId: str
       SWORDFISH_RECONNECT_MINIMUM_DELAY: "50 millis",
       SWORDFISH_RECONNECT_MAXIMUM_DELAY: "500 millis",
       SWORDFISH_SHUTDOWN_TIMEOUT: "2 seconds",
+      // Provisioned but not yet enforced: the daemon accepts the verifier and does nothing
+      // with it until the retrieval route lands
+      // (`.scratch/bebop-mvp/issues/22-operator-credential-retrieval-and-enforcement.md`).
+      // Passing it now proves the injection path works before anything depends on it.
+      SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: identity.operatorCredentialVerifier,
     },
   };
 }

@@ -4,7 +4,7 @@
 // `candidate_sha`, and correlation IDs when they are available. The annotation helpers below
 // are the only place those key names are spelled, so a renamed field cannot half-apply.
 
-import type { BountyId, CommandId, ConnectionId, GitSha, SwordfishStage, VmId } from "@bebop/contracts";
+import type { BountyId, CommandId, ConnectionId, GitSha, SeatRole, SwordfishStage, VmId } from "@bebop/contracts";
 import type { Layer } from "effect";
 import { Effect, Logger } from "effect";
 
@@ -14,6 +14,7 @@ export type BebopComponent = "bebop-api" | "bebop-worker";
 export interface LogContext {
   readonly bountyId?: BountyId;
   readonly vmId?: VmId;
+  readonly seat?: SeatRole;
   readonly stage?: SwordfishStage | null;
   readonly candidateSha?: GitSha | null;
   readonly connectionId?: ConnectionId;
@@ -24,6 +25,7 @@ export interface LogContext {
 const annotationKeys = {
   bountyId: "bounty_id",
   vmId: "vm_id",
+  seat: "seat",
   stage: "stage",
   candidateSha: "candidate_sha",
   connectionId: "connection_id",

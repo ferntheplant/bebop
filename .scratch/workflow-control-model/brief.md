@@ -78,7 +78,7 @@ most one per kind, and a resolution clears every outstanding record permitting i
 once none remain. And **seats are keyed by seat ID, not role**, because every jet and faye attempt takes a fresh
 seat; repeated roles in the seat list are the normal case, and `activeCowboy` identifies by ID.
 
-**Next PR — the constraint ledger (ADR 0041). Not started.** Attempts per scope, the turn/wall-clock watchdog
+**Second PR — the constraint ledger (ADR 0041). Shipped.** Attempts per scope, the turn/wall-clock watchdog
 pair, human grants, and the validated-candidate allowance, with `continue`/`rerun`/`resume` acting on them.
 Split out because the orthogonal model is what an attempt suspension has to attach to. Read
 [ticket 09's answer](../bebop-mvp/issues/09-default-constraints-and-exhaustion.md) first — it is the
@@ -101,8 +101,31 @@ by
 - Bebop: cross-check elapsed time in the heartbeat handler with a grace margin, reporting a daemon defect rather
   than an exhaustion.
 
-Three things the ledger has to account for that nothing upstream spells out. The first is settled behaviour it
-inherits; the other two are open.
+Four things are worth knowing before reading the code.
+
+**The scope is the cowboy.** `attempt_started` carries no payload at all. Ein builds, jet reviews, faye runs QA,
+so the active cowboy's role _is_ the constraint scope, the ordinal is the reducer's own count, and the start
+instant is the message's `occurredAt`. Every field the event could have declared is one the reducer already
+knows and would have had to check — and requiring an active cowboy makes an attempt with no seat unrepresentable
+rather than merely invalid.
+
+**Wall clock is accrued, not subtracted.** An attempt holds elapsed milliseconds plus a running-since mark, and
+`applyWorkflowEvent` folds the interval in before interpreting each event and re-marks after. That ordering is
+what charges an interval to the conditions that held during it: a takeover at 12:30 charges everything up to
+12:30 and nothing after. It is also what makes daemon downtime count with no timer to have missed it, and what
+excludes attention time structurally rather than by rule.
+
+**The profile is state, not a parameter.** It is frozen per bounty and lives in `WorkflowCoreState`, because
+Bebop's projection has to reach the same exhaustion verdict from the same events — a limit passed in at each
+call site would be a second copy for the two of them to disagree about. Where it is parsed from stays open; both
+apps seed it from the built-in default today.
+
+**Two guards are deliberately loud.** A `turn_completed` under human control and a `cowboy_deactivated` with an
+attempt still in flight are both illegal transitions rather than silently ignored. Each means the daemon did
+something the model says cannot happen, and ADR 0042's whole argument is that one failed transition beats a
+budget that quietly stops meaning anything.
+
+The two open questions below are now decided. The first is settled behaviour the ledger inherits.
 
 1. **`reopen-spec` may land in a suspended stage.** ADR 0038 and
    [control lease and takeover](../../docs/capabilities/05-control-lease-and-takeover.md) describe `reopen-spec`
@@ -114,15 +137,16 @@ inherits; the other two are open.
    stage to resume into. This matters here because ticket 09 makes `reopen-spec` the only way to earn a fresh
    validated-candidate allowance: the allowance is created by the spec revision, not by the stage resuming, and
    the ledger must not wait on a stage that is still suspended behind an unrelated reason.
-2. **How a targeted `rerun` names the record it resolves.** `constraint_exhausted` and `uncertain_gate` both
-   permit `rerun`, and a resolution currently clears every record permitting it, so `rerun building` issued while
-   an uncertain gate is outstanding would clear a reason nobody addressed. Either match the target against the
-   kind, or have `attention_cleared` name the kind directly. ADR 0042 records the edge; neither it nor ticket 09
-   decides it.
-3. **Where the frozen profile lives.** Ticket 09 has Swordfish freeze the base revision's profile for the bounty
-   and fill omissions from Bebop defaults, but `.bebop/config.yml` has never been read against a real repository
-   — that is fog on [the map](../bebop-mvp/map.md) under "Repository configuration in practice". The ledger can
-   be built against the frozen profile as a value without settling where it is parsed.
+2. **How a targeted `rerun` names the record it resolves.** Decided by
+   [A rerun resolves the kind its target names (ADR 0043)](../../docs/adr/0043-a-rerun-resolves-the-kind-its-target-names.md):
+   the target picks the record, because `validation` is the only deterministic operation a human reruns and an
+   uncertain _seat_ is a separate kind permitting no rerun at all — so the map from target to kind is total.
+   Having `attention_cleared` name the kind directly was rejected as strictly worse: it admits an inconsistent
+   pair the reducer would then have to reject.
+3. **Where the frozen profile lives.** Still open, and still fog on [the map](../bebop-mvp/map.md) under
+   "Repository configuration in practice". The ledger is built against the profile as a value in
+   `WorkflowCoreState`, seeded at construction from the built-in default, so parsing `.bebop/config.yml` later is
+   one argument to `initialWorkflowCoreState` rather than a change to the model.
 
 **Not in scope.** The `sf` command surface and its operator credential, plugin intrusion detection, tmux cockpit
 layout, and the runtime manifest. Those are separate efforts that consume this model.
@@ -143,6 +167,24 @@ The full suite is 38 files with nothing skipped. The ledger touches the projecti
 exactly the suites that matter here.
 
 ## Done when
+
+**Second PR.**
+
+- an attempt consumes its scope's slot before the first prompt, and a slot beyond the allowance is refused,
+  proven by test;
+- turns and wall clock accrue only while an attempt is active, Swordfish is driving, and the work is not
+  suspended, proven by test;
+- a `constraint_exhausted` claim the reducer's own arithmetic does not support is refused, proven by test;
+- `continue` resets both watchdogs on the suspended attempt, `rerun <target>` grants one attempt in the scope its
+  target names and abandons the suspended one, and `resume` grants nothing;
+- a `rerun` clears only the record its target addresses, proven by test;
+- building's ledger resets at a build-cycle boundary and not at a CI failure; review and qa reset per candidate;
+  a spec revision resets all three and the validated-candidate allowance;
+- the ledger survives restart, because it is in the workflow snapshot rather than a table beside it;
+- Swordfish evaluates the ledger on the heartbeat it already sends, and Bebop reports a silent overrun as a
+  daemon defect rather than as an exhaustion.
+
+**First PR.**
 
 - `needs_attention` is the only suspending stage besides `cancelling`, and no stage means "a human is driving";
 - a `code_review` gate cannot be recorded for a candidate whose `pr_ci` gate has not passed, proven by test;

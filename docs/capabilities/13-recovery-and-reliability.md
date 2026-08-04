@@ -32,8 +32,13 @@ merge.
 ## Where it stands
 
 **Partial.** This is the most-built capability. Both processes reconnect, replay, deduplicate, and reconcile;
-sequence gaps, conflicting replays, and stale-connection traffic are all rejected with reasons. What has never
-happened is the two of them running as separate processes across a network that can actually break.
+sequence gaps, conflicting replays, and stale-connection traffic are all rejected with reasons. Constraint
+exhaustion parks work as promised: the scoped ledger is real, Swordfish evaluates it on the heartbeat it already
+sends, and `continue`, `rerun <target>`, and `resume` are distinct authenticated recoveries whose grants are
+durable events rather than counter edits. Daemon downtime counts toward the attempt that was running, because
+the running-since mark is in the durable snapshot rather than in a timer. What has never happened is the two
+processes running across a network that can actually break — and no cowboy has yet produced an attempt for the
+ledger to bound.
 
 ## Acceptance criteria
 
@@ -59,6 +64,9 @@ Swordfish or bebop does not duplicate VMs, prompts, PRs, or merges).
 - [Constraint exhaustion is computed, not announced (ADR 0042)](../adr/0042-constraint-exhaustion-is-computed-not-announced.md)
   — the constraint watchdog runs on the Swordfish side so a partition cannot silently stop bounding an attempt,
   and Bebop re-verifies elapsed time as a defect signal about the daemon rather than as an exhaustion.
+- [A rerun resolves the kind its target names (ADR 0043)](../adr/0043-a-rerun-resolves-the-kind-its-target-names.md)
+  — a recovery grant answers the one reason it addresses, so clearing an exhausted budget cannot also clear an
+  unrelated uncertain gate.
 
 Bounded shutdown behaviour and the connection-lifetime constraints behind it are in
 [`docs/gotchas.md`](../gotchas.md#process-lifecycle).

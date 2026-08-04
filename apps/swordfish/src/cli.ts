@@ -1,12 +1,11 @@
 #!/usr/bin/env bun
 
-import type { SfControlCommand, SfControlRequest, SfStatusSnapshot } from "@bebop/contracts";
+import type { SfBudgetSnapshot, SfControlCommand, SfControlRequest, SfStatusSnapshot } from "@bebop/contracts";
 import {
-  constraintKeys,
   currentSfControlVersion,
+  rerunTargets,
   SfControlRequest as SfControlRequestSchema,
   SfStatusSnapshot as SfStatusSnapshotSchema,
-  verificationStages,
 } from "@bebop/contracts";
 import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as BunServices from "@effect/platform-bun/BunServices";
@@ -65,23 +64,41 @@ function printStatus(snapshot: SfStatusSnapshot): string {
     const active = seat.seatId === snapshot.activeCowboy?.seatId ? " (active)" : "";
     lines.push(`seat        ${seat.role} ${seat.seatId}${active}`);
   }
-  for (const constraint of snapshot.constraints) {
+  // The attempt in flight, with the ordinal and the two watchdogs it is running against. A stopped clock is
+  // called out because "12 minutes elapsed" reads as progress when nothing is in fact accruing.
+  const attempt = snapshot.attempt;
+  if (attempt !== undefined) {
     lines.push(
-      `constraint  ${constraint.constraint} ${constraint.consumed}/${constraint.limit} (${constraint.extensionsGranted} extended)`,
+      `attempt     ${attempt.scope} ${attempt.ordinal} (${attempt.role} ${attempt.seatId})${attempt.running ? "" : " [clock stopped]"}`,
     );
+    lines.push(`turns       ${budget(attempt.turns)}`);
+    lines.push(`wall clock  ${budget(minutes(attempt.wallClockMs))} min`);
+  }
+  for (const constraint of snapshot.constraints) {
+    lines.push(`attempts    ${constraint.scope} ${budget(constraint.attempts)}`);
+  }
+  lines.push(`candidates  validated ${budget(snapshot.validatedCandidates)}`);
+  // What actually ran out, as the arithmetic rather than as the daemon's assertion (ADR 0042).
+  for (const entry of snapshot.exhausted) {
+    const scope = entry.scope === undefined ? "" : `${entry.scope} `;
+    lines.push(`exhausted   ${scope}${entry.constraint} ${entry.consumed}/${entry.allowed}`);
   }
   return lines.join("\n");
 }
 
+/** `consumed/allowed`, naming a grant only when one was made, so an unextended budget stays quiet. */
+function budget(value: SfBudgetSnapshot): string {
+  const granted = value.granted > 0 ? ` (${value.base} + ${value.granted} granted)` : "";
+  return `${value.consumed}/${value.base + value.granted}${granted}`;
+}
+
+function minutes(value: SfBudgetSnapshot): SfBudgetSnapshot {
+  const toMinutes = (milliseconds: number) => Math.round(milliseconds / 60_000);
+  return { consumed: toMinutes(value.consumed), base: toMinutes(value.base), granted: toMinutes(value.granted) };
+}
+
 function rejectTrailingArguments(command: SfControlCommand): Effect.Effect<void, Error> {
-  const commandName =
-    command.type === "approve_config"
-      ? "approve-config"
-      : command.type === "extend_constraint"
-        ? "extend"
-        : command.type === "retry_stage"
-          ? "retry"
-          : command.type;
+  const commandName = command.type === "approve_config" ? "approve-config" : command.type;
   const commandIndex = process.argv.indexOf(commandName);
   if (commandIndex < 0) return Effect.void;
 
@@ -97,8 +114,7 @@ function rejectTrailingArguments(command: SfControlCommand): Effect.Effect<void,
       positionals.push(value);
     }
   }
-  const expected =
-    command.type === "takeover" || command.type === "extend_constraint" || command.type === "retry_stage" ? 1 : 0;
+  const expected = command.type === "takeover" || command.type === "rerun" ? 1 : 0;
   return positionals.length > expected
     ? Effect.fail(new Error(`Unexpected argument: ${positionals[expected] ?? "unknown"}`))
     : Effect.void;
@@ -142,17 +158,16 @@ const takeover = Command.make(
   },
   (options) => execute({ ...options, command: { type: "takeover", seat: options.seat, force: options.force } }),
 );
-const extend = Command.make(
-  "extend",
-  { ...common, constraint: Argument.choice("constraint", constraintKeys) },
-  (options) => execute({ ...options, command: { type: "extend_constraint", constraint: options.constraint } }),
+// The three recovery verbs, deliberately distinct rather than one command with a flag: `continue` preserves the
+// attempt and its context, `rerun` abandons it for a fresh one, and `resume` grants nothing at all (ADR 0041).
+const proceed = Command.make("continue", common, (options) => execute({ ...options, command: { type: "continue" } }));
+const rerun = Command.make("rerun", { ...common, target: Argument.choice("target", rerunTargets) }, (options) =>
+  execute({ ...options, command: { type: "rerun", target: options.target } }),
 );
-const retry = Command.make("retry", { ...common, stage: Argument.choice("stage", verificationStages) }, (options) =>
-  execute({ ...options, command: { type: "retry_stage", stage: options.stage } }),
-);
+const resume = Command.make("resume", common, (options) => execute({ ...options, command: { type: "resume" } }));
 
 const root = Command.make("sf", {}, () => Console.log("Run `sf --help`.")).pipe(
-  Command.withSubcommands([status, stop, takeover, handoff, extend, retry, approveConfig]),
+  Command.withSubcommands([status, stop, takeover, handoff, proceed, rerun, resume, approveConfig]),
 );
 
 function describeFailure(error: unknown): string {

@@ -2,6 +2,8 @@ import type {
   AttentionKind,
   Candidate,
   CandidateGate,
+  ConstraintProfile,
+  ConstraintScope,
   Controller,
   EffectiveSpec,
   EventSequence,
@@ -15,11 +17,31 @@ import type {
   Timestamp,
   WorkflowResolution,
 } from "@bebop/contracts";
-import { resolutionsForAttention } from "@bebop/contracts";
+import { constraintScopes, defaultConstraintProfile, resolutionsForAttention } from "@bebop/contracts";
 
 export interface GateState {
   readonly status: GateStatus;
   readonly completedAt?: Timestamp;
+}
+
+/**
+ * Stages during which the workflow is suspended: progress is recorded as the stage to
+ * resume into rather than applied to `stage` directly.
+ *
+ * `cancelling` is in this set because in-flight hooks and CI polls legitimately land after
+ * a stop command. Without it a late `gate_completed` moved a cancelling run to `revision`
+ * and the cancellation was lost.
+ *
+ * Human control is deliberately absent. A human driving a stage is not a suspension of it — that is what
+ * `controller` records, orthogonally ("One controller drives one active cowboy" (ADR 0037)) — so work reported
+ * during a human-control episode lands on `stage` like any other.
+ */
+export function isSuspended(stage: SwordfishStage | null): boolean {
+  return stage === "needs_attention" || stage === "cancelling";
+}
+
+export function isTerminal(stage: SwordfishStage | null): boolean {
+  return stage === "cancelled" || stage === "failed";
 }
 
 export type GateStates = Readonly<Record<CandidateGate, GateState>>;
@@ -79,6 +101,60 @@ export interface ReadinessClaim {
 }
 
 /**
+ * The one Swordfish-controlled cowboy assignment in flight, if any.
+ *
+ * Wall clock is kept as accrued milliseconds plus a running-since mark rather than as a start instant, because
+ * elapsed time is not one subtraction: the clock runs only while an attempt is active, the controller is
+ * Swordfish, and the work is not suspended, so a taken-over or blocked attempt accrues nothing while it waits
+ * ("Constraint exhaustion is computed, not announced" (ADR 0042)). Keeping the mark in state is also what makes
+ * daemon downtime count — the gap between the last pre-crash event and the first post-restart one is accrued on
+ * the next event, with no timer to have missed it.
+ *
+ * `turnsGranted` and `wallClockGrantedMs` are additions from human `continue`, held apart from the consumed
+ * counts so status can report consumed against base and granted separately rather than showing a budget that
+ * silently grew (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+ */
+export interface AttemptState {
+  readonly scope: ConstraintScope;
+  readonly role: SeatRole;
+  readonly seatId: SeatId;
+  /** 1-based within the scope's current ledger, so status can say "attempt 2 of 3". */
+  readonly ordinal: number;
+  readonly startedAt: Timestamp;
+  readonly turns: number;
+  readonly turnsGranted: number;
+  readonly elapsedMs: number;
+  readonly wallClockGrantedMs: number;
+  /** When the clock last started running, or null while it is stopped. */
+  readonly runningSince: Timestamp | null;
+}
+
+/** One scope's attempt allowance, consumed durably before a first prompt and extended only by explicit `rerun`. */
+export interface ScopeLedger {
+  readonly attemptsConsumed: number;
+  readonly attemptsGranted: number;
+}
+
+export type ScopeLedgers = Readonly<Record<ConstraintScope, ScopeLedger>>;
+
+export function initialScopeLedgers(): ScopeLedgers {
+  return {
+    building: { attemptsConsumed: 0, attemptsGranted: 0 },
+    review: { attemptsConsumed: 0, attemptsGranted: 0 },
+    qa: { attemptsConsumed: 0, attemptsGranted: 0 },
+  };
+}
+
+/** Resets the named scopes and leaves the rest, which is what a scope boundary is. */
+export function resetScopes(ledgers: ScopeLedgers, scopes: ReadonlyArray<ConstraintScope>): ScopeLedgers {
+  const next = { ...ledgers };
+  for (const scope of constraintScopes) {
+    if (scopes.includes(scope)) next[scope] = { attemptsConsumed: 0, attemptsGranted: 0 };
+  }
+  return next;
+}
+
+/**
  * The fields whose interpretation is identical in Swordfish and in Bebop's projection.
  *
  * `stage` is nullable here because Bebop's projection starts before it has heard anything
@@ -106,6 +182,25 @@ export interface WorkflowCoreState {
   readonly readinessClaim: ReadinessClaim | null;
   readonly previews: ReadonlyArray<PrivatePreviewAttachment>;
   readonly attention: AttentionStates;
+  /**
+   * The bounty's frozen constraint profile.
+   *
+   * It is state rather than a reducer parameter because it is frozen per bounty from the base revision and must
+   * survive restart, and because Bebop's projection has to reach the same exhaustion verdict from the same
+   * events — a limit passed in at each call site is a second copy for the two of them to disagree about. Where
+   * it is parsed from a repository is still open ("Repository configuration in practice" on the map), and
+   * nothing here depends on the answer: the ledger is built against the profile as a value.
+   */
+  readonly constraints: ConstraintProfile;
+  readonly attempt: AttemptState | null;
+  readonly ledgers: ScopeLedgers;
+  /**
+   * CI-passed candidates charged against the effective spec's allowance.
+   *
+   * There is no granted counterpart: `reopen-spec` is the only way to earn another, and it earns a whole fresh
+   * allowance rather than one more slot (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+   */
+  readonly validatedCandidatesConsumed: number;
 }
 
 /**
@@ -128,8 +223,16 @@ export function initialGates(): GateStates {
   };
 }
 
-/** The core fields of a state that has applied nothing yet. */
-export function initialWorkflowCoreState(): Omit<WorkflowCoreState, "stage"> {
+/**
+ * The core fields of a state that has applied nothing yet.
+ *
+ * The profile is a parameter with a default so that both apps construct the same value today while the
+ * repository profile is still unread, and so that threading a real frozen profile through later is one argument
+ * rather than a new field on two state types.
+ */
+export function initialWorkflowCoreState(
+  constraints: ConstraintProfile = defaultConstraintProfile,
+): Omit<WorkflowCoreState, "stage"> {
   return {
     lastAppliedSequence: 0 as EventSequence,
     appliedEventFingerprints: {},
@@ -143,5 +246,9 @@ export function initialWorkflowCoreState(): Omit<WorkflowCoreState, "stage"> {
     readinessClaim: null,
     previews: [],
     attention: [],
+    constraints,
+    attempt: null,
+    ledgers: initialScopeLedgers(),
+    validatedCandidatesConsumed: 0,
   };
 }

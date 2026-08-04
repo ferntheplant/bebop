@@ -13,11 +13,14 @@ import {
   CommandMessage as CommandMessageSchema,
   currentProtocolVersion,
   EventMessage as EventMessageSchema,
+  kindForRerunTarget,
   resolutionsForAttention,
   ProducedEventSequence,
   SwordfishEvent as SwordfishEventSchema,
   Timestamp as TimestampSchema,
 } from "@bebop/contracts";
+import type { ConstraintExhaustion } from "@bebop/workflow";
+import { accrueAttemptClock, exhaustedConstraints, isSuspended, isTerminal } from "@bebop/workflow";
 import { Context, Data, Effect, Layer, Schema } from "effect";
 import type { SqlError } from "effect/unstable/sql";
 import { SqlClient } from "effect/unstable/sql";
@@ -44,7 +47,37 @@ export interface WorkflowServiceShape {
   readonly applyCommand: (
     message: CommandMessage,
   ) => Effect.Effect<CommandResultMessage, SqlError.SqlError | WorkflowTransitionError | CommandConflictError>;
+  /**
+   * Raises `constraint_exhausted` if anything is over budget and nothing has said so yet.
+   *
+   * The reducer can only evaluate at event boundaries, and the wall-clock budget exists precisely for the case
+   * where boundaries stop arriving: a cowboy wedged on a hung tool call emits no `turn_completed`, so the
+   * condition fires exactly when the reducer has nothing to fire on. This is that wake-up
+   * ("Constraint exhaustion is computed, not announced" (ADR 0042)). It decides nothing itself — it asks the
+   * same predicate the reducer will re-check when the event lands.
+   *
+   * Reports whether it raised, so the caller can log the transition rather than guess at it.
+   */
+  readonly evaluateConstraints: Effect.Effect<boolean, SqlError.SqlError | WorkflowTransitionError>;
   readonly status: Effect.Effect<SfStatusSnapshot, SqlError.SqlError>;
+}
+
+/** The arithmetic, in the words an operator reads in `sf status` beside the commands that clear it. */
+function describeExhaustion(exhausted: ReadonlyArray<ConstraintExhaustion>): string {
+  const parts = exhausted.map((entry) => {
+    const scope = entry.scope === null ? "" : `${entry.scope} `;
+    switch (entry.constraint) {
+      case "turns":
+        return `the ${scope}attempt used ${entry.consumed} of ${entry.allowed} turns`;
+      case "wall_clock":
+        return `the ${scope}attempt ran for ${Math.round(entry.consumed / 60_000)} of ${Math.round(entry.allowed / 60_000)} minutes`;
+      case "attempts":
+        return `${scope}has used all ${entry.allowed} attempts`;
+      case "validated_candidates":
+        return `the spec has used all ${entry.allowed} validated candidates`;
+    }
+  });
+  return `Autonomous work stopped because ${parts.join(", and ")}.`;
 }
 
 export class WorkflowService extends Context.Service<WorkflowService, WorkflowServiceShape>()("WorkflowService") {}
@@ -207,16 +240,46 @@ export const WorkflowServiceLayer: Layer.Layer<
             outcome = result(message, "completed", at);
             break;
           }
-          case "extend_constraint": {
-            const extended = yield* store.extendConstraint(command.constraint, at);
-            outcome = extended
-              ? result(message, "completed", at)
-              : result(message, "rejected", at, `The ${command.constraint} constraint has already been extended.`);
+          // The three recovery verbs are the same transition with different grants attached, so they share one
+          // admissibility check: is there an outstanding reason this verb is permitted to clear? The reducer
+          // decides what the grant then is — reviving an attempt, adding one to a scope, or nothing at all —
+          // which is why none of them writes a ledger here ("Continue preserves an attempt; rerun replaces it"
+          // (ADR 0041)).
+          case "continue":
+          case "resume":
+          case "rerun": {
+            const target = command.type === "rerun" ? command.target : undefined;
+            const kind = target === undefined ? null : kindForRerunTarget[target];
+            const resolvable = workflow.state.attention.filter(
+              (record) =>
+                resolutionsForAttention[record.kind].includes(command.type) && (kind === null || record.kind === kind),
+            );
+            if (resolvable.length === 0) {
+              outcome = result(
+                message,
+                "rejected",
+                at,
+                kind === null
+                  ? `No outstanding attention can be cleared by ${command.type}.`
+                  : `No outstanding ${kind} attention can be cleared by rerun ${target}.`,
+              );
+              break;
+            }
+            // `continue` revives a suspended attempt, and a budget can run out with none in flight — an
+            // allowance exhausted after its final attempt already ended. The reducer refuses that as an illegal
+            // transition; catching it here turns it into the operator-facing sentence that names the verb they
+            // actually want (ADR 0041).
+            if (command.type === "continue" && workflow.state.attempt === null) {
+              outcome = result(message, "rejected", at, "There is no suspended attempt to continue; use rerun.");
+              break;
+            }
+            yield* appendUnsafe(
+              { type: "attention_cleared", resolution: command.type, ...(target === undefined ? {} : { target }) },
+              at,
+            );
+            outcome = result(message, "completed", at);
             break;
           }
-          case "retry_stage":
-            outcome = result(message, "rejected", at, `The ${command.stage} stage has no retryable operation.`);
-            break;
           case "approve_config":
             outcome = result(message, "rejected", at, "No configuration approval is pending for this candidate.");
             break;
@@ -274,10 +337,44 @@ export const WorkflowServiceLayer: Layer.Layer<
         }),
       );
 
+    const evaluateConstraints = Effect.gen(function* () {
+      const at = yield* identity.now;
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const state = (yield* store.loadWorkflow).state;
+          // Budgets bound autonomous work only. A human driving, a bounty already stopped, and a bounty already
+          // reporting an exhausted budget are all states where raising this again would say nothing new.
+          if (state.controller !== "swordfish" || isSuspended(state.stage) || isTerminal(state.stage)) return false;
+          if (state.attention.some((record) => record.kind === "constraint_exhausted")) return false;
+          // Accrued to now, because the whole point of this wake-up is the time that has passed since the last
+          // event. The reducer re-accrues to the same instant when the event lands, so the claim it checks is
+          // the claim this made.
+          const exhausted = exhaustedConstraints(accrueAttemptClock(state, at));
+          if (exhausted.length === 0) return false;
+          yield* appendUnsafe(
+            { type: "attention_required", kind: "constraint_exhausted", reason: describeExhaustion(exhausted) },
+            at,
+          );
+          yield* Effect.logWarning("constraint exhausted; entering needs_attention").pipe(
+            Effect.annotateLogs({
+              bounty_id: config.bountyId,
+              vm_id: config.vmId,
+              stage: state.stage,
+              ...(state.activeCowboy === null ? {} : { seat: state.activeCowboy.role }),
+              ...(state.candidate === null ? {} : { candidate_sha: state.candidate.commitSha }),
+              constraints: exhausted.map((entry) => entry.constraint).join(","),
+            }),
+          );
+          return true;
+        }),
+      );
+    });
+
     return {
       bootstrap,
       append,
       applyCommand,
+      evaluateConstraints,
       status: identity.now.pipe(Effect.flatMap(store.status)),
     };
   }),

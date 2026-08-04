@@ -20,9 +20,8 @@
 
 import { Schema } from "effect";
 
-import { ConstraintKey } from "./constraints.ts";
 import { schemaLimits } from "./settings.ts";
-import { SeatRole, VerificationStage } from "./workflow.ts";
+import { RerunTarget, SeatRole } from "./workflow.ts";
 
 const CommandMessage = Schema.String.pipe(
   Schema.check(Schema.isMinLength(1), Schema.isMaxLength(schemaLimits.protocolMessageMaxLength), Schema.isTrimmed()),
@@ -41,22 +40,51 @@ export const TakeoverCommand = Schema.Struct({
 });
 export type TakeoverCommand = typeof TakeoverCommand.Type;
 
-export const ExtendConstraintCommand = Schema.Struct({
-  type: Schema.Literal("extend_constraint"),
-  constraint: ConstraintKey,
+/**
+ * Revive the suspended final attempt, resetting both its watchdogs
+ * ("Continue preserves an attempt; rerun replaces it" (ADR 0041)).
+ *
+ * It names no scope. There is at most one attempt to revive, so a scope argument could only ever agree with the
+ * state or be wrong — the same reason `TakeoverCommand`'s seat is on its way out. Both watchdogs are reset
+ * together rather than singly, because reviving an attempt that remains blocked by the other dimension asks the
+ * operator to issue a second command to achieve what they already asked for.
+ */
+export const ContinueCommand = Schema.Struct({
+  type: Schema.Literal("continue"),
 });
-export type ExtendConstraintCommand = typeof ExtendConstraintCommand.Type;
+export type ContinueCommand = typeof ContinueCommand.Type;
 
-export const RetryStageCommand = Schema.Struct({
-  type: Schema.Literal("retry_stage"),
-  stage: VerificationStage,
+/**
+ * Abandon the suspended attempt and start fresh work at `target`.
+ *
+ * The target is what makes the grant specific: `building` adds an ein attempt to the current build cycle,
+ * `review` and `qa` add one for the current candidate in a fresh seat, and `validation` repeats a deterministic
+ * operation without consuming an attempt at all. It is also what picks the attention record this resolves
+ * ("A rerun resolves the kind its target names" (ADR 0043)).
+ */
+export const RerunCommand = Schema.Struct({
+  type: Schema.Literal("rerun"),
+  target: RerunTarget,
 });
-export type RetryStageCommand = typeof RetryStageCommand.Type;
+export type RerunCommand = typeof RerunCommand.Type;
+
+/**
+ * Clear a safe non-budget suspension such as a cowboy's `set-blocked`.
+ *
+ * It preserves the attempt and changes no allowance, which is exactly why it cannot clear a
+ * `constraint_exhausted`: reviving an exhausted attempt is a grant, and grants are explicit (ADR 0041). The
+ * reducer enforces that from `resolutionsForAttention` rather than from anything declared here.
+ */
+export const ResumeCommand = Schema.Struct({
+  type: Schema.Literal("resume"),
+});
+export type ResumeCommand = typeof ResumeCommand.Type;
 
 /** Every command shape shared by the two protocols, for the coupling tripwire. */
 export const sharedCommands = {
   StopCommand,
   TakeoverCommand,
-  ExtendConstraintCommand,
-  RetryStageCommand,
+  ContinueCommand,
+  RerunCommand,
+  ResumeCommand,
 } as const;

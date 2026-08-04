@@ -1,12 +1,11 @@
 import { Schema } from "effect";
 
 import { PrivatePreviewAttachments } from "./attachments.ts";
-import { ExtendConstraintCommand, RetryStageCommand, StopCommand, TakeoverCommand } from "./commands.ts";
-import { ConstraintKey } from "./constraints.ts";
+import { ContinueCommand, RerunCommand, ResumeCommand, StopCommand, TakeoverCommand } from "./commands.ts";
+import { ConstraintKind, ConstraintScope } from "./constraints.ts";
 import { SwordfishEvent } from "./protocol.ts";
 import {
   BountyId,
-  ConstraintLimit,
   CorrelationId,
   EventSequence,
   GitRef,
@@ -21,6 +20,7 @@ import {
   WorkflowRevision,
 } from "./scalars.ts";
 import { schemaLimits } from "./settings.ts";
+import type { WorkflowResolution } from "./workflow.ts";
 import {
   AttentionKind,
   CandidateGate,
@@ -29,7 +29,6 @@ import {
   resolutionsForAttention,
   SeatRole,
   SwordfishStage,
-  WorkflowResolution,
 } from "./workflow.ts";
 
 export const currentSfControlVersion = 1 as const;
@@ -44,8 +43,9 @@ export const SfControlCommand = Schema.Union([
   StopCommand,
   TakeoverCommand,
   SfHandoffCommand,
-  ExtendConstraintCommand,
-  RetryStageCommand,
+  ContinueCommand,
+  RerunCommand,
+  ResumeCommand,
   SfApproveConfigCommand,
 ]);
 export type SfControlCommand = typeof SfControlCommand.Type;
@@ -83,11 +83,49 @@ export const SfActiveCowboy = Schema.Struct({
 });
 export type SfActiveCowboy = typeof SfActiveCowboy.Type;
 
+/** Executable `sf` commands that status may offer to clear an attention record. */
+export const sfResolutionCommands = [
+  "resume",
+  "continue",
+  "rerun building",
+  "rerun validation",
+  "rerun review",
+  "rerun qa",
+  "takeover ein",
+  "takeover jet",
+  "takeover faye",
+  "stop",
+  "approve-config",
+] as const;
+export const SfResolutionCommand = Schema.Literals(sfResolutionCommands);
+export type SfResolutionCommand = typeof SfResolutionCommand.Type;
+
+const workflowResolutionForSfCommand: Readonly<Record<SfResolutionCommand, WorkflowResolution>> = {
+  resume: "resume",
+  continue: "continue",
+  "rerun building": "rerun",
+  "rerun validation": "rerun",
+  "rerun review": "rerun",
+  "rerun qa": "rerun",
+  "takeover ein": "takeover",
+  "takeover jet": "takeover",
+  "takeover faye": "takeover",
+  stop: "cancel",
+  "approve-config": "approve_config",
+};
+
+const attentionKindForTargetedSfCommand: Readonly<Partial<Record<SfResolutionCommand, AttentionKind>>> = {
+  "rerun building": "constraint_exhausted",
+  "rerun review": "constraint_exhausted",
+  "rerun qa": "constraint_exhausted",
+  "rerun validation": "uncertain_gate",
+};
+
 /** One reason the bounty stopped, with the exact commands that clear it (`docs/capabilities/05-control-lease-and-takeover.md`). */
 export const SfAttentionSnapshot = Schema.Struct({
   kind: AttentionKind,
   reason: Schema.String,
-  resolutions: Schema.Array(WorkflowResolution).pipe(Schema.check(Schema.isMinLength(1))),
+  resolutions: Schema.Array(SfResolutionCommand).pipe(Schema.check(Schema.isMinLength(1))),
 });
 export type SfAttentionSnapshot = typeof SfAttentionSnapshot.Type;
 
@@ -101,13 +139,61 @@ export const SfGateSnapshot = Schema.Struct({
 });
 export type SfGateSnapshot = typeof SfGateSnapshot.Type;
 
-export const SfConstraintSnapshot = Schema.Struct({
-  constraint: ConstraintKey,
+/**
+ * One budget, as the three numbers an operator needs to see it.
+ *
+ * `base` and `granted` are kept apart rather than summed because every grant is a human decision that status is
+ * required to make visible: a budget shown only as its total silently absorbs the `continue` or `rerun` that
+ * enlarged it (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+ */
+export const SfBudgetSnapshot = Schema.Struct({
   consumed: NonNegativeInteger,
-  limit: ConstraintLimit,
-  extensionsGranted: NonNegativeInteger,
+  base: NonNegativeInteger,
+  granted: NonNegativeInteger,
+});
+export type SfBudgetSnapshot = typeof SfBudgetSnapshot.Type;
+
+/** One scope's attempt ledger. */
+export const SfConstraintSnapshot = Schema.Struct({
+  scope: ConstraintScope,
+  attempts: SfBudgetSnapshot,
 });
 export type SfConstraintSnapshot = typeof SfConstraintSnapshot.Type;
+
+/**
+ * The attempt in flight, with the watchdogs it is running against.
+ *
+ * Wall clock is milliseconds rather than the profile's minutes: the profile is what a human writes and this is
+ * what a reducer accrued, and rounding accrued time to minutes for display would make status disagree with the
+ * arithmetic that decides exhaustion.
+ */
+export const SfAttemptSnapshot = Schema.Struct({
+  scope: ConstraintScope,
+  role: SeatRole,
+  seatId: SeatId,
+  ordinal: NonNegativeInteger,
+  startedAt: Timestamp,
+  turns: SfBudgetSnapshot,
+  wallClockMs: SfBudgetSnapshot,
+  /** Whether autonomous time is accruing right now — false under human control or while suspended. */
+  running: Schema.Boolean,
+});
+export type SfAttemptSnapshot = typeof SfAttemptSnapshot.Type;
+
+/**
+ * A budget the reducer's own arithmetic says has run out.
+ *
+ * Served alongside the attention record rather than folded into its free-text reason, because this is the
+ * evidence for the claim: an operator can see 40/40 turns rather than a daemon's assertion that a watchdog fired
+ * ("Constraint exhaustion is computed, not announced" (ADR 0042)).
+ */
+export const SfExhaustedConstraint = Schema.Struct({
+  constraint: ConstraintKind,
+  scope: Schema.optionalKey(ConstraintScope),
+  consumed: NonNegativeInteger,
+  allowed: NonNegativeInteger,
+});
+export type SfExhaustedConstraint = typeof SfExhaustedConstraint.Type;
 
 export const SfPendingConfigApproval = Schema.Struct({
   candidateSha: GitSha,
@@ -148,7 +234,10 @@ const SfStatusSnapshotBase = Schema.Struct({
   seats: Schema.Array(SfSeatSnapshot),
   candidateSha: Schema.optionalKey(GitSha),
   gates: Schema.Array(SfGateSnapshot),
+  attempt: Schema.optionalKey(SfAttemptSnapshot),
   constraints: Schema.Array(SfConstraintSnapshot),
+  validatedCandidates: SfBudgetSnapshot,
+  exhausted: Schema.Array(SfExhaustedConstraint),
   pendingConfigApproval: Schema.optionalKey(SfPendingConfigApproval),
   bebopConnection: SfBebopConnectionSnapshot,
   previews: PrivatePreviewAttachments,
@@ -185,7 +274,15 @@ export const SfStatusSnapshot = SfStatusSnapshotBase.pipe(
       }
       for (const record of snapshot.attention) {
         const permitted: ReadonlyArray<WorkflowResolution> = resolutionsForAttention[record.kind];
-        if (record.resolutions.some((resolution) => !permitted.includes(resolution))) {
+        if (
+          record.resolutions.some((command) => {
+            const targetKind = attentionKindForTargetedSfCommand[command];
+            return (
+              !permitted.includes(workflowResolutionForSfCommand[command]) ||
+              (targetKind !== undefined && targetKind !== record.kind)
+            );
+          })
+        ) {
           return "Expected every offered resolution to be permitted by the attention kind";
         }
       }
@@ -193,9 +290,17 @@ export const SfStatusSnapshot = SfStatusSnapshotBase.pipe(
       if (gates.size !== snapshot.gates.length) {
         return "Expected unique candidate gates";
       }
-      const constraints = new Set(snapshot.constraints.map((constraint) => constraint.constraint));
+      const constraints = new Set(snapshot.constraints.map((constraint) => constraint.scope));
       if (constraints.size !== snapshot.constraints.length) {
-        return "Expected unique constraint ledger entries";
+        return "Expected one constraint ledger entry per scope";
+      }
+      // An attempt is one cowboy assignment, so it names the seat being driven rather than a seat of its own.
+      const attempt = snapshot.attempt;
+      if (attempt !== undefined && (activeCowboy === undefined || activeCowboy.seatId !== attempt.seatId)) {
+        return "Expected the attempt in flight to belong to the active cowboy";
+      }
+      if (attempt !== undefined && attempt.running && snapshot.controller !== "swordfish") {
+        return "Expected an attempt clock to be stopped while a human holds control";
       }
       if (snapshot.candidateSha === undefined) {
         if (snapshot.stage === "ready") {
@@ -243,8 +348,10 @@ export const sfControlErrorCodes = [
   "seat_unavailable",
   "takeover_timeout",
   "lease_not_held",
-  "constraint_extension_not_allowed",
-  "stage_retry_not_allowed",
+  // One code for every rejected recovery verb. The old pair named the two commands they belonged to, and both
+  // commands are gone: `continue`, `rerun`, and `resume` are refused for the same reason — the outstanding
+  // attention does not permit the verb, or there is nothing outstanding to resolve.
+  "recovery_not_available",
   "config_approval_not_pending",
   "bebop_unavailable",
   "internal_error",

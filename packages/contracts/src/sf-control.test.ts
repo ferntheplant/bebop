@@ -17,7 +17,9 @@ const baseSnapshot = {
   activeCowboy: { role: "ein", seatId: "seat-ein" },
   seats: [{ role: "ein", seatId: "seat-ein" }],
   attention: [],
-  constraints: [{ constraint: "primary_turns", consumed: 0, limit: 40, extensionsGranted: 0 }],
+  constraints: [{ scope: "building", attempts: { consumed: 0, base: 3, granted: 0 } }],
+  validatedCandidates: { consumed: 0, base: 3, granted: 0 },
+  exhausted: [],
   bebopConnection: { state: "connected", lastContactAt: timestamp, acknowledgedThrough: 0, pendingEventCount: 0 },
   previews: [],
   recentEvents: [],
@@ -29,8 +31,9 @@ const commands: ReadonlyArray<typeof SfControlCommand.Encoded> = [
   { type: "stop", reason: "User requested stop." },
   { type: "takeover", seat: "ein", force: false },
   { type: "handoff" },
-  { type: "extend_constraint", constraint: "primary_turns" },
-  { type: "retry_stage", stage: "local_validation" },
+  { type: "continue" },
+  { type: "rerun", target: "validation" },
+  { type: "resume" },
   { type: "approve_config" },
 ];
 
@@ -160,9 +163,9 @@ describe("sf local control contracts", () => {
       ...baseSnapshot,
       stage: "needs_attention",
       suspendedStage: "implementing",
-      attention: [{ kind: "agent_blocked", reason: "needs a decision", resolutions: ["resume", "takeover"] }],
+      attention: [{ kind: "agent_blocked", reason: "needs a decision", resolutions: ["resume", "takeover ein"] }],
     });
-    expect(stopped.attention[0]?.resolutions).toEqual(["resume", "takeover"]);
+    expect(stopped.attention[0]?.resolutions).toEqual(["resume", "takeover ein"]);
   });
 
   test("accepts attention retained through cancellation", () => {
@@ -171,7 +174,7 @@ describe("sf local control contracts", () => {
     const cancelling = Schema.decodeUnknownSync(SfStatusSnapshot)({
       ...baseSnapshot,
       stage: "cancelling",
-      attention: [{ kind: "environment", reason: "the VM is unreachable", resolutions: ["cancel"] }],
+      attention: [{ kind: "environment", reason: "the VM is unreachable", resolutions: ["stop"] }],
     });
     expect(cancelling.attention).toHaveLength(1);
   });
@@ -186,6 +189,22 @@ describe("sf local control contracts", () => {
         attention: [{ kind: "constraint_exhausted", reason: "turn budget exhausted", resolutions: ["resume"] }],
       }),
     ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        stage: "needs_attention",
+        attention: [{ kind: "constraint_exhausted", reason: "turn budget exhausted", resolutions: ["rerun"] }],
+      }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        stage: "needs_attention",
+        attention: [
+          { kind: "constraint_exhausted", reason: "turn budget exhausted", resolutions: ["rerun validation"] },
+        ],
+      }),
+    ).toThrow();
   });
 
   test("rejects two outstanding reasons of the same kind", () => {
@@ -196,6 +215,59 @@ describe("sf local control contracts", () => {
         attention: [
           { kind: "operational", reason: "first", resolutions: ["resume"] },
           { kind: "operational", reason: "second", resolutions: ["resume"] },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  test("binds the attempt in flight to the active cowboy", () => {
+    // An attempt is one cowboy assignment, so an attempt naming a seat nobody is driving is a snapshot that has
+    // lost track of one of the two ("One controller drives one active cowboy" (ADR 0037)).
+    const attempt = {
+      scope: "building",
+      role: "ein",
+      seatId: "seat-other",
+      ordinal: 1,
+      startedAt: timestamp,
+      turns: { consumed: 4, base: 40, granted: 0 },
+      wallClockMs: { consumed: 60_000, base: 5_400_000, granted: 0 },
+      running: false,
+    } as const;
+    expect(() => Schema.decodeUnknownSync(SfStatusSnapshot)({ ...baseSnapshot, attempt })).toThrow();
+    expect(
+      Schema.decodeUnknownSync(SfStatusSnapshot)({ ...baseSnapshot, attempt: { ...attempt, seatId: "seat-ein" } })
+        .attempt?.ordinal,
+    ).toBe(1);
+  });
+
+  test("rejects a running clock while a human holds control", () => {
+    // Taking over stops autonomous counting, so a snapshot that reports both is reporting a clock that should
+    // not be turning ("Constraint exhaustion is computed, not announced" (ADR 0042)).
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        controller: "human",
+        attempt: {
+          scope: "building",
+          role: "ein",
+          seatId: "seat-ein",
+          ordinal: 1,
+          startedAt: timestamp,
+          turns: { consumed: 4, base: 40, granted: 0 },
+          wallClockMs: { consumed: 60_000, base: 5_400_000, granted: 0 },
+          running: true,
+        },
+      }),
+    ).toThrow();
+  });
+
+  test("rejects two ledger entries for one scope", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        constraints: [
+          { scope: "building", attempts: { consumed: 0, base: 3, granted: 0 } },
+          { scope: "building", attempts: { consumed: 1, base: 3, granted: 0 } },
         ],
       }),
     ).toThrow();

@@ -156,8 +156,9 @@ const commands: ReadonlyArray<typeof BebopCommand.Encoded> = [
   { type: "stop", reason: "User requested stop." },
   { type: "takeover", seat: "ein", force: false },
   { type: "handoff" },
-  { type: "extend_constraint", constraint: "primary_turns" },
-  { type: "retry_stage", stage: "local_validation" },
+  { type: "continue" },
+  { type: "rerun", target: "building" },
+  { type: "resume" },
   { type: "approve_config", candidateSha: "b".repeat(40) },
   { type: "external_ci_completed", candidateSha: "b".repeat(40), specRevision: 1, outcome: "passed" },
 ];

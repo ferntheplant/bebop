@@ -6,6 +6,7 @@ import {
   EvidenceBundleManifest,
   EventSequence,
   SwordfishEvent,
+  Timestamp,
 } from "@bebop/contracts";
 import { Effect, Schema } from "effect";
 import { SqlClient } from "effect/unstable/sql";
@@ -22,6 +23,8 @@ const zeroSequence = Schema.decodeUnknownSync(EventSequence)(0);
 const firstSequence = Schema.decodeUnknownSync(EventSequence)(1);
 const candidateSha = "b".repeat(40);
 const decodeEvent = Schema.decodeUnknownSync(SwordfishEvent);
+const decodeTimestamp = Schema.decodeUnknownSync(Timestamp);
+const encodeTimestamp = Schema.encodeSync(Timestamp);
 
 afterEach(async () => {
   await harness?.close();
@@ -40,7 +43,7 @@ function stopCommand(commandId = "cmd-stop"): CommandMessage {
   });
 }
 
-function extendCommand(commandId = "cmd-extend"): CommandMessage {
+function recoveryCommand(command: CommandMessage["command"], commandId: string): CommandMessage {
   return Schema.decodeUnknownSync(CommandMessageSchema)({
     type: "command",
     protocolVersion: 1,
@@ -48,9 +51,36 @@ function extendCommand(commandId = "cmd-extend"): CommandMessage {
     vmId: "vm-component",
     commandId,
     issuedAt: "2026-07-29T00:00:01.000Z",
-    command: { type: "extend_constraint", constraint: "primary_turns" },
+    command: Schema.encodeUnknownSync(CommandMessageSchema.fields.command)(command),
   });
 }
+
+/** Drives the building scope to a genuine exhaustion the reducer's own arithmetic will vouch for. */
+const exhaustBuildingAttempts = Effect.gen(function* () {
+  const workflow = yield* WorkflowService;
+  yield* workflow.append(decodeEvent({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" }));
+  yield* workflow.append(
+    decodeEvent({
+      type: "effective_spec_set",
+      spec: {
+        revision: 1,
+        title: "Exhaust the building allowance",
+        goal: "Consume every ein attempt in one build cycle.",
+        context: [],
+        constraints: [],
+        nonGoals: [],
+        acceptanceCriteria: [{ id: "ac-1", description: "The allowance runs out." }],
+        suggestedQaScenarios: [],
+        createdFromSeatId: "seat-ein",
+        createdAt: "2026-07-29T00:00:01.000Z",
+      },
+    }),
+  );
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    yield* workflow.append(decodeEvent({ type: "attempt_started" }));
+    yield* workflow.append(decodeEvent({ type: "attempt_ended", outcome: "no_result" }));
+  }
+});
 
 function takeoverCommand(commandId = "cmd-takeover"): CommandMessage {
   return Schema.decodeUnknownSync(CommandMessageSchema)({
@@ -141,7 +171,7 @@ describe("Swordfish SQLite authority", () => {
 
     const conflict = Schema.decodeUnknownSync(CommandMessageSchema)({
       ...Schema.encodeUnknownSync(CommandMessageSchema)(command),
-      command: { type: "extend_constraint", constraint: "primary_turns" },
+      command: { type: "resume" },
     });
     const exit = await harness.run(
       Effect.exit(Effect.flatMap(WorkflowService, (workflow) => workflow.applyCommand(conflict))),
@@ -254,10 +284,6 @@ describe("Swordfish SQLite authority", () => {
       const outbox = yield* sql`SELECT count(*) AS count FROM bebop_outbox`;
       const stateRows = yield* sql`SELECT state_revision, snapshot FROM workflow_state WHERE singleton = 1`;
       const seats = yield* sql`SELECT seat_id, updated_at FROM seats WHERE role = 'ein'`;
-      const constraints = yield* sql`
-        SELECT consumed, limit_value, extensions_granted, updated_at
-        FROM constraint_ledger WHERE constraint_key = 'primary_turns'
-      `;
       const commands = yield* sql`SELECT count(*) AS count FROM applied_commands`;
       const commandResults = yield* sql`
         SELECT result_payload FROM applied_commands WHERE command_id = ${command.commandId}
@@ -274,12 +300,7 @@ describe("Swordfish SQLite authority", () => {
           seatId: row["seat_id"],
           updatedAt: row["updated_at"],
         })),
-        constraints: constraints.map((row) => ({
-          consumed: row["consumed"],
-          limit: row["limit_value"],
-          extensionsGranted: row["extensions_granted"],
-          updatedAt: row["updated_at"],
-        })),
+        ledgers: workflow.state.ledgers,
         commandCount: commands[0]?.["count"],
         commandResults: commandResults.map((row) => row["result_payload"]),
         lastAppliedCommandId: metadata[0]?.["last_applied_command_id"],
@@ -329,7 +350,9 @@ describe("Swordfish SQLite authority", () => {
     });
     expect(afterRetry.snapshot).not.toBe(baseline.snapshot);
     expect(afterRetry.seats).toEqual([{ seatId: "seat-ein", updatedAt: expect.any(String) }]);
-    expect(afterRetry.constraints).toEqual(baseline.constraints);
+    // Taking over does not refund the attempt that started, and it starts none: the ledger is untouched
+    // ("Continue preserves an attempt; rerun replaces it" (ADR 0041)).
+    expect(afterRetry.ledgers).toEqual(baseline.ledgers);
     expect(afterRetry.commandResults).toHaveLength(1);
     expect(JSON.parse(String(afterRetry.commandResults[0]))).toMatchObject({
       commandId: command.commandId,
@@ -337,55 +360,147 @@ describe("Swordfish SQLite authority", () => {
     });
   });
 
-  test("rolls back a constraint extension when recording its command result aborts", async () => {
-    harness = await startSwordfishHarness("constraint-command-atomicity");
-    const command = extendCommand("cmd-extend-atomicity");
+  test("raises an exhausted budget from the heartbeat wake-up, once, and stops there", async () => {
+    // The reducer can only evaluate at event boundaries, and the budget that matters most exists for the case
+    // where boundaries stop arriving. This is the wake-up that closes that gap, and it decides nothing itself:
+    // the same predicate is re-checked when the event lands ("Constraint exhaustion is computed, not announced"
+    // (ADR 0042)).
+    harness = await startSwordfishHarness("constraint-wakeup");
+    const before = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.evaluateConstraints));
+    expect(before).toBe(false);
+
+    await harness.run(exhaustBuildingAttempts);
+    const raised = await harness.run(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowService;
+        const store = yield* SwordfishStore;
+        const first = yield* workflow.evaluateConstraints;
+        // A second pass changes nothing. The bounty is already saying it needs a human, and a wake-up that
+        // restated it every few seconds would bury the reason under its own repetitions.
+        const second = yield* workflow.evaluateConstraints;
+        return { first, second, status: yield* workflow.status, state: (yield* store.loadWorkflow).state };
+      }),
+    );
+    expect(raised.first).toBe(true);
+    expect(raised.second).toBe(false);
+    expect(raised.state.stage).toBe("needs_attention");
+    expect(raised.state.suspendedStage).toBe("implementing");
+    expect(raised.status.attention).toEqual([
+      {
+        kind: "constraint_exhausted",
+        reason: "Autonomous work stopped because building has used all 3 attempts.",
+        // There is no attempt to continue, and every command shown can be executed exactly as printed.
+        resolutions: ["rerun building", "takeover ein", "stop"],
+      },
+    ]);
+    // Status shows the arithmetic that stopped the bounty, not just the daemon's assertion that something did.
+    expect(raised.status.exhausted).toEqual([{ constraint: "attempts", scope: "building", consumed: 3, allowed: 3 }]);
+  });
+
+  test("accrues a running attempt through the status observation without persisting it", async () => {
+    harness = await startSwordfishHarness("status-attempt-clock");
+    const observed = await harness.run(
+      Effect.gen(function* () {
+        const workflow = yield* WorkflowService;
+        const store = yield* SwordfishStore;
+        yield* workflow.append(decodeEvent({ type: "cowboy_activated", seat: "ein", seatId: "seat-ein" }));
+        yield* workflow.append(
+          decodeEvent({
+            type: "effective_spec_set",
+            spec: {
+              revision: 1,
+              title: "Observe the running clock",
+              goal: "Status reports elapsed autonomous time.",
+              context: [],
+              constraints: [],
+              nonGoals: [],
+              acceptanceCriteria: [{ id: "ac-1", description: "Elapsed time is current." }],
+              suggestedQaScenarios: [],
+              createdFromSeatId: "seat-ein",
+              createdAt: "2026-07-29T00:00:01.000Z",
+            },
+          }),
+        );
+        yield* workflow.append(decodeEvent({ type: "attempt_started" }));
+        const before = (yield* store.loadWorkflow).state;
+        const runningSince = before.attempt?.runningSince;
+        if (runningSince === null || runningSince === undefined)
+          return yield* Effect.die("attempt clock did not start");
+        const observedAt = decodeTimestamp(
+          new Date(Date.parse(encodeTimestamp(runningSince)) + 89 * 60_000).toISOString(),
+        );
+        const status = yield* store.status(observedAt);
+        const after = (yield* store.loadWorkflow).state;
+        return { status, persistedElapsedMs: after.attempt?.elapsedMs };
+      }),
+    );
+
+    expect(observed.status.attempt?.wallClockMs).toEqual({ consumed: 89 * 60_000, base: 90 * 60_000, granted: 0 });
+    expect(observed.status.exhausted).toEqual([]);
+    expect(observed.persistedElapsedMs).toBe(0);
+  });
+
+  test("rolls back a recovery grant when recording its command result aborts", async () => {
+    // A grant is a workflow event now, not a counter update, so what has to commit atomically with the command
+    // result is the `attention_cleared` that carries it (ADR 0042). A half-applied recovery would leave the
+    // bounty resumed with an attempt nobody was granted, or refuse the retry as a duplicate of a command that
+    // granted nothing.
+    harness = await startSwordfishHarness("recovery-command-atomicity");
+    await harness.run(exhaustBuildingAttempts);
+    // The attention comes from the daemon's own wake-up rather than being written by hand, so what this test
+    // recovers from is a suspension the production path produced.
+    expect(await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.evaluateConstraints))).toBe(true);
+    const command = recoveryCommand({ type: "rerun", target: "building" }, "cmd-rerun-atomicity");
     const inspect = Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      const constraints = yield* sql`
-        SELECT limit_value, extensions_granted, updated_at
-        FROM constraint_ledger WHERE constraint_key = 'primary_turns'
-      `;
+      const store = yield* SwordfishStore;
       const commands = yield* sql`SELECT count(*) AS count FROM applied_commands`;
-      const metadata = yield* sql`SELECT last_applied_command_id FROM daemon_metadata WHERE singleton = 1`;
+      const events = yield* sql`SELECT count(*) AS count FROM workflow_events`;
+      const workflow = yield* store.loadWorkflow;
       return {
-        constraint: constraints[0],
         commandCount: commands[0]?.["count"],
-        lastAppliedCommandId: metadata[0]?.["last_applied_command_id"],
+        eventCount: events[0]?.["count"],
+        ledger: workflow.state.ledgers.building,
+        stage: workflow.state.stage,
+        attention: workflow.state.attention.map((record) => record.kind),
       };
     });
     const baseline = await harness.run(inspect);
+    expect(baseline).toMatchObject({
+      stage: "needs_attention",
+      attention: ["constraint_exhausted"],
+      ledger: { attemptsConsumed: 3, attemptsGranted: 0 },
+    });
 
     const failure = await harness.run(
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const workflow = yield* WorkflowService;
         yield* sql`
-          CREATE TEMP TRIGGER abort_test_constraint_command_result
+          CREATE TEMP TRIGGER abort_test_recovery_command_result
           BEFORE INSERT ON applied_commands
           BEGIN
-            SELECT RAISE(ABORT, 'test abort constraint command result');
+            SELECT RAISE(ABORT, 'test abort recovery command result');
           END
         `;
         const exit = yield* Effect.exit(workflow.applyCommand(command));
-        yield* sql`DROP TRIGGER abort_test_constraint_command_result`;
+        yield* sql`DROP TRIGGER abort_test_recovery_command_result`;
         return exit;
       }),
     );
     expect(failure._tag).toBe("Failure");
-    if (failure._tag === "Failure") expect(String(failure.cause)).toContain("test abort constraint command result");
+    if (failure._tag === "Failure") expect(String(failure.cause)).toContain("test abort recovery command result");
     expect(await harness.run(inspect)).toEqual(baseline);
 
     const result = await harness.run(Effect.flatMap(WorkflowService, (workflow) => workflow.applyCommand(command)));
     expect(result.status).toBe("completed");
     expect(await harness.run(inspect)).toMatchObject({
-      constraint: {
-        limit_value: Number(baseline.constraint?.["limit_value"]) + 1,
-        extensions_granted: 1,
-        updated_at: expect.any(String),
-      },
       commandCount: Number(baseline.commandCount) + 1,
-      lastAppliedCommandId: command.commandId,
+      eventCount: Number(baseline.eventCount) + 1,
+      // One more attempt in the building scope, and the reason it answered is gone, so work resumes.
+      ledger: { attemptsConsumed: 3, attemptsGranted: 1 },
+      stage: "implementing",
+      attention: [],
     });
   });
 
@@ -453,9 +568,9 @@ describe("Swordfish SQLite authority", () => {
     }
   });
 
-  test("restores nontrivial workflow authority, artifacts, constraints, and command results", async () => {
+  test("restores nontrivial workflow authority, artifacts, the ledger, and command results", async () => {
     harness = await startSwordfishHarness("working-state");
-    const command = extendCommand();
+    const command = recoveryCommand({ type: "resume" }, "cmd-resume");
     const manifest = Schema.decodeUnknownSync(EvidenceBundleManifest)({
       bundleId: "bundle-component",
       bountyId: "bty-component",
@@ -500,6 +615,14 @@ describe("Swordfish SQLite authority", () => {
             },
           }),
         );
+        // One real ein attempt, so the restored ledger is something the reducer accrued rather than a zero.
+        // The attempt ends before the candidate is submitted: an accepted `candidate-ready` submission ends the
+        // ein attempt before local validation runs, which is what structurally excludes deterministic gates
+        // from attempt wall clock ("Constraint exhaustion is computed, not announced" (ADR 0042)).
+        yield* workflow.append(decodeEvent({ type: "attempt_started" }));
+        yield* workflow.append(decodeEvent({ type: "turn_completed" }));
+        yield* workflow.append(decodeEvent({ type: "turn_completed" }));
+        yield* workflow.append(decodeEvent({ type: "attempt_ended", outcome: "completed" }));
         yield* workflow.append(
           decodeEvent({
             type: "candidate_submitted",
@@ -537,7 +660,14 @@ describe("Swordfish SQLite authority", () => {
             },
           }),
         );
-        expect(yield* store.consumeConstraint("primary_turns", yield* identity.now)).toBe(true);
+        // A safe non-budget suspension, so the `resume` below has something it is permitted to clear.
+        yield* workflow.append(
+          decodeEvent({
+            type: "attention_required",
+            kind: "agent_blocked",
+            reason: "ein reported it cannot proceed without a decision.",
+          }),
+        );
         yield* store.recordLocalArtifact(manifest);
         yield* store.startReconciliation(
           { recordId: "completed-worktree", kind: "worktree", path: `${harness?.root}/repository` },
@@ -578,9 +708,13 @@ describe("Swordfish SQLite authority", () => {
       activeCowboy: { role: "ein", seatId: "seat-ein" },
       gates: { local_validation: { status: "failed" } },
     });
-    expect(restored.status.constraints.find((entry) => entry.constraint === "primary_turns")).toMatchObject({
-      consumed: 1,
-      extensionsGranted: 1,
+    // The ledger survives restart because it is part of the workflow snapshot, not a table beside it. `resume`
+    // granted nothing, which is exactly what distinguishes it from `continue` and `rerun` (ADR 0041).
+    expect(restored.state.ledgers.building).toEqual({ attemptsConsumed: 1, attemptsGranted: 0 });
+    expect(restored.state.attempt).toBeNull();
+    expect(restored.status.constraints).toContainEqual({
+      scope: "building",
+      attempts: { consumed: 1, base: 3, granted: 0 },
     });
     expect(restored.specs[0]?.["count"]).toBe(1);
     expect(restored.candidates[0]?.["count"]).toBe(1);

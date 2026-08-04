@@ -25,8 +25,9 @@ describe("shared command payloads", () => {
     const committed = {
       StopCommand: { type: "stop", reason: "operator requested a stop" },
       TakeoverCommand: { type: "takeover", seat: "ein", force: false },
-      ExtendConstraintCommand: { type: "extend_constraint", constraint: "primary_turns" },
-      RetryStageCommand: { type: "retry_stage", stage: "local_validation" },
+      ContinueCommand: { type: "continue" },
+      RerunCommand: { type: "rerun", target: "building" },
+      ResumeCommand: { type: "resume" },
     } as const;
 
     // Names, not just shapes: adding a shared command without adding it here would

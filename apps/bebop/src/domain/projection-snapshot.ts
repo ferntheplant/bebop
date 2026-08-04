@@ -13,11 +13,14 @@ import type { EventSequence } from "@bebop/contracts";
 import {
   AttentionKind,
   Candidate,
+  ConstraintProfile,
+  ConstraintScope,
   Controller,
   EffectiveSpec,
   EventSequence as EventSequenceSchema,
   GitSha,
   gateStatuses,
+  NonNegativeInteger,
   PrivatePreviewAttachment,
   SeatId,
   SeatRole,
@@ -25,7 +28,7 @@ import {
   SwordfishStage,
   Timestamp,
 } from "@bebop/contracts";
-import type { GateStates, WorkflowCoreState } from "@bebop/workflow";
+import type { GateStates, ScopeLedgers, WorkflowCoreState } from "@bebop/workflow";
 import { initialWorkflowCoreState } from "@bebop/workflow";
 import { Schema } from "effect";
 
@@ -44,6 +47,29 @@ const GateStatesSchema = Schema.Struct({
 
 const ActiveCowboy = Schema.Struct({ role: SeatRole, seatId: SeatId });
 const AttentionState = Schema.Struct({ kind: AttentionKind, reason: Schema.String, raisedAt: Timestamp });
+
+/**
+ * The attempt in flight, mirroring Swordfish's own snapshot field for field.
+ *
+ * Bebop projects it because it applies the same reducer and must reach the same arithmetic: an attempt this side
+ * reads as long past budget while Swordfish has raised no attention is a defect signal about the daemon, and
+ * that comparison is impossible without the accrued time and the running-since mark
+ * ("Constraint exhaustion is computed, not announced" (ADR 0042)).
+ */
+const AttemptState = Schema.Struct({
+  scope: ConstraintScope,
+  role: SeatRole,
+  seatId: SeatId,
+  ordinal: NonNegativeInteger,
+  startedAt: Timestamp,
+  turns: NonNegativeInteger,
+  turnsGranted: NonNegativeInteger,
+  elapsedMs: NonNegativeInteger,
+  wallClockGrantedMs: NonNegativeInteger,
+  runningSince: Schema.NullOr(Timestamp),
+});
+const ScopeLedger = Schema.Struct({ attemptsConsumed: NonNegativeInteger, attemptsGranted: NonNegativeInteger });
+const ScopeLedgersSchema = Schema.Struct({ building: ScopeLedger, review: ScopeLedger, qa: ScopeLedger });
 
 /**
  * Retained event fingerprints, as a list rather than a map.
@@ -71,6 +97,10 @@ export const WorkflowSnapshot = Schema.Struct({
   readinessClaim: Schema.NullOr(Schema.Struct({ candidateSha: GitSha, specRevision: SpecRevision })),
   previews: Schema.Array(PrivatePreviewAttachment),
   attention: Schema.Array(AttentionState),
+  constraints: ConstraintProfile,
+  attempt: Schema.NullOr(AttemptState),
+  ledgers: ScopeLedgersSchema,
+  validatedCandidatesConsumed: NonNegativeInteger,
 });
 export type WorkflowSnapshot = typeof WorkflowSnapshot.Type;
 
@@ -92,6 +122,10 @@ export function toWorkflowSnapshot(state: WorkflowCoreState): WorkflowSnapshot {
     readinessClaim: state.readinessClaim,
     previews: state.previews,
     attention: state.attention,
+    constraints: state.constraints,
+    attempt: state.attempt,
+    ledgers: state.ledgers,
+    validatedCandidatesConsumed: state.validatedCandidatesConsumed,
   };
 }
 
@@ -115,6 +149,10 @@ export function fromWorkflowSnapshot(snapshot: WorkflowSnapshot): WorkflowCoreSt
     readinessClaim: snapshot.readinessClaim,
     previews: snapshot.previews,
     attention: snapshot.attention,
+    constraints: snapshot.constraints,
+    attempt: snapshot.attempt,
+    ledgers: snapshot.ledgers as ScopeLedgers,
+    validatedCandidatesConsumed: snapshot.validatedCandidatesConsumed,
   };
 }
 

@@ -34,7 +34,7 @@ import {
   UnsupportedProtocolVersionError,
 } from "@bebop/contracts";
 import { BebopToSwordfishMessage as BebopToSwordfishMessageSchema } from "@bebop/contracts";
-import { Effect, Fiber, Queue, Result, Schedule, Schema } from "effect";
+import { Duration, Effect, Fiber, Queue, Result, Schedule, Schema } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { HttpRouter } from "effect/unstable/http";
 import { Socket } from "effect/unstable/socket";
@@ -42,6 +42,8 @@ import { Socket } from "effect/unstable/socket";
 import { BebopConfiguration } from "#src/config.ts";
 import { Identity } from "#src/domain/identity.ts";
 import type { BebopSwordfishProjection } from "#src/domain/swordfish-projection.ts";
+import { unreportedBudgetOverrun } from "#src/domain/swordfish-projection.ts";
+import { withLogContext } from "#src/observability/logging.ts";
 import { BountyRepository } from "#src/persistence/bounties.ts";
 import { CommandRepository } from "#src/persistence/commands.ts";
 import { applyProjectionInput } from "#src/service/projection.ts";
@@ -58,6 +60,18 @@ const commandBatchSize = 32;
 
 /** Frames waiting for the one ordered protocol consumer. */
 const inboundFrameCapacity = 64;
+
+/**
+ * How far past its budget an attempt must read before Bebop calls it a daemon defect.
+ *
+ * Derived from the heartbeat interval rather than configured separately, because what it has to cover is
+ * projection lag — one heartbeat, the events that heartbeat is racing, and the projection commit — and a knob
+ * that could be set below the heartbeat interval would only ever be set wrong. Four intervals is generous
+ * against budgets measured in tens of minutes.
+ */
+function budgetCrossCheckGraceMs(config: { readonly heartbeatInterval: Duration.Duration }): number {
+  return Duration.toMillis(config.heartbeatInterval) * 4;
+}
 
 interface Session {
   readonly connectionId: ConnectionId;
@@ -212,12 +226,30 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
       const handleHeartbeat = (current: Session, message: HeartbeatMessage) =>
         Effect.gen(function* () {
           const observedAt = yield* identity.now;
-          yield* applyProjectionInput({
+          const applied = yield* applyProjectionInput({
             bountyId: current.bountyId,
             vmId: current.vmId,
             input: { type: "heartbeat_observed", connectionId: current.connectionId, message, observedAt },
             at: observedAt,
           });
+          // The same reducer, the same events, and therefore the same arithmetic. A budget this side reads as
+          // long past its limit while the daemon has raised no attention means the daemon's watchdog is not
+          // running — its clock is skewed, its timer leaked, or it miscounted a pause. Bebop reports that as a
+          // defect rather than acting on it: the ledger is Swordfish's state, and a Bebop-side detector would
+          // stop enforcing anything during exactly the partition it would exist to cover (ADR 0042).
+          const overrun = unreportedBudgetOverrun(applied.projection, observedAt, budgetCrossCheckGraceMs(config));
+          if (overrun.length > 0) {
+            yield* withLogContext(
+              {
+                bountyId: current.bountyId,
+                vmId: current.vmId,
+                stage: applied.projection.stage,
+                seat: applied.projection.activeCowboy?.role,
+                candidateSha: applied.projection.candidate?.commitSha,
+              },
+              Effect.logError("swordfish has not reported a budget its own events say is exhausted"),
+            ).pipe(Effect.annotateLogs("constraints", overrun.map((entry) => entry.constraint).join(",")));
+          }
           // A heartbeat is also the moment to hand over anything queued while the socket was
           // idle, so a command does not wait for the poll interval.
           yield* drainCommands(current);

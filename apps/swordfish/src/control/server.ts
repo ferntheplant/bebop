@@ -216,11 +216,9 @@ const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
     const code: SfControlErrorCode =
       command.type === "takeover"
         ? "seat_unavailable"
-        : command.type === "extend_constraint"
-          ? "constraint_extension_not_allowed"
-          : command.type === "retry_stage"
-            ? "stage_retry_not_allowed"
-            : "invalid_state";
+        : command.type === "continue" || command.type === "rerun" || command.type === "resume"
+          ? "recovery_not_available"
+          : "invalid_state";
     return { response: responseError(request, code, result.error ?? "The command was rejected."), stop: false };
   }
 

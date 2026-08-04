@@ -6,7 +6,13 @@ import { EventMessage, type SwordfishStage, type SwordfishEvent } from "@bebop/c
 import { Schema } from "effect";
 import { describe, expect, test } from "vite-plus/test";
 
-import { applyWorkflowEvent, fingerprintWindow, initialWorkflowCoreState, type WorkflowCoreState } from "#src/index.ts";
+import {
+  applyWorkflowEvent,
+  exhaustedConstraints,
+  fingerprintWindow,
+  initialWorkflowCoreState,
+  type WorkflowCoreState,
+} from "#src/index.ts";
 
 const timestamp = "2026-07-26T12:34:56.000Z";
 const candidateSha = "b".repeat(40);
@@ -42,24 +48,50 @@ function initial(): TestState {
   return { ...initialWorkflowCoreState(), stage: "interactive" };
 }
 
-function message(sequence: number, event: typeof SwordfishEvent.Encoded) {
+function message(sequence: number, event: typeof SwordfishEvent.Encoded, at: string = timestamp) {
   return Schema.decodeUnknownSync(EventMessage)({
     type: "event",
     protocolVersion: 1,
     bountyId: "bty-01jz8j3d9f4x",
     vmId: "vm_01JZ8J3D9F4X",
     sequence,
-    occurredAt: timestamp,
+    occurredAt: at,
     event,
   });
 }
 
-function apply(state: TestState, sequence: number, event: typeof SwordfishEvent.Encoded): TestState {
-  const result = applyWorkflowEvent(state, message(sequence, event));
+function apply(state: TestState, sequence: number, event: typeof SwordfishEvent.Encoded, at?: string): TestState {
+  const result = applyWorkflowEvent(state, message(sequence, event, at));
   if (!result.ok) {
     throw new Error(`Core rejected ${result.error.type}`);
   }
   return result.state;
+}
+
+/** `timestamp` advanced by whole minutes, so a test can say how long an attempt ran. */
+function minutesLater(count: number): string {
+  return new Date(Date.parse(timestamp) + count * 60_000).toISOString();
+}
+
+/**
+ * An ein attempt whose wall-clock watchdog has genuinely run out, and the attention that reports it.
+ *
+ * Built rather than asserted, because the reducer refuses a `constraint_exhausted` claim its own arithmetic does
+ * not support ("Constraint exhaustion is computed, not announced" (ADR 0042)) — a test that wants an exhausted
+ * budget has to spend one.
+ */
+function throughExhaustedWallClock(): TestState {
+  let state = initial();
+  state = apply(state, 1, { type: "effective_spec_set", spec });
+  state = apply(state, 2, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+  state = apply(state, 3, { type: "attempt_started" });
+  // The building watchdog is 90 minutes; this attempt has been running for 91.
+  return apply(
+    state,
+    4,
+    { type: "attention_required", kind: "constraint_exhausted", reason: "the ein attempt ran out of wall clock" },
+    minutesLater(91),
+  );
 }
 
 /** Reaches `pushed_candidate` with only `pr_ci` pending — review opens when CI passes (ADR 0040). */
@@ -131,37 +163,28 @@ describe("workflow core", () => {
   test("a generic resume cannot clear an exhausted budget", () => {
     // The point of giving attention a kind (ADR 0038): `resume` changes no allowance, so it must not be able to
     // revive an attempt whose watchdogs ran out. That recovery is `continue` or `rerun`, and it is a grant.
-    let state = initial();
-    state = apply(state, 1, { type: "effective_spec_set", spec });
-    state = apply(state, 2, {
-      type: "attention_required",
-      kind: "constraint_exhausted",
-      reason: "primary turn budget exhausted",
-    });
+    const state = throughExhaustedWallClock();
 
-    const resumed = applyWorkflowEvent(state, message(3, { type: "attention_cleared", resolution: "resume" }));
+    const resumed = applyWorkflowEvent(state, message(5, { type: "attention_cleared", resolution: "resume" }));
     expect(resumed).toMatchObject({
       ok: false,
       error: { type: "resolution_not_permitted", kind: "constraint_exhausted", resolution: "resume" },
     });
 
-    const continued = apply(state, 3, { type: "attention_cleared", resolution: "continue" });
+    const continued = apply(state, 5, { type: "attention_cleared", resolution: "continue" });
     expect(continued.stage).toBe("implementing");
     expect(continued.attention).toEqual([]);
+    // The grant is a whole fresh watchdog pair, not a nudge past the limit, and both dimensions move together so
+    // the operator is not asked to revive an attempt that remains blocked by the other one (ADR 0041).
+    expect(continued.attempt).toMatchObject({ turnsGranted: 40, wallClockGrantedMs: 90 * 60_000 });
   });
 
   test("a later reason cannot widen the exits of an outstanding stricter one", () => {
     // An `operational` attention raised by startup reconciliation used to replace an outstanding
     // `constraint_exhausted`. Because `operational` permits `resume`, the exhausted attempt could then be
     // revived with no grant, which is exactly what ADR 0038 and ADR 0041 forbid.
-    let state = initial();
-    state = apply(state, 1, { type: "effective_spec_set", spec });
-    state = apply(state, 2, {
-      type: "attention_required",
-      kind: "constraint_exhausted",
-      reason: "primary turn budget exhausted",
-    });
-    state = apply(state, 3, {
+    let state = throughExhaustedWallClock();
+    state = apply(state, 5, {
       type: "attention_required",
       kind: "operational",
       reason: "Startup reconciliation found 1 uncertain operation.",
@@ -169,12 +192,12 @@ describe("workflow core", () => {
     expect(state.attention.map((record) => record.kind)).toEqual(["constraint_exhausted", "operational"]);
 
     // `resume` clears the operational reason it is permitted to clear, and only that one.
-    state = apply(state, 4, { type: "attention_cleared", resolution: "resume" });
+    state = apply(state, 6, { type: "attention_cleared", resolution: "resume" });
     expect(state.stage).toBe("needs_attention");
     expect(state.attention.map((record) => record.kind)).toEqual(["constraint_exhausted"]);
 
     // The budget still needs its own grant, and only then does the work resume.
-    state = apply(state, 5, { type: "attention_cleared", resolution: "continue" });
+    state = apply(state, 7, { type: "attention_cleared", resolution: "continue" });
     expect(state.stage).toBe("implementing");
     expect(state.attention).toEqual([]);
   });
@@ -502,5 +525,308 @@ describe("workflow core", () => {
     const corrupted: TestState = { ...state, appliedEventFingerprints: {} };
     const result = applyWorkflowEvent(corrupted, message(2, { type: "candidate_submitted", candidate }));
     expect(result).toMatchObject({ ok: false, error: { type: "fingerprint_missing", sequence: 2, floor: 1 } });
+  });
+});
+
+describe("constraint ledger", () => {
+  /** An ein cowboy at `implementing`, which is the only place an ein attempt may start. */
+  function readyToBuild(): TestState {
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    return apply(state, 2, { type: "cowboy_activated", seat: "ein", seatId: "seat-ein" });
+  }
+
+  test("consumes a scoped attempt slot before the first prompt and refuses one beyond the allowance", () => {
+    // The reducer owns the allowance, so a daemon cannot help itself to a fourth attempt against a
+    // three-attempt profile. A fourth is a grant, and a grant is a human `rerun` (ADR 0041).
+    let state = readyToBuild();
+    let sequence = 3;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      state = apply(state, sequence, { type: "attempt_started" });
+      expect(state.attempt).toMatchObject({ scope: "building", role: "ein", ordinal: attempt });
+      expect(state.ledgers.building.attemptsConsumed).toBe(attempt);
+      sequence += 1;
+      state = apply(state, sequence, { type: "attempt_ended", outcome: "no_result" });
+      sequence += 1;
+    }
+
+    const fourth = applyWorkflowEvent(state, message(sequence, { type: "attempt_started" }));
+    expect(fourth).toMatchObject({
+      ok: false,
+      error: { type: "attempts_exhausted", scope: "building", consumed: 3, allowed: 3 },
+    });
+  });
+
+  test("derives the scope from the cowboy rather than trusting the event to name one", () => {
+    // Jet's attempts are charged to review, and nothing on `attempt_started` could have said otherwise: an
+    // attempt is one cowboy assignment, so the seat being driven is the scope.
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "cowboy_activated", seat: "jet", seatId: "seat-jet-1" });
+    state = apply(state, 3, { type: "attempt_started" });
+    expect(state.attempt).toMatchObject({ scope: "review", role: "jet", seatId: "seat-jet-1" });
+    expect(state.ledgers).toMatchObject({
+      building: { attemptsConsumed: 0 },
+      review: { attemptsConsumed: 1 },
+      qa: { attemptsConsumed: 0 },
+    });
+  });
+
+  test("refuses an attempt with no cowboy to assign it to", () => {
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    expect(applyWorkflowEvent(state, message(2, { type: "attempt_started" }))).toMatchObject({
+      ok: false,
+      error: { type: "illegal_transition", eventType: "attempt_started" },
+    });
+  });
+
+  test("accrues turns and stops counting them under human control", () => {
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    state = apply(state, 4, { type: "turn_completed" });
+    state = apply(state, 5, { type: "turn_completed" });
+    expect(state.attempt?.turns).toBe(2);
+
+    // Human-controlled turns are unconstrained, so a turn reported after a takeover means the daemon kept
+    // prompting after it gave up control. That is a defect, and one loud failure beats an uncounted turn.
+    state = apply(state, 6, { type: "control_changed", controller: "human", reason: "takeover" });
+    expect(applyWorkflowEvent(state, message(7, { type: "turn_completed" }))).toMatchObject({
+      ok: false,
+      error: { type: "illegal_transition", eventType: "turn_completed" },
+    });
+  });
+
+  test("accrues wall clock only while Swordfish is driving unsuspended work", () => {
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    // Ten minutes of autonomous work, then a human takes over for an hour.
+    state = apply(state, 4, { type: "turn_completed" }, minutesLater(10));
+    expect(state.attempt?.elapsedMs).toBe(10 * 60_000);
+
+    state = apply(state, 5, { type: "control_changed", controller: "human", reason: "takeover" }, minutesLater(10));
+    state = apply(state, 6, { type: "control_changed", controller: "swordfish", reason: "handoff" }, minutesLater(70));
+    // The hour under human control is charged to nobody. Taking over does not refund the attempt that started,
+    // but handing back starts a fresh one, so the old attempt is gone rather than resumed (ADR 0041).
+    expect(state.attempt).toBeNull();
+
+    state = apply(state, 7, { type: "attempt_started" }, minutesLater(70));
+    state = apply(state, 8, { type: "turn_completed" }, minutesLater(75));
+    expect(state.attempt).toMatchObject({ ordinal: 2, elapsedMs: 5 * 60_000 });
+  });
+
+  test("excludes the time a bounty spends waiting for a human", () => {
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    state = apply(state, 4, { type: "attention_required", kind: "agent_blocked", reason: "stuck" }, minutesLater(5));
+    // Two hours in `needs_attention`, which is longer than the whole 90-minute watchdog. None of it counts.
+    state = apply(state, 5, { type: "attention_cleared", resolution: "resume" }, minutesLater(125));
+    expect(state.stage).toBe("implementing");
+    expect(state.attempt?.elapsedMs).toBe(5 * 60_000);
+
+    state = apply(state, 6, { type: "turn_completed" }, minutesLater(130));
+    expect(state.attempt?.elapsedMs).toBe(10 * 60_000);
+  });
+
+  test("refuses an exhaustion claim its own accounting does not support", () => {
+    // The whole of ADR 0042 in one transition: the daemon says a budget ran out, the reducer has every event and
+    // every timestamp, and it disagrees. A skewed clock becomes one failed transition rather than a strangled
+    // attempt nobody can explain.
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    state = apply(state, 4, { type: "turn_completed" }, minutesLater(5));
+
+    expect(
+      applyWorkflowEvent(
+        state,
+        message(
+          5,
+          { type: "attention_required", kind: "constraint_exhausted", reason: "out of time" },
+          minutesLater(6),
+        ),
+      ),
+    ).toMatchObject({ ok: false, error: { type: "exhaustion_unsupported" } });
+
+    expect(
+      applyWorkflowEvent(state, message(5, { type: "attempt_ended", outcome: "exhausted" }, minutesLater(6))),
+    ).toMatchObject({ ok: false, error: { type: "exhaustion_unsupported" } });
+
+    // The same claim at 91 minutes is arithmetic the reducer can vouch for.
+    expect(
+      applyWorkflowEvent(
+        state,
+        message(
+          5,
+          { type: "attention_required", kind: "constraint_exhausted", reason: "out of time" },
+          minutesLater(91),
+        ),
+      ).ok,
+    ).toBe(true);
+  });
+
+  test("exhausts a turn budget on the turn that reaches it", () => {
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    for (let turn = 1; turn <= 40; turn += 1) {
+      state = apply(state, 3 + turn, { type: "turn_completed" });
+    }
+    expect(state.attempt?.turns).toBe(40);
+    expect(exhaustedConstraints(state)).toEqual([
+      { constraint: "turns", scope: "building", consumed: 40, allowed: 40 },
+    ]);
+
+    // `continue` resets both watchdogs, so the attempt is inside its budget again and the reducer would refuse a
+    // repeat of the very claim it just accepted.
+    state = apply(state, 44, { type: "attention_required", kind: "constraint_exhausted", reason: "40 turns" });
+    state = apply(state, 45, { type: "attention_cleared", resolution: "continue" });
+    expect(exhaustedConstraints(state)).toEqual([]);
+    expect(state.attempt).toMatchObject({ turns: 40, turnsGranted: 40 });
+  });
+
+  test("a targeted rerun clears only the record its target names", () => {
+    // Both `constraint_exhausted` and `uncertain_gate` permit `rerun`, and a resolution otherwise clears every
+    // record permitting it. Granting an ein attempt is no answer to a gate whose outcome is unknown (ADR 0043).
+    let state = throughExhaustedWallClock();
+    state = apply(state, 5, {
+      type: "attention_required",
+      kind: "uncertain_gate",
+      reason: "the local validation run may or may not have completed",
+    });
+
+    state = apply(state, 6, { type: "attention_cleared", resolution: "rerun", target: "building" });
+    expect(state.attention.map((record) => record.kind)).toEqual(["uncertain_gate"]);
+    expect(state.stage).toBe("needs_attention");
+    // The grant landed in the scope the target named, and the suspended attempt was abandoned for it.
+    expect(state.ledgers.building).toEqual({ attemptsConsumed: 1, attemptsGranted: 1 });
+    expect(state.attempt).toBeNull();
+
+    // The remaining reason takes the target that addresses it, and grants no attempt at all.
+    state = apply(state, 7, { type: "attention_cleared", resolution: "rerun", target: "validation" });
+    expect(state.attention).toEqual([]);
+    expect(state.stage).toBe("implementing");
+    expect(state.ledgers.building).toEqual({ attemptsConsumed: 1, attemptsGranted: 1 });
+  });
+
+  test("refuses a rerun whose target names a reason nobody raised", () => {
+    let state = initial();
+    state = apply(state, 1, { type: "effective_spec_set", spec });
+    state = apply(state, 2, { type: "attention_required", kind: "uncertain_gate", reason: "unclear CI result" });
+
+    expect(
+      applyWorkflowEvent(state, message(3, { type: "attention_cleared", resolution: "rerun", target: "review" })),
+    ).toMatchObject({ ok: false, error: { type: "attention_kind_not_raised", kind: "constraint_exhausted" } });
+  });
+
+  test("spends a validated-candidate slot where CI passes, and only there", () => {
+    let state = throughPushedCandidate();
+    expect(state.validatedCandidatesConsumed).toBe(0);
+    state = apply(state, 5, ciPassed);
+    // A CI-passed candidate is what a validated candidate *is*, so this is the branch that charges the spec's
+    // allowance (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+    expect(state.validatedCandidatesConsumed).toBe(1);
+    expect(state.stage).toBe("code_review");
+  });
+
+  test("resets building attempts at a build-cycle boundary but not at a CI failure", () => {
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    state = apply(state, 4, { type: "attempt_ended", outcome: "completed" });
+    state = apply(state, 5, { type: "candidate_submitted", candidate });
+    state = apply(state, 6, {
+      type: "gate_completed",
+      gate: "local_validation",
+      candidateSha,
+      specRevision: 1,
+      outcome: "passed",
+    });
+    state = apply(state, 7, { type: "stage_changed", stage: "pushed_candidate" });
+    state = apply(state, 8, {
+      type: "gate_completed",
+      gate: "pr_ci",
+      candidateSha,
+      specRevision: 1,
+      outcome: "failed",
+      feedback: { kind: "external_ci", checks: [{ name: "build", outcome: "failed" }] },
+    });
+    // CI feedback returns to ein inside the same build cycle, so the attempt it already spent still counts.
+    // Resetting here would hand ein an unlimited supply by way of candidates that fail.
+    expect(state.stage).toBe("revision");
+    expect(state.ledgers.building.attemptsConsumed).toBe(1);
+
+    // A blocking review result is a valid completion that starts a new cycle, and that does reset it.
+    let reviewed = throughPushedCandidate();
+    reviewed = apply(reviewed, 5, ciPassed);
+    reviewed = apply(reviewed, 6, { type: "cowboy_activated", seat: "jet", seatId: "seat-jet-1" });
+    reviewed = apply(reviewed, 7, { type: "attempt_started" });
+    reviewed = apply(reviewed, 8, { type: "attempt_ended", outcome: "completed" });
+    reviewed = apply(reviewed, 9, {
+      type: "gate_completed",
+      gate: "code_review",
+      candidateSha,
+      specRevision: 1,
+      outcome: "failed",
+      feedback: {
+        kind: "review",
+        findings: [
+          {
+            id: "finding-1",
+            severity: "blocking",
+            title: "The privileged path is unguarded.",
+            description: "The candidate writes outside the worktree without an approval.",
+            evidence: "src/write.ts:12",
+          },
+        ],
+      },
+    });
+    expect(reviewed.ledgers.building.attemptsConsumed).toBe(0);
+    expect(reviewed.ledgers.review.attemptsConsumed).toBe(1);
+  });
+
+  test("a new candidate resets the two per-candidate ledgers and a new spec resets everything", () => {
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    state = apply(state, 4, { type: "attempt_ended", outcome: "completed" });
+    state = apply(state, 5, { type: "candidate_submitted", candidate });
+    expect(state.ledgers).toMatchObject({
+      building: { attemptsConsumed: 1 },
+      review: { attemptsConsumed: 0 },
+      qa: { attemptsConsumed: 0 },
+    });
+
+    // Confirming a new spec revision is the only thing that creates a fresh validated-candidate allowance, and
+    // it creates fresh scoped ledgers with it.
+    state = apply(state, 6, { type: "control_changed", controller: "human", reason: "takeover" });
+    state = apply(state, 7, { type: "effective_spec_set", spec: { ...spec, revision: 2 } });
+    expect(state.ledgers.building.attemptsConsumed).toBe(0);
+    expect(state.validatedCandidatesConsumed).toBe(0);
+  });
+
+  test("reports validated candidates as exhausted only once another SHA is what is needed", () => {
+    // Three validated candidates with the third still under review is a healthy bounty. The same three with a
+    // rejecting result in hand is one that cannot legally produce a fourth without `reopen-spec`.
+    const spent: TestState = { ...initial(), validatedCandidatesConsumed: 3, stage: "code_review" };
+    expect(exhaustedConstraints(spent)).toEqual([]);
+    expect(exhaustedConstraints({ ...spent, stage: "revision" })).toEqual([
+      { constraint: "validated_candidates", scope: null, consumed: 3, allowed: 3 },
+    ]);
+  });
+
+  test("stands the attempt down with the cowboy when the workflow ends", () => {
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    state = apply(state, 4, { type: "stage_changed", stage: "cancelling" });
+    state = apply(state, 5, { type: "stage_changed", stage: "cancelled" });
+    expect(state.attempt).toBeNull();
+    expect(state.activeCowboy).toBeNull();
+  });
+
+  test("refuses to retire a seat that still has an attempt in flight", () => {
+    // An attempt is one cowboy assignment, so a seat standing down under a running attempt would leave the
+    // attempt accruing against nobody.
+    let state = readyToBuild();
+    state = apply(state, 3, { type: "attempt_started" });
+    expect(
+      applyWorkflowEvent(state, message(4, { type: "cowboy_deactivated", seat: "ein", seatId: "seat-ein" })),
+    ).toMatchObject({ ok: false, error: { type: "attempt_already_active", scope: "building", ordinal: 1 } });
   });
 });

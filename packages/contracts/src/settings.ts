@@ -35,19 +35,28 @@ export const schemaLimits = {
   sfUnifiedDiffMaxLength: 100_000,
 } as const;
 
+/**
+ * The defaults a repository's profile is filled in from, settled by
+ * `.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`.
+ *
+ * These are recommendations to be reviewed against evidence — turn and time distributions, successful attempt
+ * ordinals, validated candidates per spec — after at least 20 terminal bounties, not tuned automatically.
+ */
 export const defaultConstraintValues = {
-  primary: {
-    maxTurnsPerAttempt: 40,
-    maxWallClockMinutesPerAttempt: 90,
+  validatedCandidatesPerSpec: 3,
+  building: {
+    attemptsPerCycle: 3,
+    turnsPerAttempt: 40,
+    wallClockMinutesPerAttempt: 90,
   },
   review: {
-    maxRounds: 3,
-    maxTurnsPerAttempt: 15,
-    maxWallClockMinutesPerAttempt: 30,
+    attemptsPerCandidate: 2,
+    turnsPerAttempt: 15,
+    wallClockMinutesPerAttempt: 30,
   },
   qa: {
-    maxRounds: 3,
-    maxTurnsPerAttempt: 20,
-    maxWallClockMinutesPerAttempt: 45,
+    attemptsPerCandidate: 2,
+    turnsPerAttempt: 20,
+    wallClockMinutesPerAttempt: 45,
   },
 } as const;

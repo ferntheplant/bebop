@@ -10,7 +10,7 @@ import { afterEach, describe, expect, test } from "vite-plus/test";
 import { SwordfishConfiguration } from "#src/config.ts";
 import { SwordfishStore } from "#src/persistence/store.ts";
 import { runBebopClient } from "#src/protocol/client.ts";
-import { WorkflowService } from "#src/workflow/service.ts";
+import { WorkflowService, WorkflowTransitionError } from "#src/workflow/service.ts";
 import type { SwordfishHarness } from "#test/component/support/harness.ts";
 import { startSwordfishHarness } from "#test/component/support/harness.ts";
 
@@ -117,6 +117,54 @@ function registeredMessage(registrations: number, acknowledgedThrough = 0): stri
 }
 
 describe("Swordfish outbound protocol", () => {
+  test("keeps evaluating constraints while Bebop is unavailable", async () => {
+    harness = await startSwordfishHarness("disconnected-constraint-watchdog");
+    const realWorkflow = await harness.run(WorkflowService);
+    let evaluations = 0;
+    const fiber = harness.fork(
+      runBebopClient.pipe(
+        Effect.provideService(SwordfishConfiguration, {
+          ...harness.config,
+          heartbeatInterval: Duration.millis(10),
+        }),
+        Effect.provideService(WorkflowService, {
+          ...realWorkflow,
+          evaluateConstraints: Effect.sync(() => {
+            evaluations += 1;
+            return false;
+          }),
+        }),
+      ),
+    );
+    try {
+      await waitFor(() => evaluations >= 2, "constraint checks during disconnection");
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
+  test("does not retry a reducer disagreement from the constraint watchdog", async () => {
+    harness = await startSwordfishHarness("constraint-watchdog-transition");
+    const realWorkflow = await harness.run(WorkflowService);
+    const failure = new WorkflowTransitionError({
+      error: { type: "exhaustion_unsupported", claim: "component test disagreement" },
+    });
+    const fiber = harness.fork(
+      runBebopClient.pipe(
+        Effect.provideService(WorkflowService, {
+          ...realWorkflow,
+          evaluateConstraints: Effect.fail(failure),
+        }),
+      ),
+    );
+    const exit = await Effect.runPromise(Fiber.await(fiber).pipe(Effect.timeout("2 seconds")));
+    expect(exit._tag).toBe("Failure");
+    if (exit._tag === "Failure") {
+      expect(String(exit.cause)).toContain("WorkflowTransitionError");
+      expect(String(exit.cause)).not.toContain("BebopSessionError");
+    }
+  });
+
   test.each([
     {
       label: "typed failures",
@@ -248,7 +296,7 @@ describe("Swordfish outbound protocol", () => {
           vmId: "vm-component",
           commandId: "cmd-duplicate",
           issuedAt: "2026-07-29T00:00:01.000Z",
-          command: { type: "extend_constraint", constraint: "primary_turns" },
+          command: { type: "resume" },
         });
         socket.send(command);
         socket.send(command);
@@ -325,7 +373,9 @@ describe("Swordfish outbound protocol", () => {
           bountyId: "bty-component",
           vmId: "vm-component",
           commandId: "cmd-duplicate",
-          status: "completed",
+          // Rejected, and identically so every time: nothing is outstanding for a `resume` to clear, and a
+          // redelivery replays the recorded answer rather than deciding again.
+          status: "rejected",
         });
       }
       const eventSequences = peer.received.filter((message) => message.type === "event").map((event) => event.sequence);
@@ -342,20 +392,19 @@ describe("Swordfish outbound protocol", () => {
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           const store = yield* SwordfishStore;
-          const commands = yield* sql`SELECT count(*) AS count FROM applied_commands`;
-          const constraint = yield* sql`
-            SELECT extensions_granted FROM constraint_ledger WHERE constraint_key = 'primary_turns'
-          `;
-          return {
-            delivery: yield* store.deliveryState,
-            commandCount: commands[0]?.["count"],
-            extensions: constraint[0]?.["extensions_granted"],
-          };
+          const commands = yield* sql`SELECT command_id, result_payload FROM applied_commands`;
+          return { delivery: yield* store.deliveryState, commands };
         }),
       );
       expect(durable.delivery.acknowledgedThrough).toBe(1);
-      expect(durable.commandCount).toBe(1);
-      expect(durable.extensions).toBe(1);
+      // The redelivered command is applied once and answered twice from its recorded result. That the recorded
+      // result is a rejection is the point: nothing is outstanding for a `resume` to clear, and the second
+      // delivery must replay that answer rather than re-deciding it.
+      expect(durable.commands).toHaveLength(1);
+      expect(JSON.parse(String(durable.commands[0]?.["result_payload"]))).toMatchObject({
+        commandId: "cmd-duplicate",
+        status: "rejected",
+      });
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
       peer.stop();

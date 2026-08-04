@@ -51,8 +51,9 @@ the packed software that already exists.
 
 - Add the existing Bebop stop HTTP operation to the thin packed CLI; the harness must not need a private HTTP
   escape hatch for its stop scenario.
-- Replace local `sf stop` with authenticated `sf cancel`: it records `cancelling` and `cancelled`, keeps the
-  daemon alive, and lets the normal protocol loop deliver both events.
+- Enforce operator authentication on the existing `sf cancel` adapter. Its lifecycle distinction is built: it
+  records `cancelling` and `cancelled`, keeps the daemon alive, and lets the normal protocol loop deliver both
+  events.
 - Keep Bebop stop as the external-authority command that requests daemon shutdown after its terminal command
   result is sent.
 - Update capability status text and CLI help to match this shipped slice. The remaining missing thin adapters are

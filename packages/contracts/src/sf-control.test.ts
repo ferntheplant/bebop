@@ -28,7 +28,7 @@ const baseSnapshot = {
 
 const commands: ReadonlyArray<typeof SfControlCommand.Encoded> = [
   { type: "status" },
-  { type: "stop", reason: "User requested stop." },
+  { type: "cancel" },
   { type: "takeover", seat: "ein", force: false },
   { type: "handoff" },
   { type: "continue" },
@@ -50,6 +50,17 @@ describe("sf local control contracts", () => {
     } as const;
     const decodedResponse = Schema.decodeUnknownSync(SfControlResponse)(response);
     expect(Schema.encodeSync(SfControlResponse)(decodedResponse)).toEqual(response);
+  });
+
+  test("rejects Bebop's stop command on the local control interface", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(SfControlRequest)({
+        type: "request",
+        controlVersion: 1,
+        correlationId: "corr-stop",
+        command: { type: "stop" },
+      }),
+    ).toThrow();
   });
 
   test.each(sfControlErrorCodes)("round-trips %s errors", (code) => {
@@ -76,7 +87,10 @@ describe("sf local control contracts", () => {
         {
           kind: "config_approval",
           reason: "The candidate changes privileged configuration.",
-          resolutions: [`bebop bounty approve-config --bounty ${baseSnapshot.bountyId} --sha ${candidateSha}`, "stop"],
+          resolutions: [
+            `bebop bounty approve-config --bounty ${baseSnapshot.bountyId} --sha ${candidateSha}`,
+            "cancel",
+          ],
         },
       ],
       gates: [
@@ -138,7 +152,7 @@ describe("sf local control contracts", () => {
             reason: "The candidate changes privileged configuration.",
             resolutions: [
               `bebop bounty approve-config --bounty ${baseSnapshot.bountyId} --sha ${"c".repeat(40)}`,
-              "stop",
+              "cancel",
             ],
           },
         ],
@@ -201,7 +215,7 @@ describe("sf local control contracts", () => {
     const cancelling = Schema.decodeUnknownSync(SfStatusSnapshot)({
       ...baseSnapshot,
       stage: "cancelling",
-      attention: [{ kind: "environment", reason: "the VM is unreachable", resolutions: ["stop"] }],
+      attention: [{ kind: "environment", reason: "the VM is unreachable", resolutions: ["cancel"] }],
     });
     expect(cancelling.attention).toHaveLength(1);
   });

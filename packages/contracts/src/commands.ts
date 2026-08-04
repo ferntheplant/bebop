@@ -1,13 +1,13 @@
-// Command payloads carried by BOTH the Bebop-Swordfish WebSocket protocol and the local
-// `sf` control socket.
+// Command payloads carried by the Bebop-Swordfish WebSocket protocol, most of which are
+// also carried by the local `sf` control socket.
 //
 // ## Versioning policy
 //
 // These two protocols version independently — `currentProtocolVersion` in `scalars.ts` and
-// `currentSfControlVersion` in `sf-control.ts` — but they share these payload shapes. That
+// `currentSfControlVersion` in `sf-control.ts` — but they share most payload shapes. That
 // means a change here is a breaking change to two contracts at once.
 //
-// **Changing anything in this module bumps both version constants together.**
+// **Changing a schema listed in `sharedCommands` bumps both version constants together.**
 //
 // The reuse is deliberate and worth keeping: `sf takeover` and a Bebop-issued takeover are
 // the same operation reaching Swordfish by different transports, and giving them separate
@@ -15,8 +15,9 @@
 // catch the mistake: each protocol's fixtures round-trip only its own messages, so adding a
 // field to `TakeoverCommand` for the WebSocket protocol silently changes the local socket
 // contract while every existing test still passes. `commands.test.ts` is the tripwire —
-// it pins both version constants alongside the encoded shape of every command in this file,
-// so editing one without the other fails.
+// it pins both version constants alongside the encoded shape of every shared command in
+// this file, so editing one without the other fails. Stop is deliberately not shared:
+// Bebop `stop` owns daemon lifecycle, while local `sf cancel` leaves Swordfish alive.
 
 import { Schema } from "effect";
 
@@ -82,7 +83,6 @@ export type ResumeCommand = typeof ResumeCommand.Type;
 
 /** Every command shape shared by the two protocols, for the coupling tripwire. */
 export const sharedCommands = {
-  StopCommand,
   TakeoverCommand,
   ContinueCommand,
   RerunCommand,

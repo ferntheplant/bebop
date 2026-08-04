@@ -40,10 +40,11 @@ trusted throwaway driver to open the seam; product code must instead let the fak
 credential to a local supervisor through a one-shot protected bootstrap artifact. No operator retrieval API or
 second credential derivation is justified.
 
-The furthest production path remains `interactive`, reconnect/replay, and cancellation. `sf stop` commits
-`cancelled` but exits before sending it, so Bebop sees the cancellation only after a daemon restart. The settled
-`sf cancel` behavior should keep the daemon alive. The packed CLI surfaces also remain behind their capability
-docs, and SSE idle closure remains the already-open ticket 18. None of these observations requires a new protocol
-decision or ADR.
+The furthest production path remains `interactive`, reconnect/replay, and cancellation. The original probe found
+that `sf stop` committed `cancelled` but exited before sending it, so Bebop saw the cancellation only after a
+daemon restart. The follow-up replaces that local adapter with the settled `sf cancel`: it leaves Swordfish alive
+and the normal heartbeat projects cancellation. Bebop-side `stop` remains the daemon-lifecycle command. The
+remaining packed CLI surfaces are still behind their capability docs, and SSE idle closure remains the
+already-open ticket 18. None of these observations requires a new protocol decision or ADR.
 
 Implementation brief: [a production-quality local system harness](../../local-system-harness/brief.md).

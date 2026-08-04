@@ -143,7 +143,7 @@ const execute = Effect.fnUntraced(function* (options: {
 });
 
 const status = Command.make("status", common, (options) => execute({ ...options, command: { type: "status" } }));
-const stop = Command.make("stop", common, (options) => execute({ ...options, command: { type: "stop" } }));
+const cancel = Command.make("cancel", common, (options) => execute({ ...options, command: { type: "cancel" } }));
 const handoff = Command.make("handoff", common, (options) => execute({ ...options, command: { type: "handoff" } }));
 const takeover = Command.make(
   "takeover",
@@ -163,7 +163,7 @@ const rerun = Command.make("rerun", { ...common, target: Argument.choice("target
 const resume = Command.make("resume", common, (options) => execute({ ...options, command: { type: "resume" } }));
 
 const root = Command.make("sf", {}, () => Console.log("Run `sf --help`.")).pipe(
-  Command.withSubcommands([status, stop, takeover, handoff, proceed, rerun, resume]),
+  Command.withSubcommands([status, cancel, takeover, handoff, proceed, rerun, resume]),
 );
 
 function describeFailure(error: unknown): string {

@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 
 import { PrivatePreviewAttachments } from "./attachments.ts";
-import { ContinueCommand, RerunCommand, ResumeCommand, StopCommand, TakeoverCommand } from "./commands.ts";
+import { ContinueCommand, RerunCommand, ResumeCommand, TakeoverCommand } from "./commands.ts";
 import { ConstraintKind, ConstraintScope } from "./constraints.ts";
 import { SwordfishEvent } from "./protocol.ts";
 import {
@@ -36,10 +36,11 @@ export const SfControlVersion = Schema.Literal(currentSfControlVersion);
 export type SfControlVersion = typeof SfControlVersion.Type;
 
 export const SfStatusCommand = Schema.Struct({ type: Schema.Literal("status") });
+export const SfCancelCommand = Schema.Struct({ type: Schema.Literal("cancel") });
 export const SfHandoffCommand = Schema.Struct({ type: Schema.Literal("handoff") });
 export const SfControlCommand = Schema.Union([
   SfStatusCommand,
-  StopCommand,
+  SfCancelCommand,
   TakeoverCommand,
   SfHandoffCommand,
   ContinueCommand,
@@ -92,7 +93,7 @@ export const sfResolutionCommands = [
   "takeover ein",
   "takeover jet",
   "takeover faye",
-  "stop",
+  "cancel",
 ] as const;
 type SfLocalResolutionCommand = (typeof sfResolutionCommands)[number];
 
@@ -120,7 +121,7 @@ const workflowResolutionForSfCommand: Readonly<Record<SfLocalResolutionCommand, 
   "takeover ein": "takeover",
   "takeover jet": "takeover",
   "takeover faye": "takeover",
-  stop: "cancel",
+  cancel: "cancel",
 };
 
 const attentionKindForTargetedSfCommand: Readonly<Partial<Record<SfLocalResolutionCommand, AttentionKind>>> = {

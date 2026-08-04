@@ -568,24 +568,14 @@ try {
     };
   });
 
-  await probe("RP4", "local sf stop is durable and cancellation replays once", async () => {
-    const stopped = await run(sfCliEntrypoint, ["stop", "--socket", alphaFixture.socketPath, "--json"]);
-    assert(stopped.exitCode === 0, `sf stop failed: ${stopped.stderr}${stopped.stdout}`);
-    const local = JSON.parse(stopped.stdout) as SfStatus;
-    assert(local.stage === "cancelled", `sf stop returned ${local.stage}, not cancelled.`);
-    await waitForExit(alphaDaemon);
-
-    let beforeRestart: BountyDetail | undefined;
-    try {
-      beforeRestart = await bebopStatus(baseUrl, apiToken, alpha.bountyId);
-    } catch {
-      beforeRestart = undefined;
-    }
-
-    alphaDaemon = startProcess("swordfish-alpha", swordfishDaemonEntrypoint, alphaFixture.daemonEnv);
-    const restored = await waitForSf(
+  await probe("RP4", "local sf cancel projects cancellation while Swordfish remains available", async () => {
+    const cancelled = await run(sfCliEntrypoint, ["cancel", "--socket", alphaFixture.socketPath, "--json"]);
+    assert(cancelled.exitCode === 0, `sf cancel failed: ${cancelled.stderr}${cancelled.stdout}`);
+    const local = JSON.parse(cancelled.stdout) as SfStatus;
+    assert(local.stage === "cancelled", `sf cancel returned ${local.stage}, not cancelled.`);
+    const delivered = await waitForSf(
       alphaFixture,
-      "cancelled event replay",
+      "cancelled event delivery",
       (status) =>
         status.stage === "cancelled" &&
         status.bebopConnection.state === "connected" &&
@@ -603,8 +593,8 @@ try {
     assert(counts["stage_changed:cancelled"] === 1, "Cancelled was missing or duplicated.");
     return {
       observed: {
-        projectedBeforeRestart: beforeRestart?.swordfishStage,
-        restored: restored.bebopConnection,
+        daemonRemainedAlive: alphaDaemon.child.exitCode === null,
+        delivered: delivered.bebopConnection,
         projectedStatus: projected.status,
         workflowEventCounts: counts,
       },

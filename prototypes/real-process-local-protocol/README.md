@@ -56,7 +56,7 @@ autonomy.
 | RP1   | worker-first startup and all five packed entrypoints reach `interactive`   | pass   |
 | RP2   | API loss and restart reconnect without duplicate projection                | pass   |
 | RP3   | a `SIGKILL`ed daemon restarts from SQLite without duplicate replay         | pass   |
-| RP4   | local `sf stop` is durable and cancellation replays once                   | pass   |
+| RP4   | local `sf cancel` projects cancellation while Swordfish remains available  | pass   |
 | RP5   | Swordfish started without a listener registers when Bebop later appears    | pass   |
 | RP6   | an offline Bebop stop is delivered and reaches a terminal result only once | pass   |
 
@@ -85,15 +85,17 @@ Cancellation produced exactly one event at each stage: `interactive`, `cancellin
 Bebop stop command survived daemon loss, shut the first restarted daemon down with exit code 0, and was not
 redelivered to the next restart. No protocol change or ADR is justified by these observations.
 
-### 3. Local `sf stop` persists cancellation but exits before sending it
+### 3. Local cancel and Bebop stop now have distinct lifecycle authority
 
-`sf stop` returned a local `cancelled` snapshot and the daemon exited cleanly, but Bebop still projected
-`interactive`. Restarting Swordfish replayed sequences 2 and 3, after which Bebop projected `cancelled` exactly
-once. Durability is correct; liveness requires a restart.
+The original probe found that `sf stop` returned a local `cancelled` snapshot and then shut down the daemon before
+the protocol heartbeat could deliver sequences 2 and 3. Bebop remained at `interactive` until Swordfish
+restarted and replayed them.
 
-This is an implementation mismatch with the settled surface. `sf cancel` is meant to cancel only the inner loop
-and leave Swordfish alive for inspection. Renaming and implementing that behavior fixes the delivery gap without
-a protocol decision. Bebop-side stop remains the command that shuts the daemon down.
+The follow-up separates the adapters at their contracts seam. Local `sf cancel` maps to the existing workflow
+cancellation transition without requesting daemon shutdown; the normal heartbeat delivers and acknowledges both
+events while `sf status` remains available. A Bebop-issued `stop` still reports its terminal command result and
+shuts the daemon down. RP4 now pins that distinction through the real packed processes. Operator-credential
+enforcement for local mutations remains unbuilt.
 
 ### 4. API shutdown reaches its bounded drain deadline with live streams
 
@@ -114,9 +116,10 @@ active.
 ### 6. The shipped CLIs do not yet match their documented surfaces
 
 The packed `bebop` CLI has create, list, status, events, and config approval, but no stop, recover, destroy,
-attachment, evidence, merge, or token commands even where the HTTP route exists. The packed `sf` CLI has `stop`
-instead of the settled `cancel`, and no watch/events, attach, authenticated mutation prompt, or workflow-action
-commands. The prototype used authenticated HTTP only for the offline Bebop stop that has no CLI adapter.
+attachment, evidence, merge, or token commands even where the HTTP route exists. The packed `sf` CLI has the
+settled `cancel` lifecycle behavior, but no watch/events, attach, authenticated mutation prompt, or
+workflow-action commands. The prototype used authenticated HTTP only for the offline Bebop stop that has no CLI
+adapter.
 
 These are thin-client implementation gaps, not transport or protocol decisions.
 

@@ -34,9 +34,9 @@ merge.
 **Partial.** This is the most-built capability. Both processes reconnect, replay, deduplicate, and reconcile;
 sequence gaps, conflicting replays, and stale-connection traffic are all rejected with reasons. Constraint
 exhaustion parks work as promised: the scoped ledger is real, Swordfish evaluates it on the heartbeat it already
-sends, and `continue`, `rerun <target>`, and `resume` are distinct authenticated recoveries whose grants are
-durable events rather than counter edits. Daemon downtime counts toward the attempt that was running, because
-the running-since mark is in the durable snapshot rather than in a timer. The
+sends, and `continue`, `rerun <target>`, and `resume` are distinct local recoveries whose grants are durable events
+rather than counter edits. Their settled operator authentication is not built. Daemon downtime counts toward the
+attempt that was running, because the running-since mark is in the durable snapshot rather than in a timer. The
 [real-process loopback prototype](../../prototypes/real-process-local-protocol/README.md) runs both packed peers
 against Postgres and SQLite: listener loss, API restart, daemon `SIGKILL`, event replay, and an offline stop all
 recover without duplicate projection or command delivery. It does not exercise VM loss or a remote network, and

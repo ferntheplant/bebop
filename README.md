@@ -164,8 +164,9 @@ vp run @bebop/swordfish#dev
 
 The daemon owns SQLite and exposes only the mode-`0600` Unix control socket. Point `sf` at that socket with
 `SWORDFISH_CONTROL_SOCKET_PATH` or `--socket`; commands never read or mutate the database directly. The current
-CLI scaffold has not yet adopted the settled surface: compact status/watch and events; authenticated takeover,
-attach, handoff, resume, rerun, workflow actions, and cancel. Config approval and VM lifecycle remain bebop-side.
+CLI implements status, cancel, takeover, handoff, continue, rerun, and resume. It still lacks compact watch and
+events, operator authentication for mutations, attach, and the role-aware workflow actions. Config approval and
+VM lifecycle remain bebop-side.
 
 All commits must follow Conventional Commits. Vite+ installs the pre-commit and commit-message hooks through the
 root `prepare` script.

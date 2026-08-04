@@ -9,8 +9,6 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "vp run -r build",
-    "dev": "vp run @bebop/server#dev",
     "prepare": "vp config"
   },
   "devDependencies": {

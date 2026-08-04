@@ -10,10 +10,6 @@
     "#src/*": "./src/*",
     "#test/*": "./test/*"
   },
-  "scripts": {
-    "build": "vp pack",
-    "dev": "bun --watch src/api.ts"
-  },
   "dependencies": {
     "@bebop/contracts": "workspace:*",
     "@bebop/workflow": "workspace:*",

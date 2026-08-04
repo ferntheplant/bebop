@@ -13,9 +13,6 @@
     ".": "./dist/index.mjs",
     "./package.json": "./package.json"
   },
-  "scripts": {
-    "build": "vp pack"
-  },
   "dependencies": {
     "@bebop/contracts": "workspace:*",
     "effect": "catalog:"

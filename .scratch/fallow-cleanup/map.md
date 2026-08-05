@@ -32,10 +32,11 @@ points.
 ## Not yet specified
 
 - Health hotspots, led by `changesFor` at cyclomatic 113 / cognitive 155 in `packages/workflow/src/core.ts`:
-  refactor it, or consciously widen the threshold with written justification. It resolves after the dead-code
-  backlog, because dead exports distort the health signal while they are still in the tree.
-- The `fallow audit` CI gate (adoption stage 2): a warn-everywhere rollout versus error plus committed
-  baselines. Blocked on repo-clean; the dead-code disposition decides which audit shape the repo can hold.
+  refactor it, or consciously widen the threshold with written justification. Unblocked — the dead-code backlog
+  is clear, so the health signal is no longer distorted by dead exports.
+- [How does `fallow audit` enter CI?](./issues/how-fallow-audit-enters-ci.md) — now a ticket. Dead-code
+  repo-clean cleared the guide's stage-1 bar, so the gate no longer waits on the backlog; what is open is which
+  rollout shape it takes and how much of the analysis surface it carries.
 - Duplication below the prototype exemptions: whether `fallow dupes --mode semantic` finds anything worth
   consolidating once the testkit spawn-and-collect promotion lands.
 

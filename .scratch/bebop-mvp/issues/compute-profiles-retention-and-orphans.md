@@ -6,6 +6,8 @@ blocked-by: [exe-dev-provisioning-api-surface]
 
 # What are the compute profiles, retention windows, and orphan sweeps?
 
+Resolving this updates [Bounty lifecycle](../../../docs/capabilities/01-bounty-lifecycle.md).
+
 ## Question
 
 All provisional: small 2c/4GB, standard 4c/8GB default, large 8c/16GB; merged

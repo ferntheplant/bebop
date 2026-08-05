@@ -6,6 +6,8 @@ blocked-by: [exe-dev-llm-integration-for-ein-and-jet, exe-dev-http-proxy-for-ope
 
 # Which model does each seat run, and what happens when it can't be reached?
 
+Resolving this updates [Autonomous implementation and revision](../../../docs/capabilities/06-autonomous-implementation.md), [Code review](../../../docs/capabilities/09-code-review.md).
+
 ## Question
 
 The provisional answer is ein on GPT-5.6 Sol at high effort, jet on the same at medium, faye on GLM 5.2

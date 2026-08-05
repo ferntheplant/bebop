@@ -5,6 +5,8 @@ status: open
 
 # Should `BEBOP_LOCAL_HARNESS_ROOT` be impossible in production rather than merely warned about?
 
+Resolving this updates [Provisioning and attachment](../../../docs/capabilities/02-provisioning-and-attachment.md).
+
 ## Question
 
 `BEBOP_LOCAL_HARNESS_ROOT` is an optional key on the real `BebopConfigBase` schema, read by the real

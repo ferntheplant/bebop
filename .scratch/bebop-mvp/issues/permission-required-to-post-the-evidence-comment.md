@@ -5,6 +5,8 @@ status: open
 
 # Which permission posts the evidence comment — `issues: write`, or does `pull_requests: write` suffice?
 
+Resolving this updates [Pull request and merge](../../../docs/capabilities/12-pull-request-and-merge.md).
+
 ## Question
 
 [Ticket 12](./github-app-permissions-and-branch-protection.md) settled the minimum permission set against a

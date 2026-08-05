@@ -90,6 +90,17 @@ already sharp enough to be an issue. A bug report should carry a high-level repr
 
 **Issue** — the question in the body, and the answer appended under `## Answer` on resolution.
 
+An issue or brief whose resolution would invalidate a capability doc says so directly under its title:
+
+```markdown
+Resolving this updates [Provisioning and attachment](../../../docs/capabilities/02-provisioning-and-attachment.md).
+```
+
+The pointer runs this way deliberately. A capability listing its open questions would have to link back into
+`.scratch/`, and the person who needs the reminder is whoever picks the ticket up — not whoever reads the
+capability. This is the one direction that stays inside the rule above, because it points out of the tracker
+rather than into it.
+
 ```yaml
 ---
 type: grilling # research | prototype | grilling | task

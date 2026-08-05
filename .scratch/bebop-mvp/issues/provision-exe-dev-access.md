@@ -5,6 +5,8 @@ status: open
 
 # Provision exe.dev access and record where its credentials live
 
+Resolving this updates [Provisioning and attachment](../../../docs/capabilities/02-provisioning-and-attachment.md).
+
 ## Question
 
 Nothing about exe.dev can be judged without an account, an API key, and at least one VM that can actually be

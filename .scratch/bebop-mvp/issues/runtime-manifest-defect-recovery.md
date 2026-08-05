@@ -6,6 +6,8 @@ blocked-by: [opencode-version-pin-and-upgrade-qualification]
 
 # What happens when bebop declares a bounty's runtime manifest defective?
 
+Resolving this updates [Recovery and reliability](../../../docs/capabilities/13-recovery-and-reliability.md).
+
 ## Question
 
 A runtime manifest binds a bounty execution environment to an exact VM image and Swordfish release. OpenCode is

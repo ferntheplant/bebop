@@ -6,6 +6,8 @@ blocked-by: [operator-credential-retrieval-and-enforcement]
 
 # What does the cockpit tell an operator to do once `sf takeover` demands a credential?
 
+Resolving this updates [The cockpit](../../../docs/capabilities/03-the-cockpit.md), [Control lease and takeover](../../../docs/capabilities/05-control-lease-and-takeover.md).
+
 ## Question
 
 [The cockpit](../../../docs/capabilities/03-the-cockpit.md) promises that "while Swordfish controls the active

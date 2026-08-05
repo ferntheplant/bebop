@@ -5,6 +5,8 @@ status: open
 
 # Which findings block, and where do the ones that don't block surface?
 
+Resolving this updates [Code review](../../../docs/capabilities/09-code-review.md).
+
 ## Question
 
 Only `blocking` blocks, and non-blocking findings are provisionally destined for the evidence bundle plus a PR

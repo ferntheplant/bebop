@@ -5,6 +5,8 @@ status: open
 
 # Retrieve the operator credential and enforce it on mutating `sf` commands
 
+Resolving this updates [Control lease and takeover](../../../docs/capabilities/05-control-lease-and-takeover.md).
+
 ## Question
 
 This is the second half of operator authentication and the direct continuation of the credential plumbing that

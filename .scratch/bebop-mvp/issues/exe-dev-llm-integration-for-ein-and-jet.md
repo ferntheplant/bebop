@@ -6,6 +6,8 @@ blocked-by: [provision-exe-dev-access]
 
 # Can the exe.dev LLM integration serve ein and jet through the connected ChatGPT subscription?
 
+Resolving this updates [Provisioning and attachment](../../../docs/capabilities/02-provisioning-and-attachment.md).
+
 ## Question
 
 The design assumes ein and jet reach a frontier model through exe.dev's LLM integration, using its OpenAI strategy against a connected ChatGPT subscription, with no reusable API key ever

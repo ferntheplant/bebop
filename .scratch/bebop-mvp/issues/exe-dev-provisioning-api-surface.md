@@ -6,6 +6,8 @@ blocked-by: [provision-exe-dev-access]
 
 # What does exe.dev's provisioning API actually offer, and where does it fail?
 
+Resolving this updates [Provisioning and attachment](../../../docs/capabilities/02-provisioning-and-attachment.md).
+
 ## Question
 
 Bebop's `LifecycleProvider` is currently a fake that creates deterministic local records

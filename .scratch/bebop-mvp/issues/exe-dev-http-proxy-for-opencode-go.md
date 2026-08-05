@@ -6,6 +6,8 @@ blocked-by: [provision-exe-dev-access]
 
 # Can the exe.dev HTTP Proxy serve OpenCode Go to faye with an injected credential?
 
+Resolving this updates [Provisioning and attachment](../../../docs/capabilities/02-provisioning-and-attachment.md), [QA](../../../docs/capabilities/10-qa.md), [The security model](../../../docs/capabilities/14-the-security-model.md).
+
 ## Question
 
 faye's model is planned to arrive through exe.dev's generic HTTP Proxy integration, which injects an

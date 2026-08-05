@@ -6,6 +6,8 @@ blocked-by: [finding-severities-and-where-they-surface]
 
 # Where does evidence surface, and what does a human actually read?
 
+Resolving this updates [Evidence](../../../docs/capabilities/11-evidence.md).
+
 ## Question
 
 Evidence lands in a content-addressed store

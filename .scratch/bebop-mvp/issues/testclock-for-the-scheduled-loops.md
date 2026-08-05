@@ -5,6 +5,8 @@ status: open
 
 # Should the scheduled Effect loops be virtualized with `TestClock`?
 
+Resolving this updates [Recovery and reliability](../../../docs/capabilities/13-recovery-and-reliability.md).
+
 ## Question
 
 The component suites use real wall-clock waits for what are really Effect `Schedule` loops. `TestClock` is the

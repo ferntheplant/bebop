@@ -6,6 +6,8 @@ blocked-by: [exe-dev-http-proxy-for-opencode-go]
 
 # What proves QA ran against the candidate, in a clean environment?
 
+Resolving this updates [QA](../../../docs/capabilities/10-qa.md).
+
 ## Question
 
 faye is supposed to verify acceptance criteria against the exact candidate SHA in a clean environment, with

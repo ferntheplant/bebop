@@ -33,3 +33,35 @@ loop. Postgres readiness was ruled out — `createDisposableDatabase` runs `CREA
 connection before the fleet starts, so the server was answering queries.
 
 Triage after the diagnostics land, not before — the fix depends on what the worker's output says.
+
+## Investigation outcome (2026-08-05)
+
+The prime suspect was correct, but the claimed lock covered less than the comment said.
+
+A focused packed-process probe started eight API/worker pairs concurrently, each against a fresh disposable
+database. It reproduced the exact CI symptom in 1.35 seconds: the API reached health and a worker exited 1. Its
+captured output was:
+
+```
+effect/sql/SqlError/UniqueViolation: Failed to execute statement
+duplicate key value violates unique constraint "pg_type_typname_nsp_index"
+Key (typname, typnamespace)=(effect_sql_migrations, 2200) already exists.
+```
+
+The Effect migrator creates `effect_sql_migrations` before opening its migration transaction. Only inside that
+transaction does it take `LOCK TABLE effect_sql_migrations IN ACCESS EXCLUSIVE MODE`. On a fresh database, two
+callers can therefore both observe the table as absent and issue `CREATE TABLE`; the table lock cannot protect a
+table that does not exist yet. The losing `CREATE TABLE` reports PostgreSQL `23505` from `pg_type`, before the
+migrator's loser handling is active.
+
+The minimized regression test calls `migrateDatabase` concurrently through two independent PostgreSQL clients.
+It fails deterministically in about 0.4 seconds before the fix with the same catalog violation.
+
+The fix bootstraps `effect_sql_migrations` inside a transaction guarded by
+`pg_advisory_xact_lock(hashtext('bebop-database-migrations'))`. Once that transaction commits, Effect's existing
+table lock correctly serializes the actual migrations. The regression requires one caller to apply the migration
+and the other to return an empty applied set. The local-system exit assertions now include each process's captured
+output as a diagnostic as well.
+
+After the fix, the focused regression passed repeatedly, the original eight-pair packed-process stress probe
+passed, and database-backed `vp run ready` passed all 405 tests plus checks and packed-artifact smokes.

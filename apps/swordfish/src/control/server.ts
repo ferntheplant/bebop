@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { chmod, lstat, mkdir, realpath, rm } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { basename, dirname, join } from "node:path";
@@ -19,7 +19,7 @@ import {
   UnsupportedSfControlVersionError,
 } from "@bebop/contracts";
 import * as BunSocketServer from "@effect/platform-bun/BunSocketServer";
-import { Data, Deferred, Duration, Effect, Fiber, Schema } from "effect";
+import { Data, Deferred, Duration, Effect, Fiber, Redacted, Schema } from "effect";
 import { Socket, SocketServer } from "effect/unstable/socket";
 
 import { SwordfishConfiguration } from "#src/config.ts";
@@ -28,6 +28,20 @@ import { WorkflowService } from "#src/workflow/service.ts";
 import { commandMessage } from "#src/workflow/service.ts";
 
 const maxControlFrameLength = 262_144;
+
+/**
+ * Whether a presented credential verifies against the daemon's stored digest.
+ *
+ * The digests are compared in constant time: the credential is something a cowboy might be
+ * provoked into guessing, and the socket is local to a VM where a hostile same-uid process is
+ * already outside the model ("Workflow actions have role-aware adapters" (ADR 0038)) — so a
+ * timing signal must not be the thing that leaks.
+ */
+function verifiesOperatorCredential(verifier: string, presented: string): boolean {
+  const digest = createHash("sha256").update(presented).digest();
+  // The verifier schema pins this to 32 bytes, so the buffers always match in length.
+  return timingSafeEqual(digest, Buffer.from(verifier, "hex"));
+}
 
 export class ControlSocketSetupError extends Data.TaggedError("ControlSocketSetupError")<{
   readonly path: string;
@@ -180,6 +194,19 @@ const handleRequest = Effect.fnUntraced(function* (request: SfControlRequest) {
       correlationId: request.correlationId,
       result: { command: request.command, snapshot: yield* workflow.status },
     } satisfies SfControlResponse;
+  }
+
+  // Every command below mutates or grants access, so it demands the operator credential
+  // ("Workflow actions have role-aware adapters" (ADR 0038)). `status` is exempt above so a
+  // cockpit can keep observing without one. A daemon without a provisioned verifier cannot
+  // enforce and does not — production provisioning always injects one, so this is only the
+  // test-harness path.
+  const verifier = config.operatorCredentialVerifier;
+  if (verifier !== undefined) {
+    const presented = request.operatorCredential === undefined ? null : Redacted.value(request.operatorCredential);
+    if (presented === null || !verifiesOperatorCredential(verifier, presented)) {
+      return responseError(request, "unauthorized", "Mutating this bounty requires a valid operator credential.");
+    }
   }
 
   let command: BebopCommand;

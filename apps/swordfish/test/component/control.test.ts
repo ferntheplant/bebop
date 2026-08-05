@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmod, link, lstat, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { basename, dirname, join } from "node:path";
@@ -31,6 +32,20 @@ function controlRequest(correlationId: string, command: SfControlCommand): SfCon
     type: "request",
     controlVersion: currentSfControlVersion,
     correlationId,
+    command,
+  });
+}
+
+function controlRequestWithCredential(
+  correlationId: string,
+  command: SfControlCommand,
+  credential: string,
+): SfControlRequest {
+  return Schema.decodeUnknownSync(SfControlRequest)({
+    type: "request",
+    controlVersion: currentSfControlVersion,
+    correlationId,
+    operatorCredential: credential,
     command,
   });
 }
@@ -208,6 +223,47 @@ describe("Swordfish local control", () => {
       await serveOnce((encoded) => {
         (encoded["result"] as Record<string, unknown>)["command"] = { type: "cancel" };
       });
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+    }
+  });
+
+  test("enforces the operator credential on mutating commands when one is provisioned", async () => {
+    const credential = "bebop_op_component-credential";
+    const verifier = createHash("sha256").update(credential).digest("hex");
+    harness = await startSwordfishHarness("credential-enforcement", { operatorCredentialVerifier: verifier });
+    const fiber = harness.fork(runControlSocket);
+    try {
+      await waitForSocket(harness.config.controlSocketPath);
+      const socketPath = harness.config.controlSocketPath;
+      const send = (correlationId: string, command: SfControlCommand, presented?: string): Promise<SfControlResponse> =>
+        Effect.runPromise(
+          requestControl(
+            socketPath,
+            presented === undefined
+              ? controlRequest(correlationId, command)
+              : controlRequestWithCredential(correlationId, command, presented),
+          ).pipe(Effect.scoped),
+        );
+
+      // Observation never needs the credential, so a cockpit can keep reading status.
+      const status = await send("sf-auth-status", { type: "status" });
+      expect(status.type).toBe("success");
+
+      // A mutating command without one is refused as unauthorized, not a misleading per-command error.
+      const missing = await send("sf-auth-missing", { type: "cancel" });
+      expect(missing.type).toBe("error");
+      if (missing.type === "error") expect(missing.error.code).toBe("unauthorized");
+
+      // A wrong credential is refused the same way, so nothing about the guess leaks.
+      const wrong = await send("sf-auth-wrong", { type: "cancel" }, "bebop_op_wrong");
+      expect(wrong.type).toBe("error");
+      if (wrong.type === "error") expect(wrong.error.code).toBe("unauthorized");
+
+      // The right credential is accepted, and the mutating command actually applies.
+      const accepted = await send("sf-auth-right", { type: "cancel" }, credential);
+      expect(accepted.type).toBe("success");
+      if (accepted.type === "success") expect(accepted.result.snapshot.stage).toBe("cancelled");
     } finally {
       await Effect.runPromise(Fiber.interrupt(fiber));
     }

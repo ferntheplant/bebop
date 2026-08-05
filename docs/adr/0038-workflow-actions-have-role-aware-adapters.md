@@ -31,6 +31,12 @@ suspected leak is destroying the bounty's VM, which the operator can already do.
 `hashSwordfishToken` — there is no dictionary to precompute, so salting and key stretching would add ceremony
 and cost the determinism that keeps provisioning retries stable.
 
+Retrieval emits no event on the bounty's stream. It changes no workflow state — the credential was already valid
+from provisioning, so there is nothing for a projection to record — and the route's bearer-token authentication
+plus its request-ID logging already record who retrieved it. A retrieval event would be noise on every client's
+timeline and still a partial audit, because the local `sf` commands that spend the credential run on the VM and
+are invisible to Bebop. The record of operator authority is the authenticated retrieval, not the stream.
+
 ## Consequences
 
 Workflow actions are named by intent (`set-spec`, `candidate-ready`, `continue`, `set-blocked`,

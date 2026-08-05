@@ -22,6 +22,7 @@ import {
   unprocessable,
 } from "#src/api/errors.ts";
 import { bountyEventStream } from "#src/api/event-stream.ts";
+import { BebopConfiguration } from "#src/config.ts";
 import { Identity } from "#src/domain/identity.ts";
 import { BountyRepository } from "#src/persistence/bounties.ts";
 import { CommandRepository } from "#src/persistence/commands.ts";
@@ -35,6 +36,7 @@ import {
   requireBounty,
   transitionLifecycle,
 } from "#src/service/bounties.ts";
+import { operatorCredentialForBounty } from "#src/swordfish-gateway/credentials.ts";
 
 /**
  * Queues a Bebop command for Swordfish.
@@ -131,6 +133,23 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
         Effect.as({ bundles: [] as ReadonlyArray<never> }),
         Effect.catch(failBountyRead),
       ),
+    )
+
+    .handle("getOperatorCredential", ({ params }) =>
+      Effect.gen(function* () {
+        const config = yield* BebopConfiguration;
+        const bounties = yield* BountyRepository;
+        const bounty = yield* requireBounty(params.bountyId);
+        // The credential dies with the VM ("Workflow actions have role-aware adapters" (ADR
+        // 0038)), so a bounty with no live computer has no operator to retrieve one for. 404
+        // rather than a conflict, exactly as `getBountyAttachments` treats the same case.
+        const attachment = yield* bounties.attachment(bounty.bountyId);
+        if (attachment === null || attachment.destroyedAt !== undefined) {
+          return yield* Effect.fail({ _tag: "BountyNotFound" as const, bountyId: params.bountyId });
+        }
+        // Re-derived rather than read: the plaintext exists in this response and nowhere else.
+        return { operatorCredential: operatorCredentialForBounty(config.swordfishCredentialKey, bounty.bountyId) };
+      }).pipe(Effect.catch(failBountyRead)),
     )
 
     .handle("approveConfig", ({ params, payload }) =>

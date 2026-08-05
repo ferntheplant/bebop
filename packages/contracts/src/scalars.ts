@@ -70,6 +70,19 @@ export const ApiTokenSecret = Schema.String.pipe(
 );
 export type ApiTokenSecret = typeof ApiTokenSecret.Type;
 
+/**
+ * The per-bounty operator credential a human presents at the `sf` prompt.
+ *
+ * Like `ApiTokenSecret`, it is a string that starts with a recognisable prefix and is
+ * constrained only to be a sane length — the interesting shape is the verifier Swordfish
+ * stores, not the plaintext ("Workflow actions have role-aware adapters" (ADR 0038)).
+ */
+export const OperatorCredential = Schema.String.pipe(
+  Schema.check(Schema.isMinLength(1), Schema.isMaxLength(schemaLimits.apiTokenSecretMaxLength), Schema.isTrimmed()),
+  Schema.brand("OperatorCredential"),
+);
+export type OperatorCredential = typeof OperatorCredential.Type;
+
 export const ConnectionId = SafeIdentifier.pipe(Schema.brand("ConnectionId"));
 export type ConnectionId = typeof ConnectionId.Type;
 

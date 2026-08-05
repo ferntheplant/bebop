@@ -256,6 +256,23 @@ async function stopBounty(
   return JSON.parse(outcome.stdout) as { status: string };
 }
 
+/**
+ * Retrieves the operator credential through the packed `bebop` CLI.
+ *
+ * This is the retrieval route's end-to-end coverage through a real entrypoint: the CLI
+ * derives the credential on the server and prints the plaintext, and the harness feeds it to
+ * `sf cancel` over stdin exactly as a human would (`docs/capabilities/05-control-lease-and-takeover.md`).
+ */
+async function operatorCredential(fleet: LocalFleet, bebop: BebopEnv, bountyId: string): Promise<string> {
+  const outcome = await fleet.run(
+    join(repositoryRoot, "apps/bebop/dist/cli.mjs"),
+    ["bounty", "operator-credential", "--bounty", bountyId, "--url", bebop.baseUrl, "--token", apiToken, "--json"],
+    { timeoutMs: 15_000 },
+  );
+  assert(outcome.exitCode === 0, `bebop operator-credential failed: ${outcome.stderr}${outcome.stdout}`);
+  return (JSON.parse(outcome.stdout) as { operatorCredential: string }).operatorCredential;
+}
+
 async function waitForAttachment(bebop: BebopEnv, bountyId: string): Promise<unknown> {
   return await waitFor("fake lifecycle attachment", async () => {
     try {
@@ -337,9 +354,8 @@ async function superviseBounty(fleet: LocalFleet, bebop: BebopEnv, bountyId: str
       SWORDFISH_RECONNECT_MINIMUM_DELAY: "50 millis",
       SWORDFISH_RECONNECT_MAXIMUM_DELAY: "500 millis",
       SWORDFISH_SHUTDOWN_TIMEOUT: "2 seconds",
-      // Provisioned but not yet enforced: the daemon accepts the verifier and does nothing
-      // with it until the retrieval route lands.
-      // Passing it now proves the injection path works before anything depends on it.
+      // The daemon verifies every mutating `sf` command against this digest; the plaintext
+      // comes back through the retrieval CLI below, never through provisioning.
       SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: identity.operatorCredentialVerifier,
     },
   };
@@ -494,11 +510,14 @@ suite("local system harness", () => {
       );
       await waitForWorkflowEventCount(baseUrl, created.bountyId, "stage_changed:interactive", 1);
 
-      // local sf cancel projects cancelled while the daemon remains available.
+      // local sf cancel projects cancelled while the daemon remains available. The credential
+      // travels from Bebop's derivation through the retrieval CLI and into the daemon over the
+      // socket; the harness never derives it test-side.
+      const credential = await operatorCredential(fleet, bebop, created.bountyId);
       const cancelled = await fleet.run(
         join(repositoryRoot, "apps/swordfish/dist/cli.mjs"),
         ["cancel", "--socket", fixture.socketPath, "--json"],
-        { timeoutMs: 5_000 },
+        { timeoutMs: 5_000, stdin: `${credential}\n` },
       );
       assert(cancelled.exitCode === 0, `sf cancel failed: ${cancelled.stderr}${cancelled.stdout}`);
       expect((JSON.parse(cancelled.stdout) as SfStatus).stage).toBe("cancelled");

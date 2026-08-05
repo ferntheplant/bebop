@@ -25,6 +25,7 @@ import {
   GitSha,
   HttpsUrl,
   IdempotencyKey,
+  OperatorCredential,
   RepositorySlug,
   SpecRevision,
   Timestamp,
@@ -125,6 +126,20 @@ export const ApproveConfigRequest = Schema.Struct({ candidateSha: GitSha });
 export const MergeBountyRequest = Schema.Struct({ expectedHeadSha: GitSha });
 export const StopBountyRequest = Schema.Struct({ reason: Schema.optionalKey(Message) });
 export const BountyActionResponse = BountyDetail.pipe(HttpApiSchema.status("Accepted"));
+
+/**
+ * The only response that carries the operator credential plaintext.
+ *
+ * Bebop derives the credential rather than storing it (`apps/bebop/src/swordfish-gateway/credentials.ts`),
+ * so this response is where it crosses a transport boundary for the one route that is meant to hand it to a
+ * human at the `sf` prompt ("Workflow actions have role-aware adapters" (ADR 0038)). `RedactedFromValue`
+ * rather than `Redacted`, because the wire form is a plain string — the same shape `CreateTokenResponse.secret`
+ * uses.
+ */
+export const OperatorCredentialResponse = Schema.Struct({
+  operatorCredential: Schema.RedactedFromValue(OperatorCredential, { label: "operator-credential" }),
+});
+export type OperatorCredentialResponse = typeof OperatorCredentialResponse.Type;
 export const HealthResponse = Schema.Struct({ status: Schema.Literal("ok"), checkedAt: Timestamp });
 
 function errorSchema<const Code extends string>(code: Code, status: HttpApiSchema.StatusLiteral) {
@@ -229,6 +244,11 @@ export const GetBountyEvidenceEndpoint = HttpApiEndpoint.get("getBountyEvidence"
   success: BountyEvidenceResponse,
   error: bountyErrors,
 });
+export const GetOperatorCredentialEndpoint = HttpApiEndpoint.post(
+  "getOperatorCredential",
+  "/api/bounties/:bountyId/operator-credential",
+  { params: { bountyId: BountyId }, success: OperatorCredentialResponse, error: bountyErrors },
+);
 export const ApproveConfigEndpoint = HttpApiEndpoint.post("approveConfig", "/api/bounties/:bountyId/approve-config", {
   params: { bountyId: BountyId },
   payload: ApproveConfigRequest,
@@ -319,6 +339,7 @@ export const BountiesApiGroup = HttpApiGroup.make("bounties")
     StreamBountyEventsEndpoint,
     GetBountyAttachmentsEndpoint,
     GetBountyEvidenceEndpoint,
+    GetOperatorCredentialEndpoint,
     ApproveConfigEndpoint,
     MergeBountyEndpoint,
     StopBountyEndpoint,

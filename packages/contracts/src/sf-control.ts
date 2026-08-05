@@ -11,6 +11,7 @@ import {
   GitRef,
   GitSha,
   NonNegativeInteger,
+  OperatorCredential,
   ProducedEventSequence,
   RepositorySlug,
   SeatId,
@@ -31,7 +32,7 @@ import {
   SwordfishStage,
 } from "./workflow.ts";
 
-export const currentSfControlVersion = 1 as const;
+export const currentSfControlVersion = 2 as const;
 export const SfControlVersion = Schema.Literal(currentSfControlVersion);
 export type SfControlVersion = typeof SfControlVersion.Type;
 
@@ -53,6 +54,17 @@ export const SfControlRequest = Schema.Struct({
   type: Schema.Literal("request"),
   controlVersion: SfControlVersion,
   correlationId: CorrelationId,
+  /**
+   * The operator credential, presented only for mutating commands.
+   *
+   * `status` never carries it. `RedactedFromValue` rather than `Redacted` so the wire form is
+   * a plain string: `Redacted` expects the *encoded* side to already be a `Redacted` value,
+   * which nothing over the socket can produce ("Workflow actions have role-aware adapters"
+   * (ADR 0038)).
+   */
+  operatorCredential: Schema.optionalKey(
+    Schema.RedactedFromValue(OperatorCredential, { label: "operator-credential" }),
+  ),
   command: SfControlCommand,
 });
 export type SfControlRequest = typeof SfControlRequest.Type;
@@ -373,6 +385,9 @@ export const sfControlErrorCodes = [
   // commands are gone: `continue`, `rerun`, and `resume` are refused for the same reason — the outstanding
   // attention does not permit the verb, or there is nothing outstanding to resolve.
   "recovery_not_available",
+  // A mutating command arrived without a credential that verifies against the daemon's provisioned verifier.
+  // `status` is exempt, so observation never needs one ("Workflow actions have role-aware adapters" (ADR 0038)).
+  "unauthorized",
   "bebop_unavailable",
   "internal_error",
 ] as const;

@@ -1,8 +1,11 @@
 #!/usr/bin/env bun
 
+import { createInterface } from "node:readline";
+
 import type { SfBudgetSnapshot, SfControlCommand, SfControlRequest, SfStatusSnapshot } from "@bebop/contracts";
 import {
   currentSfControlVersion,
+  OperatorCredential,
   rerunTargets,
   SfControlRequest as SfControlRequestSchema,
   SfStatusSnapshot as SfStatusSnapshotSchema,
@@ -17,6 +20,68 @@ import { requestControl } from "#src/control/client.ts";
 import { SwordfishIdentity, SwordfishIdentityLayer } from "#src/domain/identity.ts";
 
 export const swordfishCliName = "sf";
+
+/**
+ * A failed operator-credential prompt.
+ *
+ * A typed domain failure rather than a schema defect: empty input, a closed stdin, or a value
+ * that does not look like a credential are the operator's to fix, not crashes
+ * ("Workflow actions have role-aware adapters" (ADR 0038)).
+ */
+export class OperatorCredentialPromptError extends Error {
+  readonly _tag = "OperatorCredentialPromptError";
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "OperatorCredentialPromptError";
+  }
+}
+
+const promptOperatorCredential = Effect.callback<OperatorCredential, OperatorCredentialPromptError>((resume) => {
+  // `readline` has no hidden-input mode: it echoes through an internal `_writeToOutput`, and
+  // suppressing that is what conceals the typing. The method is undocumented, so it is only
+  // reached on a real terminal — a piped stdin never depends on it.
+  const isTerminal = process.stdin.isTTY === true;
+  const input = createInterface({ input: process.stdin, output: process.stdout, terminal: isTerminal });
+  let muted = false;
+  if (isTerminal) {
+    const muter = input as unknown as { _writeToOutput: (data: string) => void };
+    const original = muter._writeToOutput.bind(muter);
+    muter._writeToOutput = (data: string) => {
+      if (!muted) original(data);
+    };
+  }
+  let finished = false;
+  const finish = (outcome: Effect.Effect<OperatorCredential, OperatorCredentialPromptError>) => {
+    if (finished) return;
+    finished = true;
+    resume(outcome);
+  };
+  // The prompt goes to stderr so a `--json` invocation's stdout stays machine-readable.
+  process.stderr.write("operator credential: ");
+  muted = true;
+  input.question("", (answer) => {
+    // Finish before `input.close()`: closing synchronously emits `close`, and the close
+    // handler below would otherwise win the race and report a failure for a delivered answer.
+    if (answer.length === 0) {
+      // Pressing Enter yields `""`, which is not `undefined` — letting it reach the schema
+      // would fail it inside `decodeUnknownSync`, a defect with a stack trace. Reject it
+      // here, as a typed domain failure.
+      finish(Effect.fail(new OperatorCredentialPromptError("The operator credential cannot be empty.")));
+    } else {
+      try {
+        finish(Effect.succeed(Schema.decodeUnknownSync(OperatorCredential)(answer)));
+      } catch (cause) {
+        finish(Effect.fail(new OperatorCredentialPromptError("The operator credential is not valid.", { cause })));
+      }
+    }
+    input.close();
+  });
+  input.on("close", () => {
+    // A closed stdin before an answer must fail rather than hang.
+    finish(Effect.fail(new OperatorCredentialPromptError("The operator credential input closed before an answer.")));
+  });
+});
 
 const socket = Flag.string("socket").pipe(
   Flag.withDescription("The Swordfish control socket. Defaults to $SWORDFISH_CONTROL_SOCKET_PATH."),
@@ -127,10 +192,14 @@ const execute = Effect.fnUntraced(function* (options: {
   yield* rejectTrailingArguments(options.command);
   const identity = yield* SwordfishIdentity;
   const path = yield* loadSocketPath(options.socket);
+  // Only `status` is exempt; every other command is a mutation or a grant, and proving the
+  // person at the prompt also holds Bebop access is what the operator credential is for.
+  const credential = options.command.type === "status" ? undefined : yield* promptOperatorCredential;
   const request = Schema.decodeUnknownSync(SfControlRequestSchema)({
     type: "request",
     controlVersion: currentSfControlVersion,
     correlationId: yield* identity.correlationId,
+    ...(credential === undefined ? {} : { operatorCredential: credential }),
     command: options.command,
   }) as SfControlRequest;
   const response = yield* requestControl(path, request).pipe(Effect.scoped);

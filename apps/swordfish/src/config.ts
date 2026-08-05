@@ -35,11 +35,8 @@ const WebSocketUrl = Schema.URL.pipe(
  *
  * Swordfish stores only this. The plaintext is derived by Bebop, retrieved through an
  * authenticated Bebop client, and entered at a hidden prompt; it is never provisioned,
- * logged, or persisted ("Workflow actions have role-aware adapters" (ADR 0038)).
- *
- * Nothing reads it yet — enforcement arrives with the retrieval route it depends on, because a
- * daemon that refuses every mutation before a human can obtain the credential is worse than
- * one that refuses none.
+ * logged, or persisted ("Workflow actions have role-aware adapters" (ADR 0038)). The control
+ * server refuses every mutating command without a credential that verifies against it.
  */
 export const OperatorCredentialVerifier = Schema.String.pipe(
   Schema.check(

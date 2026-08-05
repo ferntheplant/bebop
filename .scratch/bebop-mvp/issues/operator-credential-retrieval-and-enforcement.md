@@ -1,6 +1,6 @@
 ---
 type: task
-status: open
+status: resolved
 ---
 
 # Retrieve the operator credential and enforce it on mutating `sf` commands
@@ -103,5 +103,40 @@ typed failure. Reject it at the prompt.
 - Whether retrieval emits an audit event on the bounty's stream. It is the only record of who took operator
   authority, and the event stream is where this repo puts durable facts — but it is also noise on a stream
   clients render. Decide when building.
+
+## Answer
+
+Resolved in one change, matching the "usable the moment it is enforced" framing:
+
+- **Retrieval.** `POST /api/bounties/:bountyId/operator-credential` re-derives the credential from
+  `BEBOP_SWORDFISH_CREDENTIAL_KEY` and returns it as `{ operatorCredential }`, declared
+  `Schema.RedactedFromValue` with the matching `label` so the response encodes and a log interpolation cannot
+  print it. The route 404s unless the bounty has a live attachment — the credential dies with the VM (ADR 0038) —
+  mirroring `getBountyAttachments`. `bebop bounty operator-credential --bounty <id>` is the thin CLI adapter; its
+  human output is the plaintext, and `--json` re-encodes the response through its own schema.
+- **Wire field.** `SfControlRequest.operatorCredential`, optional and `RedactedFromValue`, ships with the control
+  protocol at **version 2**, so a v1 client gets `unsupported_version` rather than a misleading per-command error.
+- **Enforcement.** The control server refuses every command other than `status` without a credential whose
+  SHA-256 digest matches the provisioned verifier, answered `unauthorized` with a constant-time comparison. A
+  daemon without a provisioned verifier cannot enforce and does not — production provisioning always injects one;
+  only the test harnesses run without it.
+- **The prompt.** `sf` asks for the credential at a hidden readline prompt on every mutating command. Empty input
+  and a closed stdin are typed domain failures, not schema defects; the prompt goes to stderr so `--json` stdout
+  stays machine-readable. `echo "$CRED" | sf cancel` is a supported noninteractive path — the credential never
+  appears in argv, env, or a config file.
+- **Harness coverage.** The local system harness retrieves the plaintext through the packed `bebop` CLI and feeds
+  it to `sf cancel` over stdin, exercising the full route through real entrypoints; the daemon's verifier is the
+  one the bootstrap artifact carried. The control component suite covers missing, wrong, and correct credentials
+  against a provisioned verifier; the entrypoint and smoke suites drive `sf cancel` over a pipe.
+- **The audit-event question: no event.** Retrieval changes no bounty state — the credential was already valid
+  from provisioning — so there is nothing for a projection to record, and the route's bearer-token authentication
+  plus request-ID logs already record who retrieved it. A public event would be noise on every client's timeline
+  and still a partial record: the local `sf` commands that _use_ the credential run on the VM, invisible to Bebop,
+  so the stream would overstate how complete the audit is. The record of operator authority is the token auth,
+  not an event. Recorded in
+  [Workflow actions have role-aware adapters (ADR 0038)](../../../docs/adr/0038-workflow-actions-have-role-aware-adapters.md).
+
+`docs/capabilities/01`, `05`, `13`, and `14` and the README were corrected where they described the narrower
+intent.
 
 Blocks [cockpit guidance for operator-authenticated commands](./cockpit-guidance-for-operator-authenticated-commands.md).

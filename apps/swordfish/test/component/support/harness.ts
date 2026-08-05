@@ -22,7 +22,14 @@ export interface SwordfishHarness {
   readonly close: () => Promise<void>;
 }
 
-async function harnessConfig(root: string, options?: { bebopWebSocketUrl?: string; databasePath?: string }) {
+async function harnessConfig(
+  root: string,
+  options?: {
+    readonly bebopWebSocketUrl?: string;
+    readonly databasePath?: string;
+    readonly operatorCredentialVerifier?: string;
+  },
+) {
   const paths = {
     databasePath: options?.databasePath ?? join(root, "state", "swordfish.sqlite"),
     controlSocketPath: join(root, "run", "control.sock"),
@@ -35,34 +42,38 @@ async function harnessConfig(root: string, options?: { bebopWebSocketUrl?: strin
     mkdir(paths.repositoryPath, { recursive: true }),
     mkdir(paths.artifactRoot, { recursive: true }),
   ]);
+  const environment: Record<string, string> = {
+    SWORDFISH_BOUNTY_ID: "bty-component",
+    SWORDFISH_VM_ID: "vm-component",
+    SWORDFISH_REPOSITORY: "withco/bebop",
+    SWORDFISH_ASSIGNED_BRANCH: "bounty/bty-component",
+    SWORDFISH_BEBOP_WEB_SOCKET_URL: options?.bebopWebSocketUrl ?? "ws://127.0.0.1:1/swordfish",
+    SWORDFISH_BEBOP_TOKEN: "component-token",
+    SWORDFISH_DATABASE_PATH: paths.databasePath,
+    SWORDFISH_CONTROL_SOCKET_PATH: paths.controlSocketPath,
+    SWORDFISH_REPOSITORY_PATH: paths.repositoryPath,
+    SWORDFISH_ARTIFACT_ROOT: paths.artifactRoot,
+    SWORDFISH_OPEN_CODE_BASE_URL: "http://127.0.0.1:4096/",
+    SWORDFISH_HEARTBEAT_INTERVAL: "50 millis",
+    SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
+    SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
+    SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
+  };
+  if (options?.operatorCredentialVerifier !== undefined) {
+    environment["SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER"] = options.operatorCredentialVerifier;
+  }
   return Effect.runPromise(
-    loadSwordfishConfig(
-      ConfigProvider.fromEnv({
-        env: {
-          SWORDFISH_BOUNTY_ID: "bty-component",
-          SWORDFISH_VM_ID: "vm-component",
-          SWORDFISH_REPOSITORY: "withco/bebop",
-          SWORDFISH_ASSIGNED_BRANCH: "bounty/bty-component",
-          SWORDFISH_BEBOP_WEB_SOCKET_URL: options?.bebopWebSocketUrl ?? "ws://127.0.0.1:1/swordfish",
-          SWORDFISH_BEBOP_TOKEN: "component-token",
-          SWORDFISH_DATABASE_PATH: paths.databasePath,
-          SWORDFISH_CONTROL_SOCKET_PATH: paths.controlSocketPath,
-          SWORDFISH_REPOSITORY_PATH: paths.repositoryPath,
-          SWORDFISH_ARTIFACT_ROOT: paths.artifactRoot,
-          SWORDFISH_OPEN_CODE_BASE_URL: "http://127.0.0.1:4096/",
-          SWORDFISH_HEARTBEAT_INTERVAL: "50 millis",
-          SWORDFISH_RECONNECT_MINIMUM_DELAY: "20 millis",
-          SWORDFISH_RECONNECT_MAXIMUM_DELAY: "100 millis",
-          SWORDFISH_SHUTDOWN_TIMEOUT: "1 second",
-        },
-      }).pipe(ConfigProvider.constantCase),
-    ),
+    loadSwordfishConfig(ConfigProvider.fromEnv({ env: environment }).pipe(ConfigProvider.constantCase)),
   );
 }
 
 export async function startSwordfishHarness(
   label: string,
-  options?: { readonly bebopWebSocketUrl?: string; readonly databasePath?: string },
+  options?: {
+    readonly bebopWebSocketUrl?: string;
+    readonly databasePath?: string;
+    readonly operatorCredentialVerifier?: string;
+  },
 ): Promise<SwordfishHarness> {
   const root = await mkdtemp(join(tmpdir(), `bebop-swordfish-${label}-`));
   const config = await harnessConfig(root, options);

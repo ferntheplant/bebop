@@ -35,7 +35,8 @@ merge.
 sequence gaps, conflicting replays, and stale-connection traffic are all rejected with reasons. Constraint
 exhaustion parks work as promised: the scoped ledger is real, Swordfish evaluates it on the heartbeat it already
 sends, and `continue`, `rerun <target>`, and `resume` are distinct local recoveries whose grants are durable events
-rather than counter edits. Their settled operator authentication is not built. Daemon downtime counts toward the
+rather than counter edits. Local mutations carry the derived operator credential, retrieved through the Bebop API.
+Daemon downtime counts toward the
 attempt that was running, because the running-since mark is in the durable snapshot rather than in a timer. The
 [real-process loopback prototype](../../prototypes/real-process-local-protocol/README.md) ran both packed peers
 against Postgres and SQLite: listener loss, API restart, daemon `SIGKILL`, event replay, and an offline stop all

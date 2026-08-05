@@ -10,8 +10,9 @@
 
 import { createHash, createHmac } from "node:crypto";
 
-import type { BountyId } from "@bebop/contracts";
-import { Redacted } from "effect";
+import type { BountyId, OperatorCredential } from "@bebop/contracts";
+import { OperatorCredential as OperatorCredentialSchema } from "@bebop/contracts";
+import { Redacted, Schema } from "effect";
 
 /** Distinguishes a leaked Swordfish credential from a leaked API token at a glance. */
 export const swordfishTokenPrefix = "bebop_sf_";
@@ -47,11 +48,14 @@ export const operatorCredentialPrefix = "bebop_op_";
 export function operatorCredentialForBounty(
   credentialKey: Redacted.Redacted<string>,
   bountyId: BountyId,
-): Redacted.Redacted<string> {
+): Redacted.Redacted<OperatorCredential> {
   const digest = createHmac("sha256", Redacted.value(credentialKey))
     .update(`bebop-operator:${bountyId}`)
     .digest("base64url");
-  return Redacted.make(`${operatorCredentialPrefix}${digest}`);
+  const credential = Schema.decodeUnknownSync(OperatorCredentialSchema)(`${operatorCredentialPrefix}${digest}`);
+  // The label matches the one `OperatorCredentialResponse` declares, so a `Redacted` produced
+  // here encodes onto the wire (`apps/bebop/src/api/handlers.ts`).
+  return Redacted.make(credential, { label: "operator-credential" });
 }
 
 /**

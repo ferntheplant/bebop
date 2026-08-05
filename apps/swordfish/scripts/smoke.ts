@@ -11,6 +11,7 @@ const cliEntrypoint = join(workspace, "dist", "cli.mjs");
 async function run(
   args: ReadonlyArray<string>,
   env: Readonly<Record<string, string>>,
+  options?: { readonly stdin?: string },
 ): Promise<{
   readonly code: number;
   readonly stdout: string;
@@ -20,7 +21,12 @@ async function run(
     env: { ...process.env, ...env },
     stdout: "pipe",
     stderr: "pipe",
+    ...(options?.stdin === undefined ? {} : { stdin: "pipe" }),
   });
+  if (options?.stdin !== undefined) {
+    void child.stdin.write(options.stdin);
+    void child.stdin.end();
+  }
   const [stdout, stderr, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -82,7 +88,10 @@ try {
   if (snapshot.stage !== "interactive" || snapshot.bebopConnection?.pendingEventCount !== 1) {
     throw new Error(`packed daemon returned an unexpected status: ${status.stdout}`);
   }
-  const cancel = await run(["cancel", "--socket", socketPath], env);
+  // The smoke daemon provisions no operator verifier, so it enforces nothing and accepts any
+  // credential — the input still has to arrive, because `sf cancel` always asks for one before
+  // a mutating command (ADR 0038).
+  const cancel = await run(["cancel", "--socket", socketPath], env, { stdin: "bebop_op_smoke\n" });
   if (cancel.code !== 0) throw new Error(`packed sf cancel failed: ${cancel.stderr}`);
   const cancelled = await run(["status", "--socket", socketPath, "--json"], env);
   if (cancelled.code !== 0 || (JSON.parse(cancelled.stdout) as { stage?: unknown }).stage !== "cancelled") {

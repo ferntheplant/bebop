@@ -43,6 +43,8 @@ function run(
     readonly env?: Readonly<Record<string, string>>;
     readonly unsetEnv?: ReadonlyArray<string>;
     readonly timeoutMs?: number;
+    /** Written to the child's stdin and closed, so a mutating `sf` command can be driven noninteractively. */
+    readonly stdin?: string;
   },
 ): Promise<Outcome> {
   return new Promise((resolve) => {
@@ -52,12 +54,16 @@ function run(
     }
     const child = spawn("bun", [entrypoint, ...args], {
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: options?.stdin === undefined ? (["ignore", "pipe", "pipe"] as const) : (["pipe", "pipe", "pipe"] as const),
     });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    if (child.stdout !== null) child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    if (child.stderr !== null) child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    if (options?.stdin !== undefined && child.stdin !== null) {
+      child.stdin.write(options.stdin);
+      child.stdin.end();
+    }
     let killed = false;
     const timer = setTimeout(() => {
       killed = true;
@@ -394,7 +400,12 @@ describe("process entrypoints", () => {
         recentEvents: [{ sequence: 1 }, { sequence: 2, event: { type: "attention_required" } }],
       });
 
-      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath]);
+      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath], {
+        // This daemon was provisioned with no operator verifier, so it enforces nothing and
+        // accepts any credential; the input still has to arrive, because the CLI always asks
+        // for one before a mutating command (ADR 0038).
+        stdin: "bebop_op_entrypoint-cancel\n",
+      });
       expect(cancelled.exitCode).toBe(0);
       await waitForCondition(() => receivedEvents.some((event) => event.sequence === 4), "local cancellation delivery");
       expect(receivedEvents.slice(-2)).toEqual([
@@ -531,7 +542,9 @@ describe("process entrypoints", () => {
       }, "the restarted process acknowledgement");
       expect(eventSequences).toEqual([1, 1]);
 
-      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath]);
+      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath], {
+        stdin: "bebop_op_entrypoint-cancel\n",
+      });
       expect(cancelled.exitCode).toBe(0);
       expect(daemon.child.exitCode).toBeNull();
     } finally {

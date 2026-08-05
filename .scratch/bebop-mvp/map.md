@@ -135,7 +135,7 @@ prototypes rather than tickets.
   machine credential travels from Bebop derivation through `LifecycleProvider.provision` into a one-shot bootstrap
   artifact the supervisor consumes and destroys, never through an operator retrieval route. The `bebop` CLI gained
   `bounty stop`. This is the floor the OpenCode driver now consumes.
-- **The operator credential is derived and provisioned; enforcing it is the next ticket.**
+- **The operator credential is derived, provisioned, retrievable, and enforced.**
   [Workflow actions have role-aware adapters (ADR 0038)](../../docs/adr/0038-workflow-actions-have-role-aware-adapters.md)
   was amended on three points a grilling session settled: the credential stops a _confused_ cowboy and explicitly
   not a compromised one, since a hostile same-uid process inside the VM is already outside
@@ -143,11 +143,14 @@ prototypes rather than tickets.
   deterministically and never rotates, matching
   [Swordfish tokens are bounty-scoped (ADR 0014)](../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md);
   and the verifier is a plain SHA-256 digest, because a 256-bit derived secret has no dictionary to precompute
-  and salting would cost the determinism that keeps provisioning retries stable. Bebop now derives both
-  credentials in one place and the provider injects both. Nothing enforces the credential yet, deliberately:
-  refusing every mutation before a human can obtain one would be worse than refusing none. The next work is
-  [Retrieve the operator credential and enforce it on mutating `sf` commands](./issues/operator-credential-retrieval-and-enforcement.md) — retrieval route, wire field,
-  enforcement, and prompt, in one change.
+  and salting would cost the determinism that keeps provisioning retries stable. Bebop derives both
+  credentials in one place and the provider injects both. The second half — retrieval, enforcement, and the
+  prompt — landed in one change (see
+  [Retrieve the operator credential and enforce it on mutating `sf` commands](./issues/operator-credential-retrieval-and-enforcement.md)):
+  `POST /api/bounties/:bountyId/operator-credential` re-derives the plaintext, the `sf-control` protocol moved
+  to version 2 carrying the credential on the wire, and the daemon refuses every mutating command except
+  `status` whose presented credential does not verify. Retrieval emits no bounty-stream event: it changes no
+  state, and the route's bearer-token authentication already records who retrieved it.
 
 These seven ADRs have been built out under [the orthogonal control model](./briefs/workflow-control-model.md).
 Its first slice — stage, controller, and attention as independent dimensions, one active cowboy, and CI before

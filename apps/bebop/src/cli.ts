@@ -21,12 +21,13 @@ import {
   HealthResponse,
   IdempotencyKey as IdempotencyKeySchema,
   ListBountiesResponse,
+  OperatorCredentialResponse,
   StopBountyRequest as StopBountyRequestSchema,
 } from "@bebop/contracts";
 import * as BunRuntime from "@effect/platform-bun/BunRuntime";
 import * as BunServices from "@effect/platform-bun/BunServices";
 import * as BunStdio from "@effect/platform-bun/BunStdio";
-import { Console, Effect, Layer, Schema } from "effect";
+import { Console, Effect, Layer, Redacted, Schema } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 
 import { bebopClient, CliHttpClientLayer, resolveConnection } from "#src/cli/client.ts";
@@ -248,8 +249,40 @@ const bountyStop = Command.make(
     }),
 );
 
+const bountyOperatorCredential = Command.make(
+  "operator-credential",
+  {
+    ...connectionFlags,
+    bounty: Flag.string("bounty").pipe(Flag.withDescription("The bounty id.")),
+  },
+  (options) =>
+    Effect.gen(function* () {
+      const { client } = yield* connect(options);
+      const response = yield* client.bounties.getOperatorCredential({
+        params: { bountyId: Schema.decodeUnknownSync(BountyIdSchema)(options.bounty) },
+      });
+      // The one value in the catalogue that is printed by design: this command exists to hand
+      // the plaintext to a human at the `sf` prompt. `--json` still re-encodes through the
+      // response schema, so a script sees exactly the wire form.
+      yield* emit({
+        asJson: options.json,
+        schema: OperatorCredentialResponse,
+        value: response,
+        human: () => Redacted.value(response.operatorCredential),
+      });
+    }),
+);
+
 const bounty = Command.make("bounty", {}, () => Console.log("Run `bebop bounty --help`.")).pipe(
-  Command.withSubcommands([bountyCreate, bountyList, bountyStatus, bountyEvents, bountyApproveConfig, bountyStop]),
+  Command.withSubcommands([
+    bountyCreate,
+    bountyList,
+    bountyStatus,
+    bountyEvents,
+    bountyApproveConfig,
+    bountyStop,
+    bountyOperatorCredential,
+  ]),
 );
 
 const root = Command.make("bebop", {}, () => Console.log("Run `bebop --help`.")).pipe(

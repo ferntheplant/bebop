@@ -107,6 +107,31 @@ suite("Bebop API over Postgres", () => {
     expect(bounty.status).toBe("provisioning");
   });
 
+  test("derives the operator credential for a provisioned bounty and refuses one without a VM", async () => {
+    const created = await create("opcred-1");
+    const bounty = (await created.json()) as { bountyId: string };
+
+    // The credential dies with the VM (ADR 0038), so a bounty that has never been provisioned
+    // has nothing to retrieve.
+    const before = await harness.request(`/api/bounties/${bounty.bountyId}/operator-credential`, { method: "POST" });
+    expect(before.status).toBe(404);
+
+    await harness.runJobs();
+
+    const retrieved = await harness.request(`/api/bounties/${bounty.bountyId}/operator-credential`, { method: "POST" });
+    expect(retrieved.status).toBe(200);
+    const body = (await retrieved.json()) as { operatorCredential: string };
+    expect(body.operatorCredential).toMatch(/^bebop_op_/);
+
+    // Derivation is deterministic and nothing is stored, so a second retrieval returns the
+    // same credential rather than a minted one.
+    const again = await harness.request(`/api/bounties/${bounty.bountyId}/operator-credential`, { method: "POST" });
+    expect(((await again.json()) as { operatorCredential: string }).operatorCredential).toBe(body.operatorCredential);
+
+    const unknown = await harness.request("/api/bounties/bty-does-not-exist/operator-credential", { method: "POST" });
+    expect(unknown.status).toBe(404);
+  });
+
   test("replays one idempotency key instead of creating a second bounty", async () => {
     const first = (await (await create("idem-1")).json()) as { bountyId: string };
     const second = (await (await create("idem-1")).json()) as { bountyId: string };

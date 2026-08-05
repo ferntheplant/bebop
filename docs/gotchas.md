@@ -85,6 +85,19 @@ or acknowledgement offset must accept the string encoding rather than `Schema.Nu
 does not survive `vp pack`. Adding a migration means editing the record — the one step a contributor coming from
 a conventional migration tool will miss. `fromFileSystem` remains fine in tests, which never run packed.
 
+**Effect's migration table lock does not protect creation of the migration table itself.** `PgMigrator.run`
+checks for and creates `effect_sql_migrations` before opening the transaction where it takes
+`ACCESS EXCLUSIVE`; two processes starting against a fresh database can both observe no table and collide in
+Postgres's `pg_type` catalog with a `23505` unique violation. `migrateDatabase` therefore creates the metadata
+table under a transaction-scoped advisory lock before handing control to Effect. Replacing that bootstrap with a
+direct `PgMigrator.run` call reintroduces the race even though the migrator still appears to lock correctly.
+
+The race was diagnosable only after process exit assertions included the child's captured output. For a rare
+startup race, first amplify the real process seam with several isolated concurrent pairs, then minimize the
+failure at the narrowest faithful interface — here, two independent clients calling `migrateDatabase` against
+one fresh database produced the same catalog violation deterministically in under a second. Repeatedly rerunning
+the full suite without preserving process output produces confidence or frustration, not evidence.
+
 ## Credentials in the environment
 
 **A seat credential must never reach the tmux session environment or a shell profile.** `opencode attach`

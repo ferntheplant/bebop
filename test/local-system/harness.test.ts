@@ -385,8 +385,8 @@ suite("local system harness", () => {
       await delay(100);
       api = fleet.start("bebop-api", join(repositoryRoot, "apps/bebop/dist/api.mjs"), bebop.env);
       await waitForHealth(baseUrl);
-      expect(api.child.exitCode).toBeNull();
-      expect(worker.child.exitCode).toBeNull();
+      expect(api.child.exitCode, api.output()).toBeNull();
+      expect(worker.child.exitCode, worker.output()).toBeNull();
 
       // create retry with one idempotency key yields one bounty, VM mapping, and bootstrap identity.
       const created = await createBounty(fleet, bebop, "local-system-alpha");
@@ -586,8 +586,8 @@ suite("local system harness", () => {
       await waitForHealth(baseUrl);
       worker = fleet.start("bebop-worker", join(repositoryRoot, "apps/bebop/dist/worker.mjs"), bebop.env);
       await delay(500);
-      expect(api.child.exitCode).toBeNull();
-      expect(worker.child.exitCode).toBeNull();
+      expect(api.child.exitCode, api.output()).toBeNull();
+      expect(worker.child.exitCode, worker.output()).toBeNull();
 
       const created = await createBounty(fleet, bebop, "local-system-api-first");
       await waitForAttachment(bebop, created.bountyId);

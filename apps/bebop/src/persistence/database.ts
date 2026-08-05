@@ -2,18 +2,20 @@
 //
 // Both entrypoints provide this layer. Migrations run at startup from the packed schema
 // record (`docs/capabilities/15-deployment-and-operation.md`: "backward-compatible database migrations"), and both processes
-// may attempt them concurrently — the migrator takes an ACCESS EXCLUSIVE lock and treats a
-// losing racer as already-running rather than as an error.
+// may attempt them concurrently. An application-level advisory lock serializes migration-table
+// creation, then the migrator's own table lock serializes the migrations themselves.
 
 import * as BunServices from "@effect/platform-bun/BunServices";
 import { PgClient, PgMigrator } from "@effect/sql-pg";
 import { Effect, Layer, Redacted } from "effect";
+import { SqlClient } from "effect/unstable/sql";
 import type { SqlError } from "effect/unstable/sql";
 import type { Migrator } from "effect/unstable/sql";
-import type { SqlClient } from "effect/unstable/sql";
 
 import { BebopConfiguration } from "#src/config.ts";
 import { bebopMigrationLoader } from "#src/persistence/migrations.ts";
+
+const migrationsTable = "effect_sql_migrations";
 
 export const DatabaseLayer: Layer.Layer<
   PgClient.PgClient | SqlClient.SqlClient,
@@ -42,7 +44,22 @@ export const migrateDatabase: Effect.Effect<
   Migrator.MigrationError | SqlError.SqlError,
   SqlClient.SqlClient
 > = Effect.gen(function* () {
-  const applied = yield* PgMigrator.run({ loader: bebopMigrationLoader });
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      yield* sql`SELECT pg_advisory_xact_lock(hashtext('bebop-database-migrations'))`;
+      // Effect creates this before taking its table lock. Creating it while holding the
+      // advisory lock closes that fresh-database race.
+      yield* sql`
+        CREATE TABLE IF NOT EXISTS ${sql(migrationsTable)} (
+          migration_id integer PRIMARY KEY,
+          created_at timestamp with time zone NOT NULL DEFAULT now(),
+          name text NOT NULL
+        )
+      `;
+    }),
+  );
+  const applied = yield* PgMigrator.run({ loader: bebopMigrationLoader, table: migrationsTable });
   yield* Effect.logInfo(applied.length === 0 ? "database schema is current" : "applied database migrations").pipe(
     Effect.annotateLogs("migrations_applied", String(applied.length)),
   );

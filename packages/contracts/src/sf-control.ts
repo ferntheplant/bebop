@@ -160,7 +160,7 @@ export type SfGateSnapshot = typeof SfGateSnapshot.Type;
  *
  * `base` and `granted` are kept apart rather than summed because every grant is a human decision that status is
  * required to make visible: a budget shown only as its total silently absorbs the `continue` or `rerun` that
- * enlarged it (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+ * enlarged it ("Constraint exhaustion is computed, not announced" (ADR 0042)).
  */
 export const SfBudgetSnapshot = Schema.Struct({
   consumed: NonNegativeInteger,

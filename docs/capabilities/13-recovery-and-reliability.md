@@ -40,7 +40,7 @@ attempt that was running, because the running-since mark is in the durable snaps
 [real-process loopback prototype](../../prototypes/real-process-local-protocol/README.md) ran both packed peers
 against Postgres and SQLite: listener loss, API restart, daemon `SIGKILL`, event replay, and an offline stop all
 recover without duplicate projection or command delivery. The maintained follow-up is the
-[local system harness](../../.scratch/local-system-harness/brief.md) under `test/local-system/`, run via
+[local system harness](../testing.md) under `test/local-system/`, run via
 `vp run local-system`. It does not exercise VM loss or a remote network, and no cowboy has yet produced an attempt
 for the ledger to bound.
 
@@ -81,8 +81,7 @@ Bounded shutdown behaviour and the connection-lifetime constraints behind it are
 
 ## Still open
 
-- [Should the scheduled Effect loops be virtualized with `TestClock`?](../../.scratch/bebop-mvp/issues/15-testclock-for-the-scheduled-loops.md)
-- [What happens when bebop declares a bounty's runtime manifest defective?](../../.scratch/bebop-mvp/issues/19-runtime-manifest-defect-recovery.md)
-- **The protocol under remote-network and VM failure** and **release qualification** — both still fog on
-  [the map](../../.scratch/bebop-mvp/map.md). Local process and listener failure is now covered by the loopback
+- Should the scheduled Effect loops be virtualized with `TestClock`?
+- What happens when bebop declares a bounty's runtime manifest defective?
+- **The protocol under remote-network and VM failure** and **release qualification** — both still fog. Local process and listener failure is now covered by the loopback
   prototype; no real VM has run either peer.

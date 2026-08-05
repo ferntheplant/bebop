@@ -36,8 +36,7 @@ export const schemaLimits = {
 } as const;
 
 /**
- * The defaults a repository's profile is filled in from, settled by
- * `.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`.
+ * The defaults a repository's profile is filled in from.
  *
  * These are recommendations to be reviewed against evidence — turn and time distributions, successful attempt
  * ordinals, validated candidates per spec — after at least 20 terminal bounties, not tuned automatically.

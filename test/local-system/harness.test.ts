@@ -1,4 +1,4 @@
-// The maintained local system harness (`.scratch/local-system-harness/brief.md`).
+// The maintained local system harness (`docs/testing.md`).
 //
 // It runs the packed Bebop API, worker, CLI, Swordfish daemon, and `sf` CLI over loopback
 // with disposable Postgres and per-bounty SQLite/socket/artifact roots, and keeps the
@@ -83,8 +83,7 @@ function bebopEnvironment(options: {
     // Generous on purpose. Bun closes any connection idle longer than this, including a
     // pooled keep-alive socket this suite is about to reuse, and a starved CI runner crosses
     // a short window easily — which is how a two-second value produced `ECONNRESET` flakes in
-    // the component suites before they moved to a generous one
-    // (`.scratch/bebop-mvp/issues/18-sse-keepalive-and-the-http-idle-timeout.md`). Nothing
+    // the component suites before they moved to a generous one (`docs/gotchas.md`). Nothing
     // here tests the idle window, so nothing here should be near it.
     BEBOP_HTTP_IDLE_TIMEOUT: "30 seconds",
     BEBOP_SWORDFISH_CREDENTIAL_KEY: credentialKey,
@@ -339,8 +338,7 @@ async function superviseBounty(fleet: LocalFleet, bebop: BebopEnv, bountyId: str
       SWORDFISH_RECONNECT_MAXIMUM_DELAY: "500 millis",
       SWORDFISH_SHUTDOWN_TIMEOUT: "2 seconds",
       // Provisioned but not yet enforced: the daemon accepts the verifier and does nothing
-      // with it until the retrieval route lands
-      // (`.scratch/bebop-mvp/issues/22-operator-credential-retrieval-and-enforcement.md`).
+      // with it until the retrieval route lands.
       // Passing it now proves the injection path works before anything depends on it.
       SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: identity.operatorCredentialVerifier,
     },

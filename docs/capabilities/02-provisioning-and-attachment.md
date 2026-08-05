@@ -54,8 +54,8 @@ returned), and **7** (ein's seat running with its context MCPs).
 
 ## Still open
 
-- [Should `BEBOP_LOCAL_HARNESS_ROOT` be impossible in production rather than merely warned about?](../../.scratch/bebop-mvp/issues/21-local-harness-root-is-reachable-in-production.md)
-- [Provision exe.dev access and record where its credentials live](../../.scratch/bebop-mvp/issues/03-provision-exe-dev-access.md)
-- [What does exe.dev's provisioning API actually offer, and where does it fail?](../../.scratch/bebop-mvp/issues/04-exe-dev-provisioning-api-surface.md)
-- [Can the exe.dev LLM integration serve ein and jet through the connected ChatGPT subscription?](../../.scratch/bebop-mvp/issues/01-exe-dev-llm-integration-for-ein-and-jet.md)
-- [Can the exe.dev HTTP Proxy serve OpenCode Go to faye with an injected credential?](../../.scratch/bebop-mvp/issues/02-exe-dev-http-proxy-for-opencode-go.md)
+- Should `BEBOP_LOCAL_HARNESS_ROOT` be impossible in production rather than merely warned about?
+- Provision exe.dev access and record where its credentials live
+- What does exe.dev's provisioning API actually offer, and where does it fail?
+- Can the exe.dev LLM integration serve ein and jet through the connected ChatGPT subscription?
+- Can the exe.dev HTTP Proxy serve OpenCode Go to faye with an injected credential?

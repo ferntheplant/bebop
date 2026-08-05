@@ -50,9 +50,9 @@ a healthy bebop connection).
 - [Workflow actions have role-aware adapters (ADR 0038)](../adr/0038-workflow-actions-have-role-aware-adapters.md)
 
 Herdr is not the MVP cockpit and cockpit v2 on the OpenCode web UI is out of scope for this effort; both are
-recorded on [the map](../../.scratch/bebop-mvp/map.md).
+recorded in the planning tracker.
 
 ## Still open
 
-- [What does the cockpit tell an operator to do once `sf takeover` demands a credential?](../../.scratch/bebop-mvp/issues/23-cockpit-guidance-for-operator-authenticated-commands.md)
+- What does the cockpit tell an operator to do once `sf takeover` demands a credential?
   — the status line points at a command that will prompt for a secret the VM cannot supply.

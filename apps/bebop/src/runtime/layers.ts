@@ -80,8 +80,7 @@ export const LocalLifecycleProviderLayer: Layer.Layer<LifecycleProvider, never, 
       // deployment accident anywhere else, so it never starts quietly.
       //
       // A warning is a recorded compromise, not a guard: whether this should be impossible
-      // in production rather than merely loud is open at
-      // `.scratch/bebop-mvp/issues/21-local-harness-root-is-reachable-in-production.md`.
+      // in production rather than merely loud is still open (`docs/gotchas.md`).
       yield* Effect.logWarning(
         "local harness bootstrap artifacts are enabled; every provision writes a plaintext Swordfish credential to disk",
       ).pipe(Effect.annotateLogs("local_harness_root", config.localHarnessRoot));

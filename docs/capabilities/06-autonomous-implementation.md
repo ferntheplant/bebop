@@ -75,6 +75,6 @@ previous results), and **28** (a QA failure returns to ein and restarts the full
 
 ## Still open
 
-- [Which model does each seat run, and what happens when it can't be reached?](../../.scratch/bebop-mvp/issues/05-seat-models-and-provider-failure.md)
-- **What ein is actually told** — fog on [the map](../../.scratch/bebop-mvp/map.md), and probably the single
+- Which model does each seat run, and what happens when it can't be reached?
+- **What ein is actually told** — still fog, and probably the single
   biggest determinant of whether this loop works at all.

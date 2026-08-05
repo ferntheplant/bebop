@@ -105,6 +105,6 @@ integrity by [pull request and merge](./12-pull-request-and-merge.md); seat perm
 
 ## Still open
 
-- [What GitHub App permissions are actually needed, and how is the target branch protected?](../../.scratch/bebop-mvp/issues/12-github-app-permissions-and-branch-protection.md)
-- [Can the exe.dev HTTP Proxy serve OpenCode Go to faye with an injected credential?](../../.scratch/bebop-mvp/issues/02-exe-dev-http-proxy-for-opencode-go.md)
+- What GitHub App permissions are actually needed, and how is the target branch protected?
+- Can the exe.dev HTTP Proxy serve OpenCode Go to faye with an injected credential?
   — the credential-off-VM rule is not considered implemented until this passes a provisioning smoke test.

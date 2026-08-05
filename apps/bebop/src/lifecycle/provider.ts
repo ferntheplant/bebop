@@ -176,7 +176,7 @@ export function fakeLifecycleProviderLayer(options?: {
   /**
    * When set, provision also writes the one-shot bootstrap artifact beneath this root, so a
    * local supervisor can start Swordfish with the machine credential. This is the explicitly
-   * local option from `.scratch/local-system-harness/brief.md`; production fake-provider
+   * local option the local system harness depends on (`docs/testing.md`); production fake-provider
    * behavior is unchanged when it is absent.
    */
   readonly localHarnessRoot?: string;

@@ -37,8 +37,7 @@ const WebSocketUrl = Schema.URL.pipe(
  * authenticated Bebop client, and entered at a hidden prompt; it is never provisioned,
  * logged, or persisted ("Workflow actions have role-aware adapters" (ADR 0038)).
  *
- * Nothing reads it yet — enforcement arrives with the retrieval route it depends on
- * (`.scratch/bebop-mvp/issues/22-operator-credential-retrieval-and-enforcement.md`), because a
+ * Nothing reads it yet — enforcement arrives with the retrieval route it depends on, because a
  * daemon that refuses every mutation before a human can obtain the credential is worse than
  * one that refuses none.
  */

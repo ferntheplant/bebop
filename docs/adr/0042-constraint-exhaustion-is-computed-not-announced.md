@@ -57,7 +57,7 @@ human control and attention were mutually exclusive stages, a bounty paused for 
 representation, and clearing one would have restarted the clock while the other still applied.
 
 Two requirements from
-[the constraint ticket](../../.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md) need no
+[CI gates cowboy review (ADR 0040)](./0040-ci-gates-cowboy-review.md) need no
 special handling under timestamp accounting. Daemon downtime counts toward the attempt, which falls out of the
 gap between the last pre-crash event and the first post-restart one, provided the running-since mark is in the
 durable snapshot. Deterministic gates and external waits are excluded structurally rather than by rule, because

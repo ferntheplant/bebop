@@ -45,10 +45,9 @@ jet's read-only review starts).
 - [CI gates cowboy review (ADR 0040)](../adr/0040-ci-gates-cowboy-review.md)
 - [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
 
-Cross-vendor frontier review for jet is out of scope for this effort; see [the
-map](../../.scratch/bebop-mvp/map.md).
+Cross-vendor frontier review for jet is out of scope for this effort.
 
 ## Still open
 
-- [Which findings block, and where do the ones that don't block surface?](../../.scratch/bebop-mvp/issues/10-finding-severities-and-where-they-surface.md)
-- [Which model does each seat run, and what happens when it can't be reached?](../../.scratch/bebop-mvp/issues/05-seat-models-and-provider-failure.md)
+- Which findings block, and where do the ones that don't block surface?
+- Which model does each seat run, and what happens when it can't be reached?

@@ -51,4 +51,4 @@ bundle is the durable archive, not the feedback channel.
 
 ## Still open
 
-- [Where does evidence surface, and what does a human actually read?](../../.scratch/bebop-mvp/issues/16-where-evidence-surfaces-first.md)
+- Where does evidence surface, and what does a human actually read?

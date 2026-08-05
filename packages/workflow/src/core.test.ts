@@ -722,7 +722,7 @@ describe("constraint ledger", () => {
     expect(state.validatedCandidatesConsumed).toBe(0);
     state = apply(state, 5, ciPassed);
     // A CI-passed candidate is what a validated candidate *is*, so this is the branch that charges the spec's
-    // allowance (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+    // allowance ("CI gates cowboy review" (ADR 0040)).
     expect(state.validatedCandidatesConsumed).toBe(1);
     expect(state.stage).toBe("code_review");
   });

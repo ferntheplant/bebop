@@ -44,7 +44,7 @@ export const constraintScopeForRole: Readonly<Record<SeatRole, ConstraintScope>>
  * The scope a `rerun` target grants an attempt in, or null when it grants none.
  *
  * `rerun validation` repeats a deterministic operation against the same SHA, so it is deliberately not an
- * attempt in any scope (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+ * attempt in any scope ("A rerun resolves the kind its target names" (ADR 0043)).
  */
 export function scopeForRerunTarget(target: RerunTarget): ConstraintScope | null {
   return target === "validation" ? null : target;

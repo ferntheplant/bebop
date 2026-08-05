@@ -1,7 +1,7 @@
 // The maintained local system harness — process helpers.
 //
 // This is the production-quality follow-up to the throwaway real-process loopback probe
-// (`.scratch/local-system-harness/brief.md`). It launches only packed `dist/*.mjs` artifacts
+// (`docs/testing.md`). It launches only packed `dist/*.mjs` artifacts
 // and drives their public HTTP, WebSocket, CLI, and Unix-socket interfaces; it never imports
 // app source and never writes either database directly. The worker hands the machine
 // credential to a local supervisor through the one-shot bootstrap artifact the fake lifecycle

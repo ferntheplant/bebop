@@ -344,7 +344,7 @@ async function replayPublicEvents(baseUrl: string, apiToken: string, bountyId: s
       text += new TextDecoder().decode(chunk.value, { stream: true });
     }
   } catch (error) {
-    // The production SSE route intentionally has no keepalive yet (issue 18). Depending on
+    // The production SSE route intentionally has no keepalive yet (`docs/gotchas.md`). Depending on
     // whether our abort or Bun's idle close wins, fetch reports AbortError or a socket-close
     // TypeError. Once replay bytes arrived, either one is the expected end of this bounded read.
     if (text.length === 0 && !(error instanceof DOMException && error.name === "AbortError")) throw error;

@@ -112,7 +112,7 @@ export interface ReadinessClaim {
  *
  * `turnsGranted` and `wallClockGrantedMs` are additions from human `continue`, held apart from the consumed
  * counts so status can report consumed against base and granted separately rather than showing a budget that
- * silently grew (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+ * silently grew ("Constraint exhaustion is computed, not announced" (ADR 0042)).
  */
 export interface AttemptState {
   readonly scope: ConstraintScope;
@@ -198,7 +198,7 @@ export interface WorkflowCoreState {
    * CI-passed candidates charged against the effective spec's allowance.
    *
    * There is no granted counterpart: `reopen-spec` is the only way to earn another, and it earns a whole fresh
-   * allowance rather than one more slot (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+   * allowance rather than one more slot ("CI gates cowboy review" (ADR 0040)).
    */
   readonly validatedCandidatesConsumed: number;
 }

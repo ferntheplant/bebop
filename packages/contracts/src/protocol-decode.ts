@@ -67,7 +67,7 @@ export function protocolDecodeErrorToMessage(error: ProtocolDecodeError): Protoc
   return Schema.decodeUnknownSync(ProtocolErrorMessage)({
     type: "protocol_error",
     protocolVersion: currentProtocolVersion,
-    code: error._tag === "UnsupportedProtocolVersionError" ? "unsupported_version" : "invalid_message",
+    code: error instanceof UnsupportedProtocolVersionError ? "unsupported_version" : "invalid_message",
     message: error.message,
   });
 }

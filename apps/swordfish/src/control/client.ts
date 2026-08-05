@@ -7,7 +7,7 @@ import { Data, Deferred, Duration, Effect, Fiber, Schema } from "effect";
 
 const maxControlFrameLength = 262_144;
 
-export class UnsafeControlSocketError extends Data.TaggedError("UnsafeControlSocketError")<{
+class UnsafeControlSocketError extends Data.TaggedError("UnsafeControlSocketError")<{
   readonly path: string;
   readonly reason: string;
 }> {
@@ -16,7 +16,7 @@ export class UnsafeControlSocketError extends Data.TaggedError("UnsafeControlSoc
   }
 }
 
-export class ControlSocketUnavailableError extends Data.TaggedError("ControlSocketUnavailableError")<{
+class ControlSocketUnavailableError extends Data.TaggedError("ControlSocketUnavailableError")<{
   readonly path: string;
   readonly cause: unknown;
 }> {
@@ -25,7 +25,7 @@ export class ControlSocketUnavailableError extends Data.TaggedError("ControlSock
   }
 }
 
-export class ControlTransportError extends Data.TaggedError("ControlTransportError")<{
+class ControlTransportError extends Data.TaggedError("ControlTransportError")<{
   readonly reason: string;
   readonly cause?: unknown;
 }> {

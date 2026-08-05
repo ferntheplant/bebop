@@ -23,9 +23,9 @@ import { timestampToIso } from "#src/domain/identity.ts";
 import type { Row } from "#src/persistence/rows.ts";
 import { optionalText, text } from "#src/persistence/rows.ts";
 
-export type IdempotencyScope = "create_bounty";
+type IdempotencyScope = "create_bounty";
 
-export interface IdempotencyRecord {
+interface IdempotencyRecord {
   readonly scope: IdempotencyScope;
   readonly key: IdempotencyKey;
   readonly requestFingerprint: string;
@@ -50,7 +50,7 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-export interface IdempotencyRepositoryService {
+interface IdempotencyRepositoryService {
   readonly find: (options: {
     readonly scope: IdempotencyScope;
     readonly key: IdempotencyKey;

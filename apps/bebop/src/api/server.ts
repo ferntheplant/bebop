@@ -4,7 +4,6 @@
 // behind Caddy (`docs/capabilities/15-deployment-and-operation.md`).
 
 import { ApiTokenName, BebopHttpApi } from "@bebop/contracts";
-import type { PgClient } from "@effect/sql-pg";
 import { Effect, Layer, Redacted, Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
@@ -12,28 +11,10 @@ import { BearerAuthenticationLayer } from "#src/api/authentication.ts";
 import { BountyHandlers, HealthHandlers, TokenHandlers } from "#src/api/handlers.ts";
 import { BebopConfiguration } from "#src/config.ts";
 import { Identity } from "#src/domain/identity.ts";
-import type { BountyRepository } from "#src/persistence/bounties.ts";
-import type { CommandRepository } from "#src/persistence/commands.ts";
-import type { BountyEventRepository } from "#src/persistence/events.ts";
-import type { IdempotencyRepository } from "#src/persistence/idempotency.ts";
-import type { LifecycleJobRepository } from "#src/persistence/jobs.ts";
 import { SwordfishProjectionRepository } from "#src/persistence/swordfish.ts";
 import { ApiTokenRepository } from "#src/persistence/tokens.ts";
 import { applyProjectionInput } from "#src/service/projection.ts";
 import { SwordfishGatewayRoute } from "#src/swordfish-gateway/gateway.ts";
-
-/** Everything the API's routes need, minus the HTTP server itself. */
-export type ApiServices =
-  | BebopConfiguration
-  | Identity
-  | PgClient.PgClient
-  | ApiTokenRepository
-  | BountyRepository
-  | BountyEventRepository
-  | CommandRepository
-  | IdempotencyRepository
-  | LifecycleJobRepository
-  | SwordfishProjectionRepository;
 
 export const BebopApiRoutes = Layer.mergeAll(
   HttpApiBuilder.layer(BebopHttpApi).pipe(
@@ -45,7 +26,7 @@ export const BebopApiRoutes = Layer.mergeAll(
 
 const bootstrapTokenName = Schema.decodeUnknownSync(ApiTokenName)("bootstrap");
 
-export class MissingBootstrapTokenError extends Error {
+class MissingBootstrapTokenError extends Error {
   readonly _tag = "MissingBootstrapTokenError";
 
   constructor() {

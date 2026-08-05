@@ -131,5 +131,5 @@ const initial = Effect.gen(function* () {
   `;
 });
 
-export const swordfishMigrations = { "1_initial": initial } as const;
+const swordfishMigrations = { "1_initial": initial } as const;
 export const swordfishMigrationLoader: Migrator.Loader = Migrator.fromRecord(swordfishMigrations);

@@ -14,8 +14,6 @@ import {
   type WorkflowResult,
 } from "@bebop/workflow";
 
-export type { ActiveCowboy, AttentionState, GateState, GateStates, ReadinessClaim } from "@bebop/workflow";
-
 export interface SwordfishWorkflowState extends WorkflowCoreState {
   readonly stage: SwordfishStage;
 }

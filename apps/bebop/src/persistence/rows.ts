@@ -29,7 +29,7 @@ export class RowDecodeError extends Error {
 
 export type Row = Readonly<Record<string, unknown>>;
 
-export function requiredColumn(row: Row, column: string): unknown {
+function requiredColumn(row: Row, column: string): unknown {
   const value = row[column];
   if (value === undefined || value === null) {
     throw new RowDecodeError(column, value, "expected a value");
@@ -114,14 +114,6 @@ export function json(row: Row, column: string): unknown {
  */
 export function jsonbParameter(value: unknown): string {
   return JSON.stringify(value) ?? "null";
-}
-
-export function boolean(row: Row, column: string): boolean {
-  const value = requiredColumn(row, column);
-  if (typeof value !== "boolean") {
-    throw new RowDecodeError(column, value, "expected a boolean");
-  }
-  return value;
 }
 
 export function oneOf<const Values extends ReadonlyArray<string>>(

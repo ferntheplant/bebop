@@ -53,28 +53,33 @@ export class AuthorityIdentityError extends Data.TaggedError("AuthorityIdentityE
   readonly configured: string;
   readonly stored: string;
 }> {
+  // The operator-facing message is read through the base Error contract when the daemon
+  // logs the failure, so fallow cannot attribute those reads to this class. That the
+  // getter is load-bearing is pinned by `apps/swordfish/test/component/persistence.test.ts`
+  // ("database belongs to bty-another"), which fails if this text stops rendering.
+  // fallow-ignore-next-line unused-class-member
   override get message(): string {
     return `Swordfish ${this.field} is ${this.configured}, but this database belongs to ${this.stored}.`;
   }
 }
 
-export interface StoredWorkflow {
+interface StoredWorkflow {
   readonly stateRevision: number;
   readonly state: SwordfishWorkflowState;
 }
 
-export interface StoredCommand {
+interface StoredCommand {
   readonly commandHash: string;
   readonly result: CommandResultMessage;
 }
 
-export interface DeliveryState {
+interface DeliveryState {
   readonly lastProduced: EventSequence;
   readonly acknowledgedThrough: EventSequence;
   readonly lastAppliedCommandId?: CommandId;
 }
 
-export type ReconciliationResource =
+type ReconciliationResource =
   | {
       readonly recordId: string;
       readonly kind: "child_process";
@@ -87,11 +92,11 @@ export type ReconciliationResource =
       readonly path: string;
     };
 
-export interface ReconciliationSummary {
+interface ReconciliationSummary {
   readonly uncertainRecords: number;
 }
 
-export interface SwordfishStoreService {
+interface SwordfishStoreService {
   readonly initialize: (at: Timestamp) => Effect.Effect<void, SqlError.SqlError | AuthorityIdentityError>;
   readonly loadWorkflow: Effect.Effect<StoredWorkflow, SqlError.SqlError>;
   readonly appendEvent: (

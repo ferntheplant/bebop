@@ -10,10 +10,10 @@ import { Effect, Redacted } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
 import { HttpApiClient } from "effect/unstable/httpapi";
 
-export const apiUrlVariable = "BEBOP_API_URL";
-export const apiTokenVariable = "BEBOP_TOKEN";
+const apiUrlVariable = "BEBOP_API_URL";
+const apiTokenVariable = "BEBOP_TOKEN";
 
-export class CliConfigurationError extends Error {
+class CliConfigurationError extends Error {
   readonly _tag = "CliConfigurationError";
 
   constructor(message: string) {

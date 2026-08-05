@@ -14,7 +14,7 @@ import type { CliConnection } from "#src/cli/client.ts";
 
 export type CliEventFrame = BountyEventEnvelope;
 
-export class EventStreamError extends Error {
+class EventStreamError extends Error {
   readonly _tag = "EventStreamError";
 
   constructor(

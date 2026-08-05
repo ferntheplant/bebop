@@ -8,7 +8,6 @@
 import type { BountyId, Timestamp, VmId } from "@bebop/contracts";
 import { eventFingerprint } from "@bebop/workflow";
 import { Effect } from "effect";
-import type { SqlError } from "effect/unstable/sql";
 import { SqlClient } from "effect/unstable/sql";
 
 import { deriveBountyStatus } from "#src/domain/bounty.ts";
@@ -22,7 +21,7 @@ import { BountyRepository } from "#src/persistence/bounties.ts";
 import { BountyEventRepository } from "#src/persistence/events.ts";
 import { SwordfishProjectionRepository } from "#src/persistence/swordfish.ts";
 
-export interface AppliedProjection {
+interface AppliedProjection {
   readonly result: BebopProjectionResult;
   readonly projection: BebopSwordfishProjection;
 }
@@ -154,11 +153,3 @@ export const applyProjectionInput = Effect.fnUntraced(function* (options: {
     });
   }
 });
-
-export type ProjectionServiceRequirements =
-  | SqlClient.SqlClient
-  | SwordfishProjectionRepository
-  | BountyEventRepository
-  | BountyRepository;
-
-export type ProjectionServiceFailure = SqlError.SqlError;

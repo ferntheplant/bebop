@@ -43,7 +43,7 @@ function verifiesOperatorCredential(verifier: string, presented: string): boolea
   return timingSafeEqual(digest, Buffer.from(verifier, "hex"));
 }
 
-export class ControlSocketSetupError extends Data.TaggedError("ControlSocketSetupError")<{
+class ControlSocketSetupError extends Data.TaggedError("ControlSocketSetupError")<{
   readonly path: string;
   readonly cause: unknown;
 }> {
@@ -67,7 +67,7 @@ function socketAcceptsConnections(path: string): Promise<boolean> {
   });
 }
 
-export const prepareControlSocket = Effect.fnUntraced(function* (path: string) {
+const prepareControlSocket = Effect.fnUntraced(function* (path: string) {
   const parent = dirname(path);
   yield* Effect.tryPromise({
     try: () => mkdir(parent, { recursive: true, mode: 0o700 }),
@@ -115,7 +115,7 @@ export const prepareControlSocket = Effect.fnUntraced(function* (path: string) {
   });
 });
 
-export function authorityLockPath(databasePath: string): string {
+function authorityLockPath(databasePath: string): string {
   const identity = createHash("sha256").update(databasePath).digest("hex").slice(0, 16);
   return join(dirname(databasePath), `.swordfish-${identity}.lock.sock`);
 }

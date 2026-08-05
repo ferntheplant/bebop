@@ -25,7 +25,7 @@ import { Context, Effect, Layer } from "effect";
  */
 export const apiTokenPrefix = "bebop_";
 
-export interface IdentityService {
+interface IdentityService {
   readonly bountyId: Effect.Effect<BountyId>;
   readonly commandId: Effect.Effect<CommandId>;
   readonly connectionId: Effect.Effect<ConnectionId>;

@@ -19,8 +19,6 @@ import { migrateDatabase } from "#src/persistence/database.ts";
 import { BebopRuntimeLayer, LocalLifecycleProviderLayer } from "#src/runtime/layers.ts";
 import { withBoundedShutdown } from "#src/runtime/shutdown.ts";
 
-export { BebopHttpApi } from "@bebop/contracts";
-
 export const bebopApiName = "bebop-api";
 
 /** The HTTP server, sized and bound from configuration. */
@@ -49,7 +47,7 @@ const ServerLayer = Layer.unwrap(
  * Migrations and reconciliation run before the listener exists, so the process is never
  * reachable in a state where it would answer using a schema it has not applied.
  */
-export const runBebopApi = Effect.gen(function* () {
+const runBebopApi = Effect.gen(function* () {
   const config = yield* BebopConfiguration;
   yield* migrateDatabase;
   yield* ensureApiTokenBootstrap;

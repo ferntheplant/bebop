@@ -25,7 +25,7 @@ import { BountyEventRepository } from "#src/persistence/events.ts";
 /** How many stored events one read returns. Replay pages until the log is exhausted. */
 const pageSize = 200;
 
-export interface SseFrame {
+interface SseFrame {
   readonly id: BountyEventCursorString;
   readonly event: "bounty_event";
   readonly data: BountyEventEnvelope;

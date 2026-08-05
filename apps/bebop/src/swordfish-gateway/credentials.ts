@@ -98,4 +98,4 @@ export function presentedSwordfishToken(headers: Readonly<Record<string, string 
   return null;
 }
 
-export const swordfishSubprotocolPrefix = "bebop-token";
+const swordfishSubprotocolPrefix = "bebop-token";

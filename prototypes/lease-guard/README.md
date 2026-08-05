@@ -4,7 +4,7 @@
 
 **Date:** 2026-07-26
 
-**Pinned OpenCode version:** 1.18.5 (`@opencode-ai/plugin@1.18.5`, `@opencode-ai/sdk@1.18.5`)
+**Pinned OpenCode version:** 1.18.5 (`@opencode-ai/plugin@1.18.5`)
 
 **Assumption under test:** [The control lease (ADR 0009)](../../docs/adr/0009-the-control-lease-is-enforced-in-four-layers.md) — "the bebop plugin rejects prompt submission on a
 leased seat regardless of how the prompt arrived — including a user who opens a second OpenCode client from a

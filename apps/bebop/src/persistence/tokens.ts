@@ -38,12 +38,12 @@ function toSummary(row: Row): ApiTokenSummary {
   };
 }
 
-export interface AuthenticatedToken {
+interface AuthenticatedToken {
   readonly tokenId: ApiTokenId;
   readonly name: ApiTokenName;
 }
 
-export interface ApiTokenRepositoryService {
+interface ApiTokenRepositoryService {
   readonly create: (options: {
     readonly tokenId: ApiTokenId;
     readonly name: ApiTokenName;

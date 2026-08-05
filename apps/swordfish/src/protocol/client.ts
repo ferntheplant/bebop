@@ -22,7 +22,7 @@ const inboundCapacity = 64;
 const maxFrameLength = 1_048_576;
 const encodeOutbound = Schema.encodeUnknownSync(SwordfishToBebopMessageSchema);
 
-export class BebopSessionError extends Data.TaggedError("BebopSessionError")<{
+class BebopSessionError extends Data.TaggedError("BebopSessionError")<{
   readonly reason: string;
   readonly cause?: unknown;
 }> {

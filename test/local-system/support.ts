@@ -60,7 +60,7 @@ export function assert(condition: unknown, message: string): asserts condition {
 }
 
 /** Renders an unknown thrown value for a timeout message. Not `describe`: that is vitest's. */
-export function describeError(error: unknown): string {
+function describeError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   try {

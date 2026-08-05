@@ -28,7 +28,7 @@ export interface ProvisionedVm {
   readonly previews: ReadonlyArray<PrivatePreviewAttachment>;
 }
 
-export class LifecycleError extends Error {
+class LifecycleError extends Error {
   readonly _tag = "LifecycleError";
 
   constructor(
@@ -42,7 +42,7 @@ export class LifecycleError extends Error {
   }
 }
 
-export interface LifecycleProviderService {
+interface LifecycleProviderService {
   /**
    * Creates the bounty's VM, or returns the existing one.
    *
@@ -102,7 +102,7 @@ const decodeHttpsUrl = Schema.decodeUnknownSync(HttpsUrl);
  * HMAC derivation over a random token to get. The operator verifier is derived the same way
  * for the same reason, so the artifact is byte-stable across retries.
  */
-export interface LocalBootstrapArtifact {
+interface LocalBootstrapArtifact {
   readonly bountyId: BountyId;
   readonly vmId: VmId;
   readonly swordfishToken: string;

@@ -38,7 +38,7 @@ export class CommandConflictError extends Data.TaggedError("CommandConflictError
   readonly commandId: CommandId;
 }> {}
 
-export interface WorkflowServiceShape {
+interface WorkflowServiceShape {
   readonly bootstrap: Effect.Effect<void, SqlError.SqlError | AuthorityIdentityError | WorkflowTransitionError>;
   readonly append: (
     event: SwordfishEvent,

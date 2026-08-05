@@ -38,7 +38,7 @@ const WebSocketUrl = Schema.URL.pipe(
  * logged, or persisted ("Workflow actions have role-aware adapters" (ADR 0038)). The control
  * server refuses every mutating command without a credential that verifies against it.
  */
-export const OperatorCredentialVerifier = Schema.String.pipe(
+const OperatorCredentialVerifier = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter<string>((value) =>
       /^[0-9a-f]{64}$/.test(value) ? undefined : "Expected a SHA-256 verifier as 64 lowercase hex characters",
@@ -65,7 +65,7 @@ const SwordfishConfigBase = Schema.Struct({
   operatorCredentialVerifier: Schema.optionalKey(OperatorCredentialVerifier),
 });
 
-export const SwordfishConfigSchema = SwordfishConfigBase.pipe(
+const SwordfishConfigSchema = SwordfishConfigBase.pipe(
   Schema.check(
     Schema.makeFilter<typeof SwordfishConfigBase.Type>((config) => {
       if (!Duration.isGreaterThanOrEqualTo(config.reconnectMaximumDelay, config.reconnectMinimumDelay)) {
@@ -85,7 +85,7 @@ export const SwordfishConfigSchema = SwordfishConfigBase.pipe(
 );
 export type SwordfishConfig = typeof SwordfishConfigSchema.Type;
 
-export const SwordfishConfig = Config.schema(SwordfishConfigSchema, "swordfish");
+const SwordfishConfig = Config.schema(SwordfishConfigSchema, "swordfish");
 
 function environmentProvider(): ConfigProvider.ConfigProvider {
   return ConfigProvider.fromEnv().pipe(ConfigProvider.constantCase);

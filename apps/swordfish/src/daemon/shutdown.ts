@@ -1,6 +1,6 @@
 import { Context, Deferred, Effect, Layer } from "effect";
 
-export interface ShutdownSignalService {
+interface ShutdownSignalService {
   readonly await: Effect.Effect<void>;
   readonly request: Effect.Effect<void>;
 }

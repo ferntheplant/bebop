@@ -17,7 +17,7 @@ import { timestampToIso } from "#src/domain/identity.ts";
 import type { Row } from "#src/persistence/rows.ts";
 import { bigintNumber, json, jsonbParameter, timestamp } from "#src/persistence/rows.ts";
 
-export type BountyPublicEvent = BountyEventEnvelope["event"];
+type BountyPublicEvent = BountyEventEnvelope["event"];
 
 /**
  * The Postgres NOTIFY channel a live SSE subscriber listens on.
@@ -25,7 +25,7 @@ export type BountyPublicEvent = BountyEventEnvelope["event"];
  * Events are appended by whichever process observed them — the API's Swordfish gateway, or
  * the worker's freshness sweep — so an in-process bus would silently drop half of them.
  */
-export const bountyEventChannel = "bebop_bounty_events";
+const bountyEventChannel = "bebop_bounty_events";
 
 const decodeEnvelope = Schema.decodeUnknownSync(BountyEventEnvelopeSchema);
 const encodeEnvelopeEvent = Schema.encodeUnknownSync(Schema.Struct({ event: BountyEventEnvelopeSchema.fields.event }));
@@ -41,7 +41,7 @@ function toEnvelope(row: Row): BountyEventEnvelope {
   });
 }
 
-export interface BountyEventRepositoryService {
+interface BountyEventRepositoryService {
   /** Appends one event and returns it with the cursor it was assigned. */
   readonly append: (options: {
     readonly bountyId: BountyId;

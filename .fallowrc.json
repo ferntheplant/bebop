@@ -53,5 +53,25 @@
   },
   "rules": {
     "unused-dependencies": "warn"
-  }
+  },
+  "usedClassMembers": [
+    // `_tag` on a hand-rolled Error subclass is a nominal brand, not a runtime read.
+    // TypeScript is structurally typed, so without it `InvalidSfControlRequestError`,
+    // `InvalidSfControlResponseError`, and `UnexpectedSfControlResponseError` — none of
+    // which declare any other member — are mutually assignable, and a bare `new Error()`
+    // satisfies all three. The literal-typed field is what keeps them distinct types.
+    // Runtime discrimination is `instanceof`, so no code ever reads the field and fallow
+    // is right that nothing does; the value is in the type checker, not the program.
+    // `Data.TaggedError` classes brand themselves and need no entry here.
+    { "extends": "Error", "members": ["_tag"] }
+  ],
+  "ignoreDependencyOverrides": [
+    // Pins the transitive @effect/platform-node-shared to the catalog beta so every
+    // @effect/* package lands on one Effect version. Fallow's unused-override check
+    // treats pnpm-lock.yaml as ground truth, but this repo resolves with bun.lock, which
+    // does resolve this override (`@effect/platform-bun` depends on it with ^4.0.0-beta.101).
+    // Scoped to package.json so a future pnpm-workspace.yaml override of the same package
+    // is still checked rather than silently inheriting this exception.
+    { "package": "@effect/platform-node-shared", "source": "package.json" }
+  ]
 }

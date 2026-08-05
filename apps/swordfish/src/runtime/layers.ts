@@ -34,5 +34,3 @@ export function swordfishRuntimeLayer(options?: {
   );
   return WorkflowServiceLayer.pipe(Layer.provideMerge(StoreRuntimeLayer), Layer.provideMerge(ShutdownSignalLayer));
 }
-
-export const SwordfishRuntimeLayer = swordfishRuntimeLayer();

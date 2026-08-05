@@ -123,7 +123,7 @@ const BebopConfigBase = Schema.Struct({
   httpIdleTimeout: Schema.optionalKey(PositiveDuration),
 });
 
-export const BebopConfigSchema = BebopConfigBase.pipe(
+const BebopConfigSchema = BebopConfigBase.pipe(
   Schema.check(
     Schema.makeFilter<typeof BebopConfigBase.Type>((config) =>
       Duration.isGreaterThan(config.swordfishStaleAfter, config.heartbeatInterval)
@@ -135,7 +135,7 @@ export const BebopConfigSchema = BebopConfigBase.pipe(
 
 export type BebopConfig = typeof BebopConfigSchema.Type & typeof tunableDefaults;
 
-export const BebopConfig = Config.schema(BebopConfigSchema, "bebop");
+const BebopConfig = Config.schema(BebopConfigSchema, "bebop");
 
 function applyDefaults(config: typeof BebopConfigSchema.Type): BebopConfig {
   return {

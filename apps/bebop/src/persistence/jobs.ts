@@ -18,10 +18,10 @@ import { timestampToIso } from "#src/domain/identity.ts";
 import type { Row } from "#src/persistence/rows.ts";
 import { integer, json, jsonbParameter, oneOf, optionalText, text } from "#src/persistence/rows.ts";
 
-export const lifecycleJobKinds = ["provision", "destroy"] as const;
+const lifecycleJobKinds = ["provision", "destroy"] as const;
 export type LifecycleJobKind = (typeof lifecycleJobKinds)[number];
 
-export const lifecycleJobStatuses = ["pending", "running", "succeeded", "failed"] as const;
+const lifecycleJobStatuses = ["pending", "running", "succeeded", "failed"] as const;
 export type LifecycleJobStatus = (typeof lifecycleJobStatuses)[number];
 
 export interface LifecycleJob {
@@ -42,7 +42,7 @@ export interface LifecycleJob {
  * succeed should surface as a failed bounty a human can see, not as an invisible loop
  * burning a connection every second.
  */
-export const maxJobAttempts = 5;
+const maxJobAttempts = 5;
 
 function toJob(row: Row): LifecycleJob {
   const lastError = optionalText(row, "last_error");
@@ -60,7 +60,7 @@ function toJob(row: Row): LifecycleJob {
 
 const jobColumns = `job_id, dedupe_key, bounty_id, kind, payload, status, attempts, run_after, last_error`;
 
-export interface LifecycleJobRepositoryService {
+interface LifecycleJobRepositoryService {
   /** Enqueues work, or returns the existing job for a repeated `dedupeKey`. */
   readonly enqueue: (options: {
     readonly jobId: string;

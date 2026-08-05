@@ -186,6 +186,6 @@ const initial = Effect.gen(function* () {
   yield* sql`CREATE INDEX lifecycle_jobs_ready_idx ON lifecycle_jobs (status, run_after)`;
 });
 
-export const bebopMigrations = { "1_initial": initial } as const;
+const bebopMigrations = { "1_initial": initial } as const;
 
 export const bebopMigrationLoader: Migrator.Loader = Migrator.fromRecord(bebopMigrations);

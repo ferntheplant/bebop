@@ -11,7 +11,6 @@ import type {
   SwordfishFreshnessStatus,
   SwordfishStage,
   Timestamp,
-  VmId,
 } from "@bebop/contracts";
 
 /**
@@ -46,13 +45,6 @@ export interface BountyRecord {
   readonly lifecycleDetail?: string;
   readonly createdAt: Timestamp;
   readonly updatedAt: Timestamp;
-}
-
-export interface VmMapping {
-  readonly bountyId: BountyId;
-  readonly vmId: VmId;
-  readonly createdAt: Timestamp;
-  readonly destroyedAt?: Timestamp;
 }
 
 /** The assigned working branch for a bounty ("The bounty primitive" (ADR 0001): `bounty/<bounty-id>`). */

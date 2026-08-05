@@ -26,7 +26,7 @@ it up as a brief.
 **Standing preferences:**
 
 - Plan, don't do. Tickets here resolve decisions. When the way through an area is clear, write a brief at
-  `.scratch/<feature>/brief.md` and hand off — the build is not tracked on this map.
+  [`briefs/`](./briefs/) and hand off — the build is not tracked on this map.
 - Prefer a prototype to an argument. Four of the decisions below were settled by a runnable probe under
   [`prototypes/`](../../prototypes/), and each one changed the design in a way the discussion had not.
 - Anything hard to reverse, surprising, and genuinely traded off gets an ADR when it resolves. Most resolutions
@@ -81,7 +81,7 @@ prototypes rather than tickets.
 <!-- resolutions from this point on link their ticket -->
 
 - [The merge target must enforce rulesets (ADR 0034)](../../docs/adr/0034-the-merge-target-must-enforce-rulesets.md),
-  from [ticket 12](./issues/12-github-app-permissions-and-branch-protection.md)
+  from [What GitHub App permissions are actually needed, and how is the target branch protected?](./issues/github-app-permissions-and-branch-protection.md)
   — an installation token cannot be scoped to `bounty/*`, and merging needs the same `contents: write` the
   sandbox pushes with, so the two identities are not separable by permission. A `pull_request` rule denies
   everyone including the repository owner, and bebop merges through the PR API rather than around it, so
@@ -90,29 +90,29 @@ prototypes rather than tickets.
   fall out: the merge target must be public or on a paid plan, and a SHA-pinned merge only reports the
   diagnostic `409 Head branch was modified` once `mergeable` is non-null — before that it is an ambiguous `405`.
 - [The runtime manifest is the bounty software release unit (ADR 0035)](../../docs/adr/0035-the-runtime-manifest-is-the-bounty-software-release-unit.md),
-  from [How is the OpenCode pin enforced, and what qualifies an upgrade?](./issues/14-opencode-version-pin-and-upgrade-qualification.md)
+  from [How is the OpenCode pin enforced, and what qualifies an upgrade?](./issues/opencode-version-pin-and-upgrade-qualification.md)
   — OpenCode is pinned inside an immutable Swordfish release rather than overridden independently. Every upgrade
   passes the hermetic contract suite, the candidate-image suite, and an explicit direct-provider smoke before
   merge makes that runtime manifest the default for new bounties.
 - [Control passes through a quiescent handoff (ADR 0036)](../../docs/adr/0036-control-passes-through-a-quiescent-handoff.md),
-  from [What is a safe point to interrupt a seat, and what does takeover do at each stage?](./issues/06-what-is-a-safe-point-to-interrupt-a-seat.md)
+  from [What is a safe point to interrupt a seat, and what does takeover do at each stage?](./issues/what-is-a-safe-point-to-interrupt-a-seat.md)
   — takeover claims the lease immediately but withholds human access until OpenCode aborts or the selected seat
   is forcibly restarted. It guarantees no concurrent actor, not rollback; handoff reconciles and starts fresh
   work rather than resuming an interrupted turn.
 - [One controller drives one active cowboy (ADR 0037)](../../docs/adr/0037-one-controller-drives-one-active-cowboy.md)
   and [workflow actions have role-aware adapters (ADR 0038)](../../docs/adr/0038-workflow-actions-have-role-aware-adapters.md),
-  from [What is the `sf` command surface, in use?](./issues/07-the-sf-command-surface.md) — stage and human control
+  from [What is the `sf` command surface, in use?](./issues/the-sf-command-surface.md) — stage and human control
   are orthogonal, at most one cowboy seat is active, and cowboy tools, human slash commands, and authenticated
   `sf` commands invoke one typed transition implementation. Mutating local commands require a per-bounty
   operator credential; external authority remains bebop-side.
 - [The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](../../docs/adr/0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md),
-  from [What does the cockpit look like, and where do log panes come from?](./issues/08-cockpit-layout-and-log-panes.md)
+  from [What does the cockpit look like, and where do log panes come from?](./issues/cockpit-layout-and-log-panes.md)
   — attachment starts with one full-screen active seat and a workflow status line; Swordfish preserves
   operator-created tmux layout and exposes service logs as files rather than panes. The plugin blocks mixed model
   turns while unexpected shell, abort, revert, or unrevert actions are detected as intrusions.
 - [CI gates cowboy review (ADR 0040)](../../docs/adr/0040-ci-gates-cowboy-review.md) and
   [Continue preserves an attempt; rerun replaces it (ADR 0041)](../../docs/adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md),
-  from [What are the default constraints, and what happens when one is exhausted?](./issues/09-default-constraints-and-exhaustion.md)
+  from [What are the default constraints, and what happens when one is exhausted?](./issues/default-constraints-and-exhaustion.md)
   — a base-revision repository profile bounds autonomous attempts and each spec's CI-passed candidates. CI now
   precedes jet; exhaustion preserves a final attempt for `continue`, while `rerun` explicitly starts another.
   Human recoveries are unlimited but authenticated and recorded.
@@ -122,13 +122,13 @@ prototypes rather than tickets.
   accounting does not support. Swordfish's existing heartbeat loop is the wake-up for the silent case, so the
   ledger adds no timer; Bebop re-verifies elapsed time as a defect signal about the daemon rather than as an
   exhaustion of its own.
-- [Real packed Bebop and Swordfish processes compose over loopback](./issues/20-real-process-local-protocol.md) —
+- [Real packed Bebop and Swordfish processes compose over loopback](./issues/real-process-local-protocol.md) —
   worker-first and daemon-first startup, API and daemon restart, event replay, acknowledgement, projection, local
   cancellation, and offline command delivery all preserve one history without duplication. The probe reaches
   only `interactive` and cancellation because OpenCode events still have no production producer. It found no new
-  protocol decision; it produced [the local system harness brief](../local-system-harness/brief.md) so that floor
+  protocol decision; it produced [the local system harness brief](./briefs/local-system-harness.md) so that floor
   can become maintained before the OpenCode driver lands.
-- [The local system harness is maintained](./../local-system-harness/brief.md) — the packed-process floor now lives
+- [The local system harness is maintained](./briefs/local-system-harness.md) — the packed-process floor now lives
   at `test/local-system/` and runs via `vp run local-system`: worker-first and API-first startup, idempotent
   create with a retry-stable bootstrap identity, Swordfish-before-listener registration, API restart, daemon
   `SIGKILL`, local `sf cancel`, and an offline Bebop stop all pass repeatedly over disposable Postgres. The
@@ -146,10 +146,10 @@ prototypes rather than tickets.
   and salting would cost the determinism that keeps provisioning retries stable. Bebop now derives both
   credentials in one place and the provider injects both. Nothing enforces the credential yet, deliberately:
   refusing every mutation before a human can obtain one would be worse than refusing none. The next work is
-  [ticket 22](./issues/22-operator-credential-retrieval-and-enforcement.md) — retrieval route, wire field,
+  [Retrieve the operator credential and enforce it on mutating `sf` commands](./issues/operator-credential-retrieval-and-enforcement.md) — retrieval route, wire field,
   enforcement, and prompt, in one change.
 
-These seven ADRs have been built out under [the orthogonal control model](../workflow-control-model/brief.md).
+These seven ADRs have been built out under [the orthogonal control model](./briefs/workflow-control-model.md).
 Its first slice — stage, controller, and attention as independent dimensions, one active cowboy, and CI before
 review — shipped first; the constraint ledger followed, adding
 [A rerun resolves the kind its target names (ADR 0043)](../../docs/adr/0043-a-rerun-resolves-the-kind-its-target-names.md)

@@ -53,8 +53,10 @@ export class AuthorityIdentityError extends Data.TaggedError("AuthorityIdentityE
   readonly configured: string;
   readonly stored: string;
 }> {
-  // The operator-facing message is read through the base Error contract when the
-  // daemon logs the failure; fallow cannot attribute those reads to this class.
+  // The operator-facing message is read through the base Error contract when the daemon
+  // logs the failure, so fallow cannot attribute those reads to this class. That the
+  // getter is load-bearing is pinned by `apps/swordfish/test/component/persistence.test.ts`
+  // ("database belongs to bty-another"), which fails if this text stops rendering.
   // fallow-ignore-next-line unused-class-member
   override get message(): string {
     return `Swordfish ${this.field} is ${this.configured}, but this database belongs to ${this.stored}.`;

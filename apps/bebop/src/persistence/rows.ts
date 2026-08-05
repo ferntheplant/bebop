@@ -15,6 +15,8 @@ import type { Timestamp } from "@bebop/contracts";
 import { timestampFrom } from "#src/domain/identity.ts";
 
 export class RowDecodeError extends Error {
+  readonly _tag = "RowDecodeError";
+
   constructor(
     readonly column: string,
     readonly received: unknown,

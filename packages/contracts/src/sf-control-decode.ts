@@ -11,6 +11,8 @@ import {
 } from "./sf-control.ts";
 
 export class UnsupportedSfControlVersionError extends Error {
+  readonly _tag = "UnsupportedSfControlVersionError";
+
   constructor(readonly receivedVersion: number) {
     super(`Unsupported sf control version ${receivedVersion}; expected ${currentSfControlVersion}.`);
     this.name = "UnsupportedSfControlVersionError";
@@ -18,6 +20,8 @@ export class UnsupportedSfControlVersionError extends Error {
 }
 
 export class InvalidSfControlRequestError extends Error {
+  readonly _tag = "InvalidSfControlRequestError";
+
   constructor(options?: ErrorOptions) {
     super("Invalid sf control request.", options);
     this.name = "InvalidSfControlRequestError";
@@ -25,6 +29,8 @@ export class InvalidSfControlRequestError extends Error {
 }
 
 export class InvalidSfControlResponseError extends Error {
+  readonly _tag = "InvalidSfControlResponseError";
+
   constructor(options?: ErrorOptions) {
     super("Invalid sf control response.", options);
     this.name = "InvalidSfControlResponseError";
@@ -32,6 +38,8 @@ export class InvalidSfControlResponseError extends Error {
 }
 
 export class UnexpectedSfControlResponseError extends Error {
+  readonly _tag = "UnexpectedSfControlResponseError";
+
   constructor() {
     super("The sf control response did not match its request.");
     this.name = "UnexpectedSfControlResponseError";

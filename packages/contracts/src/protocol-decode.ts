@@ -13,6 +13,8 @@ import { currentProtocolVersion } from "./scalars.ts";
 export type ProtocolDirection = "swordfish_to_bebop" | "bebop_to_swordfish";
 
 export class UnsupportedProtocolVersionError extends Error {
+  readonly _tag = "UnsupportedProtocolVersionError";
+
   constructor(readonly receivedVersion: number) {
     super(`Unsupported protocol version ${receivedVersion}; expected ${currentProtocolVersion}.`);
     this.name = "UnsupportedProtocolVersionError";
@@ -20,6 +22,8 @@ export class UnsupportedProtocolVersionError extends Error {
 }
 
 export class InvalidProtocolMessageError extends Error {
+  readonly _tag = "InvalidProtocolMessageError";
+
   constructor(
     readonly direction: ProtocolDirection,
     options?: ErrorOptions,

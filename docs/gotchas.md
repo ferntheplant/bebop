@@ -1,7 +1,8 @@
 # Gotchas
 
-Environment behaviour that looks like a defect in our code and is not. Nothing here was chosen — the runtime,
-the driver, or the toolchain chose it for us, which is why none of it is an [ADR](./adr/).
+Behaviour that looks like a defect in our code and is not. Most of it was not chosen — the runtime, the driver,
+or the toolchain chose it for us, which is why none of it is an [ADR](./adr/). The rest is deliberately deferred:
+a weaker mechanism than the obvious one, standing until a decision that has not been taken yet.
 
 Each entry names the obvious-looking simplification that reintroduces the problem. That is the point of the
 file: every one of these has already been shipped once, and every one of them looks like tidiness to someone
@@ -94,6 +95,12 @@ without any command looking wrong. Isolated seat credentials are the layer that 
 from driving a seat, so leaking one removes the protection rather than weakening it. The credential is passed
 only to the processes Swordfish itself spawns.
 
+**`BEBOP_LOCAL_HARNESS_ROOT` makes every provision write a Swordfish machine credential to disk in plaintext.**
+That is the whole point of it locally and a deployment accident anywhere else, so setting it logs a warning at
+startup rather than starting quietly. The warning is a recorded compromise, not a guard — nothing stops the
+variable being set in production, and whether it should be impossible there rather than merely loud is still
+open. Deleting the warning as startup noise removes the only signal that a deployment has it on.
+
 ## Process lifecycle
 
 **A graceful `server.stop()` can wait forever.** A WebSocket whose close handshake is in flight when the server
@@ -104,6 +111,15 @@ exceeding `SWORDFISH_SHUTDOWN_TIMEOUT`, so a stuck socket close cannot outlive t
 **`httpIdleTimeout` defaults to Bun's maximum of 255 seconds rather than being disabled.** An unbounded idle
 connection is a resource a half-dead client can hold forever, and the event stream is resumable by construction —
 a dropped subscriber reconnects with `Last-Event-ID` and misses nothing.
+
+**The bounty event stream sends no keep-alive, so an idle reader is closed by Bun rather than by us.** Depending
+on whether the client's own abort or Bun's idle close wins the race, `fetch` reports an `AbortError` or a
+socket-close `TypeError`; a bounded read has to treat both as the normal end once bytes have arrived. It is also
+why any suite reusing a pooled keep-alive socket sets `BEBOP_HTTP_IDLE_TIMEOUT` generously — a short window plus
+a starved CI runner produced `ECONNRESET` flakes in the component suites. Whether the stream should emit a
+keep-alive, and what that does to the SSE contract, is still open. Narrowing the catch to one error type, or
+tightening the timeout because thirty seconds looks excessive, are the two tidyings that reintroduce it, and both
+fail only under load.
 
 **The Swordfish control socket accepts connections before anything answers on them.** `makeControlSocket` binds
 the listener first, then `initializeDatabase` and `workflow.bootstrap` run, and only then is `runControlServer`

@@ -71,4 +71,4 @@ be separated by permission alone.
 
 ## Still open
 
-- [Which permission posts the evidence comment — `issues: write`, or does `pull_requests: write` suffice?](../../.scratch/bebop-mvp/issues/17-permission-required-to-post-the-evidence-comment.md)
+- Which permission posts the evidence comment — `issues: write`, or does `pull_requests: write` suffice?

@@ -9,8 +9,8 @@ processes against real Postgres and SQLite over loopback? In particular, do star
 loss, process restart, event replay, command delivery, acknowledgement, projection, and cancellation preserve
 state without duplication?
 
-This is the throwaway probe for
-[issue 20](../../.scratch/bebop-mvp/issues/20-real-process-local-protocol.md). It deliberately does not add a local
+This is the throwaway probe for what breaks when real Bebop and Swordfish processes run together
+locally. It deliberately does not add a local
 compute provider, test-only event injection, OpenCode prompting, repository hooks, GitHub, or an autonomous
 workflow producer.
 
@@ -109,7 +109,7 @@ retain the timing assertion so shutdown cannot regress into a hang.
 
 The prototype's bounded replay reader received every stored event. Depending on which timer won, Bun ended the
 read with either `AbortError` or `The socket connection was closed unexpectedly`. This is the known unresolved
-behavior in [issue 18](../../.scratch/bebop-mvp/issues/18-sse-keepalive-and-the-http-idle-timeout.md), not a new
+behavior of the keepalive-free SSE route, not a new
 finding. The WebSocket stayed healthy under the same short HTTP idle timeout because Swordfish heartbeats kept it
 active.
 
@@ -125,7 +125,7 @@ These are thin-client implementation gaps, not transport or protocol decisions.
 
 ## Next production slice
 
-The probe justifies [the local system harness brief](../../.scratch/local-system-harness/brief.md). It turns this
+The probe justifies the maintained local system harness (see [`docs/testing.md`](../../docs/testing.md)). It turns this
 throwaway driver into a maintained one-command process harness, moves credential handoff back into the lifecycle
 injection path, and pins the restart/cancellation observations as regression scenarios. The production OpenCode
 driver can then use that harness with the repository's scripted fake model endpoint to prove autonomous state

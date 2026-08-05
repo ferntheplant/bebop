@@ -316,7 +316,7 @@ function changesFor(
             // Passing CI is what makes a candidate a *validated* candidate, so this is where one of the spec's
             // slots is spent. It is charged once per candidate that reaches here, under either controller: the
             // allowance bounds how many distinct SHAs a spec may put in front of a reviewer, and who produced
-            // them does not change that (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+            // them does not change that ("CI gates cowboy review" (ADR 0040)).
             validatedCandidatesConsumed: state.validatedCandidatesConsumed + 1,
           },
         };

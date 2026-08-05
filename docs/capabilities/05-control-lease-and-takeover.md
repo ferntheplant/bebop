@@ -80,6 +80,6 @@ prompt is refused), **13** (a prompt by any other route is rejected by the plugi
 
 ## Still open
 
-- [Retrieve the operator credential and enforce it on mutating `sf` commands](../../.scratch/bebop-mvp/issues/22-operator-credential-retrieval-and-enforcement.md)
+- Retrieve the operator credential and enforce it on mutating `sf` commands
   — the credential is derived and provisioned, but nothing enforces it and no human can obtain it yet.
-- [What does the cockpit tell an operator to do once `sf takeover` demands a credential?](../../.scratch/bebop-mvp/issues/23-cockpit-guidance-for-operator-authenticated-commands.md)
+- What does the cockpit tell an operator to do once `sf takeover` demands a credential?

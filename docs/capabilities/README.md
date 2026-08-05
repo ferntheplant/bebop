@@ -29,7 +29,7 @@ a criterion nobody claims is a visible gap rather than a silent one.
 Capabilities 14 and 15 own no acceptance criterion, because both are properties of the whole system rather than
 stages with their own test. That is worth knowing rather than fixing: **nothing in `ABSTRACT.md` §8 fails if the
 security model is violated or the deployment is unbacked-up.** Release qualification is the open question that
-should close that gap, and it is still fog on [the map](../../.scratch/bebop-mvp/map.md).
+should close that gap, and it is still still fog.
 
 **Stands at** means:
 
@@ -44,7 +44,7 @@ should close that gap, and it is still fog on [the map](../../.scratch/bebop-mvp
 Descriptive behaviour, in the vocabulary of [`CONTEXT.md`](../../CONTEXT.md). A capability file says what a user
 can expect and points at the decisions that shaped it — it does not restate them. If you are writing something
 that is really a decision, it belongs in [`docs/adr/`](../adr/); a term belongs in `CONTEXT.md`; an open question
-belongs on [the map](../../.scratch/bebop-mvp/map.md).
+belongs in the planning tracker.
 
 These files carry provisional answers as well as settled ones — a default nobody has reviewed is still the
 starting position a session has to react to. Where a value is provisional and its question is live, the

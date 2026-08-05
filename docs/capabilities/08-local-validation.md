@@ -48,5 +48,5 @@ The hook contract itself lives in [repository configuration](./07-repository-con
 
 ## Still open
 
-- **Repository configuration in practice** — fog on [the map](../../.scratch/bebop-mvp/map.md); a hook that hangs
+- **Repository configuration in practice** — still fog; a hook that hangs
   or a port that collides will decide how much of this stage has to change.

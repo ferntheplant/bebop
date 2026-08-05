@@ -40,7 +40,6 @@ Rulesets carry no implicit admin exemption, so an operator cannot quietly hand-p
 without first removing the rule — which is the intended behaviour, and worth knowing before it is discovered
 during an incident.
 
-Settled by
-[ticket 12](../../.scratch/bebop-mvp/issues/12-github-app-permissions-and-branch-protection.md), which probed a
+Settled by probing a
 live repository rather than reasoning from the documentation; several of the findings above contradict what the
 docs imply.

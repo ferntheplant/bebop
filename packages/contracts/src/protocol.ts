@@ -211,7 +211,7 @@ export const TurnCompletedEvent = Schema.Struct({
  * An attempt that exhausted its watchdogs while allowance remains ends here and the next one starts
  * automatically. The *final* allowed attempt is not ended: it is preserved in its seat behind
  * `needs_attention` so that `continue` has something to revive
- * (`.scratch/bebop-mvp/issues/09-default-constraints-and-exhaustion.md`).
+ * ("Continue preserves an attempt; rerun replaces it" (ADR 0041)).
  */
 export const AttemptEndedEvent = Schema.Struct({
   type: Schema.Literal("attempt_ended"),

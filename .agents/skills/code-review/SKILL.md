@@ -25,7 +25,7 @@ Before going further, confirm the fixed point resolves (`git rev-parse <fixed-po
 Look for the originating spec, in this order:
 
 1. A path the user passed as an argument.
-2. A PRD/spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
+2. A brief, PRD, or spec file matching the branch name or feature. In this repo that is a brief — `.scratch/briefs/<slug>.md`, or an effort's own `briefs/<slug>.md`; see [the tracker doc](../../ISSUE-TRACKER.md).
 3. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
 ### 3. Identify the standards sources

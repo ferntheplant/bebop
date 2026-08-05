@@ -68,7 +68,7 @@ Bounded shutdown, which is what makes a blue/green drain terminate, is in
 
 ## Still open
 
-- **Operating a bounty fleet** — fog on [the map](../../.scratch/bebop-mvp/map.md): what the operator sees when
+- **Operating a bounty fleet** — still fog: what the operator sees when
   six bounties are live, which failures page a human, and what the observability floor actually needs beyond
   structured logs.
 - **Release qualification** — also fog: migration-from-previous-version, stress runs, and backup restore, beyond

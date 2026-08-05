@@ -2,9 +2,8 @@
 
 Bebop is a remote supervised coding-bounty system built around OpenCode and exe.dev. What it is and why it
 exists is in [`ABSTRACT.md`](./ABSTRACT.md); the vocabulary is in [`CONTEXT.md`](./CONTEXT.md); the decisions
-are in [`docs/adr/`](./docs/adr/); and the route to the MVP is charted in
-[`.scratch/bebop-mvp/map.md`](./.scratch/bebop-mvp/map.md). [`AGENTS.md`](./AGENTS.md) is the working map of
-all of it.
+are in [`docs/adr/`](./docs/adr/); and what each capability delivers is in
+[`docs/capabilities/`](./docs/capabilities/). [`AGENTS.md`](./AGENTS.md) is the working map of all of it.
 
 ## Workspace
 
@@ -60,7 +59,7 @@ vp run ready
 
 Run the maintained local system harness — packed Bebop API, worker, CLI, Swordfish daemon, and `sf` CLI over
 loopback against disposable Postgres, proving the packed-process protocol floor
-([`.scratch/local-system-harness/brief.md`](./.scratch/local-system-harness/brief.md)):
+(see [`docs/testing.md`](./docs/testing.md)):
 
 ```bash
 docker compose up -d --wait postgres

@@ -76,7 +76,7 @@ ones that shaped the design are written up in [`docs/adr/`](./adr/).
 The [real-process loopback prototype](../prototypes/real-process-local-protocol/README.md) was the process-level
 exception that proved two applications compose rather than proving one entrypoint starts. It launched only packed
 artifacts and drove public HTTP, WebSocket, CLI, and Unix-socket interfaces; it did not import app source or write
-either database. Its production follow-up is the [local system harness](../.scratch/local-system-harness/brief.md),
+either database. Its production follow-up is the local system harness,
 maintained under `test/local-system/` and run via `vp run local-system`: the same packed peers over disposable
 Postgres, with the fake lifecycle provider handing the machine credential to the supervisor through the one-shot
 bootstrap artifact instead of a second credential path.
@@ -103,7 +103,7 @@ side-effecting things are wrapped in Effect services and replaced at the layer s
 - `Identity` (`apps/bebop/src/domain/identity.ts:28`) bundles ID generation **and** `now`, replaced by
   `fixedIdentityLayer` in the component harness. `TestClock` would virtualize only `now`, not the other six
   generators, so it is additive not substitutive. Whether to adopt it for the scheduled loops is an open
-  question on the map — see `.scratch/bebop-mvp/issues/`.
+  question.
 - `LifecycleProvider` (`apps/bebop/src/lifecycle/provider.ts`) is replaced by `fakeLifecycleProviderLayer` with
   hookable `onProvision` / `onProvisionAttempt` / `failProvisionAttempts` callbacks.
 - Time and external clients stay on real wall-clock. The integration suites need this because they assert on

@@ -58,5 +58,5 @@ transfers control to Swordfish).
 
 ## Still open
 
-- **What ein is actually told** — still fog on [the map](../../.scratch/bebop-mvp/map.md) rather than a ticket,
+- **What ein is actually told** — still still fog rather than a ticket,
   because the question is not yet sharp enough to state.

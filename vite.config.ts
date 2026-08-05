@@ -138,7 +138,7 @@ export default defineConfig({
         env: ["BEBOP_TEST_DATABASE_URL"],
       },
       // The maintained local system harness: packed Bebop + Swordfish processes over loopback
-      // with disposable Postgres (`.scratch/local-system-harness/brief.md`). Gated on the
+      // with disposable Postgres (`docs/testing.md`). Gated on the
       // database URL exactly like the other Postgres-backed suites.
       "local-system": {
         command: "bun node_modules/vitest/vitest.mjs run --reporter=minimal test/local-system",

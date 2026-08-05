@@ -50,4 +50,4 @@ marked done and deprovisioned).
 
 ## Still open
 
-- [What are the compute profiles, retention windows, and orphan sweeps?](../../.scratch/bebop-mvp/issues/13-compute-profiles-retention-and-orphans.md)
+- What are the compute profiles, retention windows, and orphan sweeps?

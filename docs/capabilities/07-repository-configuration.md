@@ -85,5 +85,5 @@ glob enters `needs_attention`, and `approve-config` for that exact SHA resumes t
 
 ## Still open
 
-- **Repository configuration in practice** — fog on [the map](../../.scratch/bebop-mvp/map.md): the contract is
+- **Repository configuration in practice** — still fog: the contract is
   designed but has never met a real repository.

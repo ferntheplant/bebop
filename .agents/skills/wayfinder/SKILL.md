@@ -12,9 +12,11 @@ The destination varies per effort, and naming it is the first act of charting �
 
 Wayfinder is **planning** by default: each ticket resolves a decision, and the map is done when the way is clear — nothing left to decide before someone goes and does the thing. The pull to just do the work is usually the signal you've reached the edge of the map and it's time to hand off. An effort can override this in its **Notes** — carrying execution into the map itself — but absent that, produce decisions, not deliverables.
 
+**Where a handoff lands is tracker-specific.** A resolution that makes a build-sized slice specifiable writes that slice up as its own artifact, owned by this map rather than by a new effort of its own — consult the tracker doc for what that artifact is called and where it goes.
+
 ## Refer by name
 
-Every map and ticket has a **name** — its title, which on a file-based tracker is the ticket's `# ` heading, not its filename. In everything the human reads — narration, the map's Decisions-so-far — refer to it by that name, never by a bare id, number, slug, or path. A wall of `#42, #43, #44` is illegible, and `01-exe-dev-llm.md` barely better; names read at a glance. The link doesn't vanish — a name wraps it — but it rides _inside_ the name, never stands in for it.
+Every map and ticket has a **name** — its title, which on a file-based tracker is the ticket's `# ` heading, not its filename. In everything the human reads — narration, the map's Decisions-so-far — refer to it by that name, never by a bare id, number, slug, or path. A wall of `#42, #43, #44` is illegible, and `exe-dev-llm-integration.md` barely better; names read at a glance. The link doesn't vanish — a name wraps it — but it rides _inside_ the name, never stands in for it.
 
 ## The Map
 
@@ -31,19 +33,20 @@ A local-markdown tracker has no issues, labels, assignees, comments, or native d
 | The skill says             | On files it is                                                                               |
 | -------------------------- | -------------------------------------------------------------------------------------------- |
 | the map issue              | `map.md` in the effort's directory — the `wayfinder:map` label is implied by being that file |
-| a child issue              | one numbered file per ticket in the effort's `issues/` directory, numbered from `01`         |
-| the issue id               | that number — but see [Refer by name](#refer-by-name)                                        |
-| a `wayfinder:<type>` label | a `Type:` line near the top of the ticket                                                    |
-| assigning to claim         | a `Status:` line — `open` at creation, `claimed` saved **before** any work                   |
-| native blocking            | a `Blocked by: NN, NN` line naming the tickets that must resolve first                       |
-| a frontier query           | scanning `issues/` for files that are open, unblocked, and unclaimed; lowest number wins     |
+| a child issue              | one file per ticket in the effort's `issues/` directory, named by slug                       |
+| the issue id               | that slug — but see [Refer by name](#refer-by-name)                                          |
+| a `wayfinder:<type>` label | frontmatter `type:`                                                                          |
+| assigning to claim         | frontmatter `status:` — `open` at creation, `claimed` saved **before** any work              |
+| native blocking            | frontmatter `blocked-by: [<slug>, <slug>]` naming the tickets that must resolve first        |
+| a frontier query           | scanning `issues/` for files that are open, unblocked, and unclaimed                         |
 | a resolution comment       | an `## Answer` section appended to the ticket                                                |
-| closing an issue           | `Status: resolved`                                                                           |
+| closing an issue           | frontmatter `status: resolved`                                                               |
 
-Three consequences worth knowing before you start:
+Four consequences worth knowing before you start:
 
-- **Numbers are chosen, not assigned.** Nothing needs to exist before something else can reference it, so charting has no create-then-wire second pass — write each ticket with its `Blocked by:` line already filled in.
-- **The frontier isn't rendered for you.** A real tracker shows the human what's takeable in its own UI; a directory of files does not. Compensate by naming the takeable tickets when you finish charting, and again whenever a resolution unblocks something.
+- **Slugs are chosen, not assigned.** Nothing needs to exist before something else can reference it, so charting has no create-then-wire second pass — write each ticket with its `blocked-by` already filled in. A slug also needs no knowledge of what exists, so parallel sessions never collide over an index; two people choosing the same slug have found a duplicate, which is information rather than a conflict.
+- **A slug is an identity, not a location.** It stays with the item for its whole life — an inbox item promoted into an effort keeps its name, and `git mv` moves it.
+- **The frontier isn't rendered for you.** A real tracker shows the human what's takeable in its own UI; a directory of files does not. Compensate by naming the takeable tickets when you finish charting, and again whenever a resolution unblocks something. With no numeric tiebreak, rank by critical path: the ticket blocking the most others, directly or transitively, goes first.
 - **The tracker is in the repo, so it is in the diff.** Map and ticket edits are commits like any other. Keep them separate from code changes, and expect a resolution to show up in review.
 
 ### The map body
@@ -76,7 +79,7 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ### Tickets
 
-Each ticket is a **child** of the map; the tracker's id — an issue number, or a file's number on a file-based tracker — is its identity. Its body is the question, sized to one 100K token agent session:
+Each ticket is a **child** of the map; the tracker's id — an issue number, or a file's slug on a file-based tracker — is its identity. Its body is the question, sized to one 100K token agent session:
 
 ```markdown
 ## Question
@@ -84,7 +87,7 @@ Each ticket is a **child** of the map; the tracker's id — an issue number, or 
 <the decision or investigation this ticket resolves>
 ```
 
-Each ticket carries its type — one of `research`, `prototype`, `grilling`, `task` (see [Ticket Types](#ticket-types)) — as a `wayfinder:<type>` label, or as a `Type:` line where the tracker has no labels.
+Each ticket carries its type — one of `research`, `prototype`, `grilling`, `task` (see [Ticket Types](#ticket-types)) — as a `wayfinder:<type>` label, or as frontmatter `type:` where the tracker has no labels.
 
 A session **claims** a ticket **first**, before any work, so concurrent sessions skip it: by assigning it to the dev driving the map, or by marking it claimed where the tracker has no assignees. An open, unclaimed ticket is takeable — so a claim that is never written down is a claim that didn't happen.
 
@@ -133,14 +136,14 @@ User invokes with a loose idea.
 1. **Name the destination.** Run a `/grilling` and `/domain-modeling` session to pin down what this map is finding its way to — the spec, decision, or change. The destination fixes the scope, so it's settled first.
 2. **Map the frontier.** Grill again, **breadth-first** this time: fan out across the whole space rather than deep on any one thread, surfacing the open decisions and the first steps takeable now. **If this surfaces no fog** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
 3. **Create the map** (marked `wayfinder:map`): Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**.
-4. **Create the tickets you can specify now** as children of the map, then wire the blocking edges. On a tracker that assigns ids, wiring is a **second pass** — issues need ids before they can reference each other. On a file-based tracker you choose the numbers, so write each ticket with its blocking line already filled in. Either way, wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog — the **Not yet specified** section.
+4. **Create the tickets you can specify now** as children of the map, then wire the blocking edges. On a tracker that assigns ids, wiring is a **second pass** — issues need ids before they can reference each other. On a file-based tracker you choose the slugs, so write each ticket with its blocking line already filled in. Either way, wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog — the **Not yet specified** section.
 5. **Fire the research subagents.** For each `research` ticket you just created, spin up a `/research` subagent to resolve it in parallel, capturing its findings on a throwaway `research/<name>` branch with a context pointer from the ticket.
 6. **Name the frontier.** Say which tickets are takeable now, by name. On a tracker with a UI this is a courtesy; on a file-based one it is the only place the human sees the frontier without scanning the directory themselves.
 7. Stop — charting is one session's work; it hand-resolves nothing.
 
 ### Work through the map
 
-User invokes with a map — a URL, a number, or a path. A ticket is **optional** — without one, you pick the next decision, not the user.
+User invokes with a map — a URL, a slug, or a path. A ticket is **optional** — without one, you pick the next decision, not the user.
 
 1. Load the **map** — the low-res view, not every ticket body.
 2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket in order. **Claim it** before any work, and persist the claim — on a file-based tracker that means writing and saving the file, not merely intending to.

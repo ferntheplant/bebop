@@ -130,6 +130,17 @@ suite("Bebop API over Postgres", () => {
 
     const unknown = await harness.request("/api/bounties/bty-does-not-exist/operator-credential", { method: "POST" });
     expect(unknown.status).toBe(404);
+
+    // The credential dies with the VM (ADR 0038), and that is the half of the claim worth
+    // testing: derivation is deterministic, so the plaintext stays computable forever and
+    // only this check stops a destroyed bounty from handing it out.
+    expect((await harness.request(`/api/bounties/${bounty.bountyId}`, { method: "DELETE" })).status).toBe(204);
+    await harness.runJobs();
+
+    const afterDestroy = await harness.request(`/api/bounties/${bounty.bountyId}/operator-credential`, {
+      method: "POST",
+    });
+    expect(afterDestroy.status).toBe(404);
   });
 
   test("replays one idempotency key instead of creating a second bounty", async () => {

@@ -514,6 +514,20 @@ suite("local system harness", () => {
       // travels from Bebop's derivation through the retrieval CLI and into the daemon over the
       // socket; the harness never derives it test-side.
       const credential = await operatorCredential(fleet, bebop, created.bountyId);
+
+      // Enforcement, as the operator meets it: a wrong credential against the daemon the
+      // bootstrap artifact provisioned, refused as a sentence on stderr rather than a stack
+      // trace. The successful cancel below is what proves the refusal changed nothing —
+      // a mutation that had applied would leave the second cancel refusing an invalid state.
+      const refused = await fleet.run(
+        join(repositoryRoot, "apps/swordfish/dist/cli.mjs"),
+        ["cancel", "--socket", fixture.socketPath, "--json"],
+        { timeoutMs: 5_000, stdin: "bebop_op_not-the-real-credential\n" },
+      );
+      assert(refused.exitCode !== 0, "sf cancel accepted a wrong operator credential");
+      expect(refused.stderr).toContain("valid operator credential");
+      expect(refused.stdout).toBe("");
+
       const cancelled = await fleet.run(
         join(repositoryRoot, "apps/swordfish/dist/cli.mjs"),
         ["cancel", "--socket", fixture.socketPath, "--json"],

@@ -41,8 +41,13 @@ const promptOperatorCredential = Effect.callback<OperatorCredential, OperatorCre
   // `readline` has no hidden-input mode: it echoes through an internal `_writeToOutput`, and
   // suppressing that is what conceals the typing. The method is undocumented, so it is only
   // reached on a real terminal — a piped stdin never depends on it.
+  //
+  // The interface echoes to stderr rather than stdout, so the credential cannot reach a
+  // redirected `--json` stdout even if that undocumented internal is renamed and the muting
+  // silently stops working. Concealment is the intent; keeping the plaintext out of a file
+  // the operator is capturing is the invariant.
   const isTerminal = process.stdin.isTTY === true;
-  const input = createInterface({ input: process.stdin, output: process.stdout, terminal: isTerminal });
+  const input = createInterface({ input: process.stdin, output: process.stderr, terminal: isTerminal });
   let muted = false;
   if (isTerminal) {
     const muter = input as unknown as { _writeToOutput: (data: string) => void };
@@ -55,6 +60,10 @@ const promptOperatorCredential = Effect.callback<OperatorCredential, OperatorCre
   const finish = (outcome: Effect.Effect<OperatorCredential, OperatorCredentialPromptError>) => {
     if (finished) return;
     finished = true;
+    // Nothing has ended the prompt line: a terminal's echoed newline was muted along with
+    // the typing, and a pipe never echoed one. Every outcome passes through here exactly
+    // once, so this is the one place that can close the line without doubling it.
+    process.stderr.write("\n");
     resume(outcome);
   };
   // The prompt goes to stderr so a `--json` invocation's stdout stays machine-readable.
@@ -80,6 +89,11 @@ const promptOperatorCredential = Effect.callback<OperatorCredential, OperatorCre
   input.on("close", () => {
     // A closed stdin before an answer must fail rather than hang.
     finish(Effect.fail(new OperatorCredentialPromptError("The operator credential input closed before an answer.")));
+  });
+  // Interruption while the operator is still typing must not leave the interface holding
+  // stdin, and on a terminal it is what restores the raw mode `readline` switched on.
+  return Effect.sync(() => {
+    input.close();
   });
 });
 

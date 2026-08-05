@@ -341,6 +341,18 @@ export const runControlServer = Effect.gen(function* () {
   yield* Effect.logInfo("Swordfish control socket listening").pipe(
     Effect.annotateLogs("control_socket", config.controlSocketPath),
   );
+  if (config.operatorCredentialVerifier === undefined) {
+    // Enforcement is off, and silence is the dangerous part: `handleRequest` cannot verify a
+    // credential it has no verifier for, so every mutating command is accepted. Production
+    // provisioning always injects one, which makes an absent verifier either a test harness
+    // or a provisioning regression — say so once at startup rather than letting operator
+    // authentication disappear without a trace ("Workflow actions have role-aware adapters"
+    // (ADR 0038)).
+    yield* Effect.logWarning("no operator credential verifier: mutating commands are unauthenticated").pipe(
+      Effect.annotateLogs("bounty_id", config.bountyId),
+      Effect.annotateLogs("vm_id", config.vmId),
+    );
+  }
   return yield* server.run((socket) => connectionHandler(socket).pipe(Effect.scoped));
 });
 

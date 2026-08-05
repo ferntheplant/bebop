@@ -128,8 +128,10 @@ Delivered in one change, matching the "usable the moment it is enforced" framing
   one the bootstrap artifact carried. The control component suite covers missing, wrong, and correct credentials
   against a provisioned verifier; the entrypoint and smoke suites drive `sf cancel` over a pipe.
 - **The audit-event question: no event.** Retrieval changes no bounty state — the credential was already valid
-  from provisioning — so there is nothing for a projection to record, and the route's bearer-token authentication
-  plus request-ID logs already record who retrieved it. A public event would be noise on every client's timeline
+  from provisioning — so there is nothing for a projection to record. The handler logs the retrieval itself with
+  `bounty_id` and `vm_id`, which is what makes the bearer middleware's `api_token_id` annotation land somewhere:
+  annotations attach to logs a handler emits, and with no access-log middleware a silent handler would have left
+  no record of who took operator authority. A public event would be noise on every client's timeline
   and still a partial record: the local `sf` commands that _use_ the credential run on the VM, invisible to Bebop,
   so the stream would overstate how complete the audit is. The record of operator authority is the token auth,
   not an event. Recorded in

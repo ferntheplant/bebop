@@ -270,6 +270,40 @@ describe("process entrypoints", () => {
     expect(`${trailing.stdout}${trailing.stderr}`).toContain("Unexpected argument");
   }, 30_000);
 
+  test("the sf CLI refuses a mutating command whose credential prompt yields nothing usable", async () => {
+    // No daemon anywhere: the prompt runs before the socket is dialled, so each of these
+    // fails on the input alone. That ordering is the point — `sf` asks for the credential
+    // before it goes looking for a socket, and the "daemon is unavailable" assertions below
+    // are what would catch a reordering.
+    const socketArgs = ["--socket", "/tmp/swordfish-absent.sock"];
+
+    // Pressing Enter yields `""`. This is the case that would reach `decodeUnknownSync` and
+    // crash with a stack trace if the prompt did not reject it first (ADR 0038).
+    const empty = await run("apps/swordfish/src/cli.ts", ["cancel", ...socketArgs], { stdin: "\n" });
+    expect(empty.exitCode).not.toBe(0);
+    expect(empty.stderr).toContain("The operator credential cannot be empty.");
+    expect(empty.stderr).not.toContain("Swordfish daemon is unavailable");
+
+    // A closed stdin must fail rather than hang: this is `sf cancel` with stdin at /dev/null,
+    // which is how it arrives under a supervisor or a CI runner.
+    const closed = await run("apps/swordfish/dist/cli.mjs", ["cancel", ...socketArgs], { stdin: "" });
+    expect(closed.exitCode).not.toBe(0);
+    expect(closed.stderr).toContain("closed before an answer");
+    expect(closed.stderr).not.toContain("Swordfish daemon is unavailable");
+
+    // Whitespace is non-empty but fails the schema's `isTrimmed` check, which the prompt
+    // turns into the same typed failure rather than letting it escape as a defect.
+    const untrimmed = await run("apps/swordfish/src/cli.ts", ["cancel", ...socketArgs], { stdin: "   \n" });
+    expect(untrimmed.exitCode).not.toBe(0);
+    expect(untrimmed.stderr).toContain("The operator credential is not valid.");
+
+    // `status` mutates nothing, so it is never asked and reaches the socket it cannot find.
+    const status = await run("apps/swordfish/src/cli.ts", ["status", ...socketArgs], { stdin: "" });
+    expect(status.exitCode).not.toBe(0);
+    expect(status.stderr).toContain("Swordfish daemon is unavailable");
+    expect(status.stderr).not.toContain("operator credential");
+  }, 30_000);
+
   test("the Swordfish daemon refuses to start without configuration", async () => {
     const outcome = await run("apps/swordfish/src/daemon.ts", [], {
       env: { SWORDFISH_BOUNTY_ID: "", SWORDFISH_DATABASE_PATH: "" },

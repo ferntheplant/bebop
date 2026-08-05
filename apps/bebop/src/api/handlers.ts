@@ -147,6 +147,15 @@ export const BountyHandlers = HttpApiBuilder.group(BebopHttpApi, "bounties", (ha
         if (attachment === null || attachment.destroyedAt !== undefined) {
           return yield* Effect.fail({ _tag: "BountyNotFound" as const, bountyId: params.bountyId });
         }
+        // This log *is* the audit record. Retrieval emits no bounty-stream event ("Workflow
+        // actions have role-aware adapters" (ADR 0038)) because it changes no state, which
+        // leaves the log as the only trace of who took operator authority — the bearer
+        // middleware annotates `api_token_id`, and nothing else here would emit a line for
+        // those annotations to land on.
+        yield* Effect.logInfo("operator credential retrieved").pipe(
+          Effect.annotateLogs("bounty_id", bounty.bountyId),
+          Effect.annotateLogs("vm_id", attachment.vmId),
+        );
         // Re-derived rather than read: the plaintext exists in this response and nowhere else.
         return { operatorCredential: operatorCredentialForBounty(config.swordfishCredentialKey, bounty.bountyId) };
       }).pipe(Effect.catch(failBountyRead)),

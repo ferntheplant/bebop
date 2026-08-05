@@ -1,9 +1,8 @@
 ---
-type: task
 status: open
 ---
 
-# Promote the spawn-and-collect helper into @bebop/testkit
+# Brief: promote the spawn-and-collect helper into @bebop/testkit
 
 ## Background
 
@@ -15,7 +14,7 @@ copies are throwaway and stay ignored by design
 two real smoke scripts are a second-consumer case for
 [Code moves to a package on its second consumer (ADR 0007)](../../../docs/adr/0007-code-moves-to-a-package-on-its-second-consumer.md).
 
-## Task
+## Scope
 
 - Add a spawn-and-collect helper to `@bebop/testkit`, a new `src/spawn.ts` re-exported from
   `packages/testkit/src/index.ts` next to `waitForSwordfishControl`.

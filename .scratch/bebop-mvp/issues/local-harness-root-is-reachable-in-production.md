@@ -1,5 +1,5 @@
 ---
-type: task
+type: grilling
 status: open
 ---
 

@@ -146,7 +146,7 @@ prototypes rather than tickets.
   and salting would cost the determinism that keeps provisioning retries stable. Bebop derives both
   credentials in one place and the provider injects both. The second half — retrieval, enforcement, and the
   prompt — landed in one change (see
-  [Retrieve the operator credential and enforce it on mutating `sf` commands](./issues/operator-credential-retrieval-and-enforcement.md)):
+  [Retrieve the operator credential and enforce it on mutating `sf` commands](./briefs/operator-credential-retrieval-and-enforcement.md)):
   `POST /api/bounties/:bountyId/operator-credential` re-derives the plaintext, the `sf-control` protocol moved
   to version 2 carrying the credential on the wire, and the daemon refuses every mutating command except
   `status` whose presented credential does not verify. Retrieval emits no bounty-stream event: it changes no

@@ -1,11 +1,10 @@
 ---
-type: task
 status: open
 ---
 
-# Finish triaging the fallow dead-code backlog to zero
+# Brief: finish triaging the fallow dead-code backlog to zero
 
-## Question
+## Scope
 
 `fallow dead-code` still reports 94 findings: 48 `unused-export`, 24 `unused-type`, 10
 `unused-re-export-type`, 8 `unused-class-member`, 1 `unused-re-export`, 1 `unused-dep`, 1 `unused-devdep`, and

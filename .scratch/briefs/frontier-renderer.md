@@ -22,8 +22,11 @@ One task — `vp run next` — printing three sections, in the order they should
 
 1. **Build** — open briefs (`Status: open`) across `.scratch/briefs/` and every effort's `briefs/`. Specified,
    PR-sized, nothing left to decide. A non-empty section here is the answer.
-2. **Decide** — per map, the tickets that are open, unclaimed, and whose every `Blocked by:` slug resolves to a
-   `Status: resolved` ticket. Name each by title. Rank by **critical path**: a ticket that blocks more tickets,
+2. **Decide** — per map, the tickets that are open, unclaimed, and whose every `blocked-by` slug has reached its
+   home's terminal status: `resolved` for an issue, `shipped` for a brief. A slug is resolved to a file by
+   searching both homes, since a decision can wait on something being built —
+   `cockpit-guidance-for-operator-authenticated-commands` is blocked by a brief today. Name each by title. Rank
+   by **critical path**: a ticket that blocks more tickets,
    directly or transitively, sorts first — `provision-exe-dev-access` currently gates six others and should say
    so.
 3. **Triage** — inbox depth, and the age of the oldest item.

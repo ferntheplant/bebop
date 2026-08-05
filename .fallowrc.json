@@ -1,0 +1,57 @@
+{
+  // This file is JSONC: fallow reads these comments; generic JSON tools may not.
+  "$schema": "./node_modules/fallow/schema.json",
+  "entry": [
+    "src/index.{ts,tsx,js,jsx}",
+    "src/main.{ts,tsx,js,jsx}",
+    // Each prototype is run standalone via `bun run.ts`; that driver is its
+    // entry point even though it is never imported by production code.
+    // See Fallow treats prototype drivers as entry points (ADR 0044).
+    "prototypes/*/run.ts",
+    // Smoke scripts are invoked by the Vite Task runner
+    // (`command: "bun scripts/smoke.ts"`), never imported, so they need an
+    // explicit entry root to stay reachable.
+    "apps/*/scripts/smoke.ts"
+  ],
+  "dynamicallyLoaded": [
+    // Files a prototype driver loads at runtime with no static import:
+    // child-process spawns (fake-model, fake-seat, landing-shell,
+    // sigkill-child, seat-program, cli), filesystem-loaded migrations, and
+    // the opencode plugin the pinned server discovers. The app entry is a
+    // test fixture spawned as a subprocess by the integration suite. Add an
+    // entry only for files that ARE loaded at runtime; unreachable files are
+    // real dead code and should be deleted. See Fallow treats prototype
+    // drivers as entry points (ADR 0044).
+    "prototypes/**/fake-*.ts",
+    "prototypes/**/landing-shell.ts",
+    "prototypes/**/sigkill-child.ts",
+    "prototypes/**/seat-program.ts",
+    "prototypes/**/cli.ts",
+    "prototypes/**/migrations/**",
+    "prototypes/**/.opencode/plugin/**",
+    "apps/swordfish/test/shutdown-timeout-fixture.ts"
+  ],
+  "workspaces": {
+    "patterns": ["apps/*", "packages/*", "prototypes/*"]
+  },
+  "duplicates": {
+    // Hide pair-only clones; focus on widespread copy-paste
+    // worth refactoring. Lower to 2 to report every duplicate pair.
+    "minOccurrences": 3,
+    "ignore": [
+      // Prototype drivers copy the same spike boilerplate (spawn-and-collect,
+      // probe-results summary) by design. Prototypes are throwaway and must
+      // stay independent, so cross-spike duplication is expected, never shared
+      // code. An idiom that reaches real app code belongs in @bebop/testkit
+      // instead. See Prototype duplication is expected (ADR 0045).
+      "prototypes/**"
+      // Other common additions:
+      // "**/lib/**",          // for repos that publish transpiled output to lib/
+      // "**/legacy/**",       // for repos with legacy-build artifacts
+      // "**/generated/**"     // OpenAPI, Protobuf codegen
+    ]
+  },
+  "rules": {
+    "unused-dependencies": "warn"
+  }
+}

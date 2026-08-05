@@ -47,3 +47,4 @@ prototypes/*/.prototype/
 
 # AI agent worktrees
 .claude/worktrees/
+.fallow/

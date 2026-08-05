@@ -36,6 +36,8 @@ Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
 ## Active efforts
 
 - [Bebop MVP](../.scratch/bebop-mvp/map.md) — the route from the current control plane to a merged bounty.
+- [Fallow cleanup](../.scratch/fallow-cleanup/map.md) — zero Fallow findings under a committed policy, then
+  `fallow audit` as a PR gate.
 
 ## Completed efforts
 

@@ -16,6 +16,7 @@
     "@commitlint/cli": "catalog:",
     "@commitlint/config-conventional": "catalog:",
     "@types/bun": "catalog:",
+    "fallow": "^3.14.0",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:",

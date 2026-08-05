@@ -50,7 +50,7 @@ const encodePreviews = Schema.encodeUnknownSync(Schema.Array(PrivatePreviewAttac
 
 const computeProfiles = ["small", "standard", "large"] as const;
 
-export interface VmAttachmentRecord {
+interface VmAttachmentRecord {
   readonly bountyId: BountyId;
   readonly vmId: VmId;
   readonly ssh?: SshAttachment;
@@ -97,7 +97,7 @@ function toVmAttachment(row: Row): VmAttachmentRecord {
 const bountyColumns = `bounty_id, repository, base_ref, assigned_branch, compute_profile, primary_context,
   initial_prompt, lifecycle_state, lifecycle_detail, created_at, updated_at`;
 
-export interface BountyRepositoryService {
+interface BountyRepositoryService {
   readonly insert: (bounty: BountyRecord) => Effect.Effect<BountyRecord, SqlError.SqlError>;
   readonly get: (bountyId: BountyId) => Effect.Effect<BountyRecord | null, SqlError.SqlError>;
   /**

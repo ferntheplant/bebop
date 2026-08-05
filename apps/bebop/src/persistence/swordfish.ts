@@ -66,7 +66,7 @@ function toProjection(row: Row): BebopSwordfishProjection {
   };
 }
 
-export interface AcceptedSwordfishEvent {
+interface AcceptedSwordfishEvent {
   readonly bountyId: BountyId;
   readonly message: EventMessage;
   /**
@@ -80,7 +80,7 @@ export interface AcceptedSwordfishEvent {
   readonly receivedAt: Timestamp;
 }
 
-export interface SwordfishProjectionRepositoryService {
+interface SwordfishProjectionRepositoryService {
   /** Loads the projection, or an empty one bound to this bounty and VM. */
   readonly load: (options: {
     readonly bountyId: BountyId;

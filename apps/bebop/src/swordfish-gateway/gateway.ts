@@ -51,7 +51,7 @@ import { hashSwordfishToken, presentedSwordfishToken } from "#src/swordfish-gate
 
 /** The path Swordfish dials. Shares the API's port: one container, one port behind Caddy
  * (`docs/capabilities/15-deployment-and-operation.md`). */
-export const swordfishGatewayPath = "/swordfish";
+const swordfishGatewayPath = "/swordfish";
 
 const encodeOutbound = Schema.encodeUnknownSync(BebopToSwordfishMessageSchema);
 

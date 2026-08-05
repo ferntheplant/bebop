@@ -51,7 +51,7 @@ const AttemptState = Schema.Struct({
 const ScopeLedger = Schema.Struct({ attemptsConsumed: NonNegativeInteger, attemptsGranted: NonNegativeInteger });
 const ScopeLedgersSchema = Schema.Struct({ building: ScopeLedger, review: ScopeLedger, qa: ScopeLedger });
 
-export const SwordfishWorkflowSnapshot = Schema.Struct({
+const SwordfishWorkflowSnapshot = Schema.Struct({
   lastAppliedSequence: EventSequence,
   fingerprints: Schema.Array(RetainedFingerprint),
   fingerprintFloor: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))),
@@ -78,7 +78,7 @@ export const SwordfishWorkflowSnapshot = Schema.Struct({
   ledgers: ScopeLedgersSchema,
   validatedCandidatesConsumed: NonNegativeInteger,
 });
-export type SwordfishWorkflowSnapshot = typeof SwordfishWorkflowSnapshot.Type;
+type SwordfishWorkflowSnapshot = typeof SwordfishWorkflowSnapshot.Type;
 
 export function toWorkflowSnapshot(state: SwordfishWorkflowState): SwordfishWorkflowSnapshot {
   return {

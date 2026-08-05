@@ -23,7 +23,7 @@ export const newRequestId: Effect.Effect<ApiRequestId> = Effect.sync(() =>
   decodeRequestId(`req-${crypto.randomUUID().replaceAll("-", "")}`),
 );
 
-export interface ApiErrorBody<Code extends string> {
+interface ApiErrorBody<Code extends string> {
   readonly code: Code;
   readonly message: string;
   readonly requestId: ApiRequestId;
@@ -33,10 +33,10 @@ function body<const Code extends string>(code: Code, message: string): Effect.Ef
   return Effect.map(newRequestId, (requestId) => ({ code, message, requestId }));
 }
 
-export const badRequest = (message: string) => body("bad_request" as const, message);
-export const notFound = (bountyId: BountyId) => body("bounty_not_found" as const, `No bounty with id ${bountyId}.`);
+const badRequest = (message: string) => body("bad_request" as const, message);
+const notFound = (bountyId: BountyId) => body("bounty_not_found" as const, `No bounty with id ${bountyId}.`);
 export const tokenNotFound = (message: string) => body("token_not_found" as const, message);
-export const conflict = (message: string) => body("conflict" as const, message);
+const conflict = (message: string) => body("conflict" as const, message);
 export const unprocessable = (message: string) => body("unprocessable_entity" as const, message);
 export const internalError = (message: string) => body("internal_error" as const, message);
 

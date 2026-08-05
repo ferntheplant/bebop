@@ -18,7 +18,7 @@ import {
   HttpApiSecurity,
 } from "effect/unstable/httpapi";
 
-export const SpikeEventEnvelope = Schema.Struct({
+const SpikeEventEnvelope = Schema.Struct({
   cursor: Schema.Number,
   kind: Schema.Literals(["stored", "live"]),
 });
@@ -32,7 +32,7 @@ const SseEventBase = Schema.Struct({
 
 // The same invariant Milestone 2 fixed for the real stream: "each canonical SSE ID must
 // equal its typed event cursor". Encoding is where it gets enforced.
-export const SpikeSseEvent = SseEventBase.pipe(
+const SpikeSseEvent = SseEventBase.pipe(
   Schema.check(
     Schema.makeFilter<typeof SseEventBase.Type>((event) =>
       event.id === String(event.data.cursor) ? undefined : "Expected the SSE ID to match the event cursor",
@@ -46,17 +46,17 @@ function errorSchema<const Code extends string>(code: Code, status: HttpApiSchem
   return Schema.Struct({ code: Schema.Literal(code), message: Schema.String }).pipe(HttpApiSchema.status(status));
 }
 
-export const BadRequestError = errorSchema("bad_request", "BadRequest");
-export const UnauthorizedError = errorSchema("unauthorized", "Unauthorized");
+const BadRequestError = errorSchema("bad_request", "BadRequest");
+const UnauthorizedError = errorSchema("unauthorized", "Unauthorized");
 
 export class BearerAuthentication extends HttpApiMiddleware.Service<BearerAuthentication>()("BearerAuthentication", {
   security: { bearer: HttpApiSecurity.bearer },
   error: UnauthorizedError,
 }) {}
 
-export const HealthResponse = Schema.Struct({ status: Schema.Literal("ok"), checkedAt: Schema.String });
+const HealthResponse = Schema.Struct({ status: Schema.Literal("ok"), checkedAt: Schema.String });
 
-export const CreateThingRequest = Schema.Struct({
+const CreateThingRequest = Schema.Struct({
   name: Schema.String.pipe(Schema.check(Schema.isMinLength(3))),
   count: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThan(0))),
 });

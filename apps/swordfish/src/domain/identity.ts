@@ -2,7 +2,7 @@ import type { CorrelationId, Timestamp } from "@bebop/contracts";
 import { CorrelationId as CorrelationIdSchema, Timestamp as TimestampSchema } from "@bebop/contracts";
 import { Context, Effect, Layer, Schema } from "effect";
 
-export interface SwordfishIdentityService {
+interface SwordfishIdentityService {
   readonly correlationId: Effect.Effect<CorrelationId>;
   readonly now: Effect.Effect<Timestamp>;
 }

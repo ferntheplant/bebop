@@ -83,7 +83,7 @@ const RetainedFingerprint = Schema.Struct({
   fingerprint: Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{32}$/))),
 });
 
-export const WorkflowSnapshot = Schema.Struct({
+const WorkflowSnapshot = Schema.Struct({
   lastAppliedSequence: EventSequenceSchema,
   fingerprints: Schema.Array(RetainedFingerprint),
   fingerprintFloor: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))),
@@ -102,7 +102,7 @@ export const WorkflowSnapshot = Schema.Struct({
   ledgers: ScopeLedgersSchema,
   validatedCandidatesConsumed: NonNegativeInteger,
 });
-export type WorkflowSnapshot = typeof WorkflowSnapshot.Type;
+type WorkflowSnapshot = typeof WorkflowSnapshot.Type;
 
 export function toWorkflowSnapshot(state: WorkflowCoreState): WorkflowSnapshot {
   return {

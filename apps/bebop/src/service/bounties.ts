@@ -21,7 +21,6 @@ import {
   resolutionsForAttention,
 } from "@bebop/contracts";
 import { Effect, Schema } from "effect";
-import type { SqlError } from "effect/unstable/sql";
 import { SqlClient } from "effect/unstable/sql";
 
 import { BebopConfiguration } from "#src/config.ts";
@@ -51,12 +50,12 @@ const decodeListCursor = Schema.decodeUnknownSync(BountyListCursorSchema);
  * skip a row. Base64url keeps it inside `BountyListCursor`'s alphabet and out of query-string
  * escaping.
  */
-export function encodeListCursor(bounty: BountyRecord): BountyListCursor {
+function encodeListCursor(bounty: BountyRecord): BountyListCursor {
   const payload = JSON.stringify([timestampToIso(bounty.createdAt), bounty.bountyId]);
   return decodeListCursor(Buffer.from(payload, "utf8").toString("base64url"));
 }
 
-export function decodeListCursorValue(
+function decodeListCursorValue(
   cursor: BountyListCursor,
 ): { readonly createdAt: Timestamp; readonly bountyId: BountyId } | null {
   try {
@@ -74,14 +73,14 @@ export function decodeListCursorValue(
   }
 }
 
-export interface CreatedBounty {
+interface CreatedBounty {
   readonly detail: BountyDetail;
   /** True when the idempotency key matched an earlier request and nothing new was created. */
   readonly replayed: boolean;
 }
 
 /** The list view: identity, status, and freshness, without attachment or attention detail. */
-export const bountySummary = Effect.fnUntraced(function* (bounty: BountyRecord) {
+const bountySummary = Effect.fnUntraced(function* (bounty: BountyRecord) {
   const detail = yield* bountyDetail(bounty);
   const {
     attachment: _attachment,
@@ -356,15 +355,3 @@ export const approveConfig = Effect.fnUntraced(function* (options: {
   });
   return { bounty, recorded };
 });
-
-export type BountyServiceRequirements =
-  | SqlClient.SqlClient
-  | BebopConfiguration
-  | Identity
-  | BountyRepository
-  | BountyEventRepository
-  | IdempotencyRepository
-  | LifecycleJobRepository
-  | SwordfishProjectionRepository;
-
-export type BountyServiceFailure = BountyServiceError | SqlError.SqlError;

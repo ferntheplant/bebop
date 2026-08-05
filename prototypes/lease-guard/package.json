@@ -8,7 +8,6 @@
   },
   "devDependencies": {
     "@opencode-ai/plugin": "catalog:",
-    "@opencode-ai/sdk": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   }

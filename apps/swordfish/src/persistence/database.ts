@@ -15,7 +15,7 @@ export class DatabaseDirectoryError extends Data.TaggedError("DatabaseDirectoryE
   readonly cause: unknown;
 }> {}
 
-export class DatabaseIntegrityError extends Data.TaggedError("DatabaseIntegrityError")<{
+class DatabaseIntegrityError extends Data.TaggedError("DatabaseIntegrityError")<{
   readonly result: string;
 }> {}
 

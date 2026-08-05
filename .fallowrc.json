@@ -53,5 +53,12 @@
   },
   "rules": {
     "unused-dependencies": "warn"
-  }
+  },
+  "ignoreDependencyOverrides": [
+    // Pins the transitive @effect/platform-node-shared to the catalog beta so every
+    // @effect/* package lands on one Effect version. Fallow's unused-override check
+    // treats pnpm-lock.yaml as ground truth, but this repo resolves with bun.lock, which
+    // does resolve this override (`@effect/platform-bun` depends on it with ^4.0.0-beta.101).
+    { "package": "@effect/platform-node-shared" }
+  ]
 }

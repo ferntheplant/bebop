@@ -32,10 +32,10 @@ import {
  * status is what lets a redelivery after a disconnect be distinguished from a command that
  * was never sent.
  */
-export const commandQueueStatuses = ["queued", "delivered", "accepted", "completed", "rejected", "failed"] as const;
-export type CommandQueueStatus = (typeof commandQueueStatuses)[number];
+const commandQueueStatuses = ["queued", "delivered", "accepted", "completed", "rejected", "failed"] as const;
+type CommandQueueStatus = (typeof commandQueueStatuses)[number];
 
-export interface QueuedCommand {
+interface QueuedCommand {
   readonly commandId: CommandId;
   readonly bountyId: BountyId;
   readonly command: BebopCommand;
@@ -65,7 +65,7 @@ function toQueuedCommand(row: Row): QueuedCommand {
 
 const commandColumns = `command_id, bounty_id, command, issued_at, delivered_at, status, result_reported_at, error`;
 
-export interface CommandRepositoryService {
+interface CommandRepositoryService {
   /**
    * Queues a command, or returns the existing row for a repeated `commandId`.
    *

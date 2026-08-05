@@ -31,7 +31,7 @@ const workJobs = Effect.fnUntraced(function* (workerId: string) {
   }
 });
 
-export const runBebopWorker = Effect.gen(function* () {
+const runBebopWorker = Effect.gen(function* () {
   const config = yield* BebopConfiguration;
   yield* migrateDatabase;
 

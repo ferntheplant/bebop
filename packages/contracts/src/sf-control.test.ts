@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Redacted, Schema } from "effect";
 import { describe, expect, test } from "vite-plus/test";
 
 import type { SfControlCommand } from "#src/sf-control.ts";
@@ -38,13 +38,13 @@ const commands: ReadonlyArray<typeof SfControlCommand.Encoded> = [
 
 describe("sf local control contracts", () => {
   test.each(commands)("round-trips $type requests and successful snapshots", (command) => {
-    const request = { type: "request", controlVersion: 1, correlationId: "corr-01", command } as const;
+    const request = { type: "request", controlVersion: 2, correlationId: "corr-01", command } as const;
     const decodedRequest = Schema.decodeUnknownSync(SfControlRequest)(request);
     expect(Schema.encodeSync(SfControlRequest)(decodedRequest)).toEqual(request);
 
     const response = {
       type: "success",
-      controlVersion: 1,
+      controlVersion: 2,
       correlationId: "corr-01",
       result: { command, snapshot: baseSnapshot },
     } as const;
@@ -52,11 +52,38 @@ describe("sf local control contracts", () => {
     expect(Schema.encodeSync(SfControlResponse)(decodedResponse)).toEqual(response);
   });
 
+  test("round-trips a mutating request carrying an operator credential", () => {
+    // The wire form is the plaintext; the decoded type wraps it in `Redacted`, so a program
+    // cannot print or log it by accident (ADR 0038).
+    const request = {
+      type: "request",
+      controlVersion: 2,
+      correlationId: "corr-01",
+      operatorCredential: "bebop_op_credential",
+      command: { type: "cancel" },
+    } as const;
+    const decodedRequest = Schema.decodeUnknownSync(SfControlRequest)(request);
+    expect(Redacted.value(decodedRequest.operatorCredential ?? Redacted.make(""))).toBe("bebop_op_credential");
+    expect(Schema.encodeSync(SfControlRequest)(decodedRequest)).toEqual(request);
+  });
+
+  test("rejects a request whose credential is not a string", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(SfControlRequest)({
+        type: "request",
+        controlVersion: 2,
+        correlationId: "corr-01",
+        operatorCredential: 42,
+        command: { type: "cancel" },
+      }),
+    ).toThrow();
+  });
+
   test("rejects Bebop's stop command on the local control interface", () => {
     expect(() =>
       Schema.decodeUnknownSync(SfControlRequest)({
         type: "request",
-        controlVersion: 1,
+        controlVersion: 2,
         correlationId: "corr-stop",
         command: { type: "stop" },
       }),
@@ -66,7 +93,7 @@ describe("sf local control contracts", () => {
   test.each(sfControlErrorCodes)("round-trips %s errors", (code) => {
     const encoded = {
       type: "error",
-      controlVersion: 1,
+      controlVersion: 2,
       correlationId: "corr-01",
       error: { code, message: "The command could not be applied." },
     } as const;

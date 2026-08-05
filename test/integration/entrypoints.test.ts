@@ -43,6 +43,8 @@ function run(
     readonly env?: Readonly<Record<string, string>>;
     readonly unsetEnv?: ReadonlyArray<string>;
     readonly timeoutMs?: number;
+    /** Written to the child's stdin and closed, so a mutating `sf` command can be driven noninteractively. */
+    readonly stdin?: string;
   },
 ): Promise<Outcome> {
   return new Promise((resolve) => {
@@ -52,12 +54,16 @@ function run(
     }
     const child = spawn("bun", [entrypoint, ...args], {
       env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: options?.stdin === undefined ? (["ignore", "pipe", "pipe"] as const) : (["pipe", "pipe", "pipe"] as const),
     });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    if (child.stdout !== null) child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    if (child.stderr !== null) child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    if (options?.stdin !== undefined && child.stdin !== null) {
+      child.stdin.write(options.stdin);
+      child.stdin.end();
+    }
     let killed = false;
     const timer = setTimeout(() => {
       killed = true;
@@ -264,6 +270,40 @@ describe("process entrypoints", () => {
     expect(`${trailing.stdout}${trailing.stderr}`).toContain("Unexpected argument");
   }, 30_000);
 
+  test("the sf CLI refuses a mutating command whose credential prompt yields nothing usable", async () => {
+    // No daemon anywhere: the prompt runs before the socket is dialled, so each of these
+    // fails on the input alone. That ordering is the point — `sf` asks for the credential
+    // before it goes looking for a socket, and the "daemon is unavailable" assertions below
+    // are what would catch a reordering.
+    const socketArgs = ["--socket", "/tmp/swordfish-absent.sock"];
+
+    // Pressing Enter yields `""`. This is the case that would reach `decodeUnknownSync` and
+    // crash with a stack trace if the prompt did not reject it first (ADR 0038).
+    const empty = await run("apps/swordfish/src/cli.ts", ["cancel", ...socketArgs], { stdin: "\n" });
+    expect(empty.exitCode).not.toBe(0);
+    expect(empty.stderr).toContain("The operator credential cannot be empty.");
+    expect(empty.stderr).not.toContain("Swordfish daemon is unavailable");
+
+    // A closed stdin must fail rather than hang: this is `sf cancel` with stdin at /dev/null,
+    // which is how it arrives under a supervisor or a CI runner.
+    const closed = await run("apps/swordfish/dist/cli.mjs", ["cancel", ...socketArgs], { stdin: "" });
+    expect(closed.exitCode).not.toBe(0);
+    expect(closed.stderr).toContain("closed before an answer");
+    expect(closed.stderr).not.toContain("Swordfish daemon is unavailable");
+
+    // Whitespace is non-empty but fails the schema's `isTrimmed` check, which the prompt
+    // turns into the same typed failure rather than letting it escape as a defect.
+    const untrimmed = await run("apps/swordfish/src/cli.ts", ["cancel", ...socketArgs], { stdin: "   \n" });
+    expect(untrimmed.exitCode).not.toBe(0);
+    expect(untrimmed.stderr).toContain("The operator credential is not valid.");
+
+    // `status` mutates nothing, so it is never asked and reaches the socket it cannot find.
+    const status = await run("apps/swordfish/src/cli.ts", ["status", ...socketArgs], { stdin: "" });
+    expect(status.exitCode).not.toBe(0);
+    expect(status.stderr).toContain("Swordfish daemon is unavailable");
+    expect(status.stderr).not.toContain("operator credential");
+  }, 30_000);
+
   test("the Swordfish daemon refuses to start without configuration", async () => {
     const outcome = await run("apps/swordfish/src/daemon.ts", [], {
       env: { SWORDFISH_BOUNTY_ID: "", SWORDFISH_DATABASE_PATH: "" },
@@ -394,7 +434,12 @@ describe("process entrypoints", () => {
         recentEvents: [{ sequence: 1 }, { sequence: 2, event: { type: "attention_required" } }],
       });
 
-      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath]);
+      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath], {
+        // This daemon was provisioned with no operator verifier, so it enforces nothing and
+        // accepts any credential; the input still has to arrive, because the CLI always asks
+        // for one before a mutating command (ADR 0038).
+        stdin: "bebop_op_entrypoint-cancel\n",
+      });
       expect(cancelled.exitCode).toBe(0);
       await waitForCondition(() => receivedEvents.some((event) => event.sequence === 4), "local cancellation delivery");
       expect(receivedEvents.slice(-2)).toEqual([
@@ -531,7 +576,9 @@ describe("process entrypoints", () => {
       }, "the restarted process acknowledgement");
       expect(eventSequences).toEqual([1, 1]);
 
-      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath]);
+      const cancelled = await run("apps/swordfish/dist/cli.mjs", ["cancel", "--socket", socketPath], {
+        stdin: "bebop_op_entrypoint-cancel\n",
+      });
       expect(cancelled.exitCode).toBe(0);
       expect(daemon.child.exitCode).toBeNull();
     } finally {

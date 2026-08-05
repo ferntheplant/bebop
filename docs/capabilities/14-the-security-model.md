@@ -22,8 +22,8 @@ system into granting any.
 - model access through the exe.dev LLM and HTTP Proxy integrations;
 - the context integrations you selected at creation;
 - a bounty-scoped Swordfish connection token;
-- a salted verifier for its per-bounty operator credential; plaintext enters only transiently through hidden
-  human terminal input, never through provisioning or persisted configuration;
+- a verifier for its per-bounty operator credential; plaintext enters only transiently through hidden human
+  terminal input, never through provisioning or persisted configuration;
 - its own local development services.
 
 ## What a bounty VM must never receive

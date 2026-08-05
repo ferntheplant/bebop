@@ -40,7 +40,12 @@ export interface LocalFleet {
   readonly run: (
     entrypoint: string,
     args: ReadonlyArray<string>,
-    options?: { readonly env?: Readonly<Record<string, string>>; readonly timeoutMs?: number },
+    options?: {
+      readonly env?: Readonly<Record<string, string>>;
+      readonly timeoutMs?: number;
+      /** Written to the child's stdin and closed, so a CLI can read one line from a pipe. */
+      readonly stdin?: string;
+    },
   ) => Promise<Outcome>;
   readonly stopAll: () => Promise<void>;
   readonly clean: () => Promise<void>;
@@ -216,13 +221,18 @@ export async function makeFleet(): Promise<LocalFleet> {
         const child = spawn("bun", [entrypoint, ...args], {
           cwd: repositoryRoot,
           env: { ...process.env, ...options?.env },
-          stdio: ["ignore", "pipe", "pipe"],
+          stdio:
+            options?.stdin === undefined ? (["ignore", "pipe", "pipe"] as const) : (["pipe", "pipe", "pipe"] as const),
         });
         let stdout = "";
         let stderr = "";
         let timedOut = false;
-        child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
-        child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+        if (child.stdout !== null) child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+        if (child.stderr !== null) child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+        if (options?.stdin !== undefined && child.stdin !== null) {
+          child.stdin.write(options.stdin);
+          child.stdin.end();
+        }
         const timer = setTimeout(() => {
           timedOut = true;
           child.kill("SIGTERM");

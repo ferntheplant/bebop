@@ -46,14 +46,15 @@ exactly one actor may drive the active seat at a time.
 dimensions in the shared workflow core, `human_controlled` is derived by Bebop rather than reported as a stage,
 at most one cowboy seat can be active, and takeover and handoff change control without touching stage. Every
 attention record carries a kind that names the commands permitted to clear it, and both `sf status` and
-`bounty status` print them.
+`bounty status` print them. Operator authentication is built: the credential is derived by Bebop, retrieved
+through `POST /api/bounties/:id/operator-credential`, and enforced by the daemon on every mutating `sf` command
+except `status`.
 
 Not built: the quiescent handoff itself — abort, the ten-second grace period, and forced restart are decided but
 unimplemented, so control changes hands today without waiting for the previous actor to stop. The settled command
 surface is partial: status, cancel, takeover, handoff, continue, rerun, and resume exist, and cancel correctly
-leaves Swordfish alive while Bebop stop owns daemon shutdown. Operator authentication, the remaining commands,
-prompt denial, isolated seat transport, unexpected-mutation detection, and role-aware action adapters are still
-outstanding.
+leaves Swordfish alive while Bebop stop owns daemon shutdown. The remaining commands, prompt denial, isolated
+seat transport, and unexpected-mutation detection are still outstanding.
 
 ## Acceptance criteria
 
@@ -80,6 +81,4 @@ prompt is refused), **13** (a prompt by any other route is rejected by the plugi
 
 ## Still open
 
-- Retrieve the operator credential and enforce it on mutating `sf` commands
-  — the credential is derived and provisioned, but nothing enforces it and no human can obtain it yet.
 - What does the cockpit tell an operator to do once `sf takeover` demands a credential?

@@ -109,6 +109,16 @@ blocked-by: [some-slug, another-slug] # omit when nothing blocks it
 ---
 ```
 
+`type` records how the question gets settled — the [wayfinder skill](./skills/wayfinder/SKILL.md#ticket-types)
+defines each one. `task` is the one that does rather than decides, and the discriminator is what it delivers:
+
+> **A task unblocks a decision. Work that delivers the destination is a brief.**
+
+Signing up for a service so its API can be judged is a task. Building the thing the map is pointed at is a brief,
+however small — if it closes with a merged PR rather than an `## Answer`, it was never an issue. A ticket that
+weighs two or more named options against their costs is a `grilling`, not a task, no matter how much
+implementation the chosen option implies.
+
 **Brief** — what one PR is meant to build, and a mandatory **Done when** section. That section is the
 proto-acceptance-criteria: an effective spec must declare at least one, so a brief carrying them is already
 spec-shaped and the handoff becomes a distillation rather than a rewrite.
@@ -145,8 +155,9 @@ Used by `/wayfinder`, which defers to this section for how the tracker physicall
 - **Child ticket**: `.scratch/<effort>/issues/<slug>.md`, with the question in the body. Frontmatter `type`
   records the ticket type (`research` / `prototype` / `grilling` / `task`); `status` records `open` / `claimed` /
   `resolved`.
-- **Blocking**: frontmatter `blocked-by: [<slug>, <slug>]`. A ticket is unblocked when every ticket it names is
-  `resolved`.
+- **Blocking**: frontmatter `blocked-by: [<slug>, <slug>]`. A slug may name an issue or a brief, since a decision
+  can wait on something being built. A ticket is unblocked when every slug it names has reached its home's
+  terminal status — `resolved` for an issue, `shipped` for a brief.
 - **Frontier**: scan `.scratch/<effort>/issues/` for tickets that are open, unblocked, and unclaimed. There is no
   numeric tiebreak — prefer whatever sits on the critical path, and name those tickets when you finish a session.
 - **Claim**: set `status: claimed` and save before any work.

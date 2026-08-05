@@ -105,6 +105,31 @@ suite("bebop CLI", () => {
     expect(second.bountyId).toBe(first.bountyId);
   });
 
+  test("prints the operator credential for a provisioned bounty", async () => {
+    const created = await runCli(harness, [
+      "bounty",
+      "create",
+      "--repository",
+      "withco/bebop",
+      "--base-ref",
+      "main",
+      "--json",
+    ]);
+    const bountyId = (JSON.parse(created.stdout) as { bountyId: string }).bountyId;
+    await harness.runJobs();
+
+    const retrieved = await runCli(harness, ["bounty", "operator-credential", "--bounty", bountyId, "--json"]);
+    expect(retrieved.exitCode).toBe(0);
+    const body = JSON.parse(retrieved.stdout) as { operatorCredential: string };
+    expect(body.operatorCredential).toMatch(/^bebop_op_/);
+
+    // The human rendering is the plaintext itself: this command exists to hand it to the
+    // `sf` prompt (`docs/capabilities/05-control-lease-and-takeover.md`).
+    const human = await runCli(harness, ["bounty", "operator-credential", "--bounty", bountyId]);
+    expect(human.exitCode).toBe(0);
+    expect(human.stdout).toBe(body.operatorCredential);
+  });
+
   test("approves privileged configuration for an exact candidate SHA", async () => {
     const created = await runCli(harness, [
       "bounty",

@@ -1,7 +1,6 @@
 ---
 type: grilling
 status: open
-blocked-by: [exe-dev-llm-integration-for-ein-and-jet, exe-dev-http-proxy-for-opencode-go]
 ---
 
 # Which model does each seat run, and what happens when it can't be reached?
@@ -11,8 +10,16 @@ Resolving this updates [Autonomous implementation and revision](../../../docs/ca
 ## Question
 
 The provisional answer is ein on GPT-5.6 Sol at high effort, jet on the same at medium, faye on GLM 5.2
-through the HTTP Proxy. It was adopted as a recommended default without operator review,
-and the [LLM integration](./exe-dev-llm-integration-for-ein-and-jet.md) and [HTTP Proxy](./exe-dev-http-proxy-for-opencode-go.md) tickets may make parts of it impossible.
+through the exe.dev HTTP Proxy. It was adopted as a recommended default without operator review.
+
+**This ticket split when the map went local-first, and only the first half is here.** _Which_ model each seat
+runs and what happens when one is unreachable are answerable now, against the operator's own credentials — the
+loop cannot run without answering them. _How_ those models are delivered without a reusable key touching a VM
+is the [remainder's](../../mvp-remainder/map.md) question, and it is why this ticket used to be blocked on the
+[LLM integration](../../mvp-remainder/tickets/exe-dev-llm-integration-for-ein-and-jet.md) and
+[HTTP Proxy](../../mvp-remainder/tickets/exe-dev-http-proxy-for-opencode-go.md) research. Answer the choice
+here; leave the delivery mechanism alone, and record the answer so it survives a provider that later refuses to
+serve one of these models.
 
 Settle:
 

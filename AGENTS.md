@@ -24,6 +24,12 @@ the **only** doorway to it: nothing outside `.scratch/` links into `.scratch/`. 
 capability, or `CONTEXT.md` entry that holds the decision — a resolved ticket has an ADR, and an open question
 belongs in a capability's **Still open** section as a question, not as a link to where it is tracked.
 
+The tracker is an **in-the-moment** tool: it holds what is committed to being worked on now and not yet
+finalized into the repo. A ticket is deleted once its outcome lands as code, an ADR, a capability, or a gotcha —
+so a growing tracker means something is not being written down properly. One project is live at a time; the
+rest are holding pens. Build order is prose in [`ABSTRACT.md`](./ABSTRACT.md) §7 and is not the same thing as
+what someone has committed to next.
+
 ## Vocabulary
 
 Two glossaries are binding, and using their words exactly is the point of having them.

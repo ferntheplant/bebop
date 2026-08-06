@@ -1,7 +1,6 @@
 ---
 type: grilling
 status: open
-blocked-by: [operator-credential-retrieval-and-enforcement]
 ---
 
 # What does the cockpit tell an operator to do once `sf takeover` demands a credential?
@@ -12,7 +11,7 @@ Resolving this updates [The cockpit](../../../docs/capabilities/03-the-cockpit.m
 
 [The cockpit](../../../docs/capabilities/03-the-cockpit.md) promises that "while Swordfish controls the active
 seat, the line says to run `sf takeover` from a shell." Once
-[operator authentication is enforced](../briefs/operator-credential-retrieval-and-enforcement.md), that instruction
+[operator authentication is enforced](../../../docs/capabilities/05-control-lease-and-takeover.md), that instruction
 leads to a prompt the operator cannot satisfy from inside the VM: the credential comes from an authenticated
 Bebop client, and by [The VM is the sandbox (ADR 0012)](../../../docs/adr/0012-the-vm-is-the-sandbox.md) no
 Bebop API token lives in the VM. The primary UX path becomes a dead end at exactly the moment someone needs it —

@@ -1,8 +1,9 @@
 ---
+type: build
 status: open
 ---
 
-# Brief: promote the spawn-and-collect helper into @bebop/testkit
+# Promote the spawn-and-collect helper into @bebop/testkit
 
 ## Background
 

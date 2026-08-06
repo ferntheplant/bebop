@@ -5,7 +5,7 @@ status: open
 
 # Should the scheduled Effect loops be virtualized with `TestClock`?
 
-Resolving this updates [Recovery and reliability](../../../docs/capabilities/13-recovery-and-reliability.md).
+Resolving this updates [Recovery and reliability](../../docs/capabilities/13-recovery-and-reliability.md).
 
 ## Question
 

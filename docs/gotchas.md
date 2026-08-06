@@ -144,3 +144,15 @@ socket file existing is not the daemon being ready**, and neither is a connectio
 idle machine the parked window is 16–309ms; on a loaded runner it is longer. Waiting on `lstat(path).isSocket()`
 is the tidying that reintroduces this, and it reintroduces it as a timeout in whatever request happens to go
 first. Wait on an answered control request instead — `waitForSwordfishControl` in `@bebop/testkit` is that wait.
+
+## Static analysis
+
+**A `_tag` field on a hand-rolled `Error` subclass is read by the type checker, not by the program, and dead-code
+analysis is right that nothing reads it.** TypeScript is structurally typed, so with no other members declared,
+deleting `_tag` from `InvalidSfControlRequestError`, `InvalidSfControlResponseError`, and
+`UnexpectedSfControlResponseError` made all three mutually assignable and let a bare `new Error()` satisfy every
+one of them. The field is a nominal brand. Runtime discrimination is `instanceof` throughout this codebase, so
+nothing reads `_tag` at runtime and no reachability analysis can see the read. `.fallowrc.json` models this with
+one `usedClassMembers` rule scoped to `extends: "Error"` rather than a suppression per class. Deleting the field
+because the tool says it is unused is the tidying that reintroduces this, and it fails as a silently widened
+type rather than as a build error.

@@ -1,7 +1,6 @@
 ---
 type: grilling
 status: open
-blocked-by: [exe-dev-http-proxy-for-opencode-go]
 ---
 
 # What proves QA ran against the candidate, in a clean environment?
@@ -12,7 +11,12 @@ Resolving this updates [QA](../../../docs/capabilities/10-qa.md).
 
 faye is supposed to verify acceptance criteria against the exact candidate SHA in a clean environment, with
 Swordfish-provisioned previews only and SHA, ports, and PIDs in the manifest
-([QA](../../../docs/capabilities/10-qa.md), provisional). Playwright in-image via the Playwright MCP is the provisional browser stack.
+([QA](../../../docs/capabilities/10-qa.md), provisional). Playwright in-image via the Playwright MCP was the
+provisional browser stack, chosen when there was an image; on a laptop that assumption needs rechecking.
+
+**Unblocked by the move to local-first.** This ticket previously waited on the exe.dev HTTP Proxy, because that
+was how faye's model was going to arrive. Locally faye uses the operator's own credential, so what proves a QA
+result is evidence no longer depends on how the model is served.
 
 Settle:
 

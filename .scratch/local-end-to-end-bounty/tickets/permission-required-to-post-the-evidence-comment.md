@@ -9,8 +9,8 @@ Resolving this updates [Pull request and merge](../../../docs/capabilities/12-pu
 
 ## Question
 
-[Ticket 12](./github-app-permissions-and-branch-protection.md) settled the minimum permission set against a
-live repository, with one hole it could not close. A general comment on a pull request is an _issue_ comment
+[The merge target must enforce rulesets (ADR 0034)](../../../docs/adr/0034-the-merge-target-must-enforce-rulesets.md)
+settled the minimum permission set against a live repository, with one hole it could not close. A general comment on a pull request is an _issue_ comment
 (`POST /repos/{owner}/{repo}/issues/{issue_number}/comments`), and GitHub's own reference does not state whether
 a fine-grained App holding `pull_requests: write` but **not** `issues: write` can post one. The docs assert that
 every pull request is an issue and that the Issues endpoints carry the shared actions, then decline to say what
@@ -38,8 +38,10 @@ Establish, against a real App installation on a throwaway repository:
   validator logs.
 
 Requires creating a test GitHub App, which nothing on this map has needed yet. Whichever session does that
-should record the App's configuration, because [the GitHub App permissions ticket](./github-app-permissions-and-branch-protection.md) and [where evidence surfaces first](./where-evidence-surfaces-first.md) both want the same fixture.
+should record the App's configuration, because this ticket and [where evidence surfaces first](./where-evidence-surfaces-first.md)
+both want the same fixture.
 
-If `pull_requests: write` suffices, the permission table in [the GitHub App permissions ticket](./github-app-permissions-and-branch-protection.md) loses a row and the answer is recorded
-there. If it does not, `issues: write` is load-bearing and belongs in ADR 0034's consequences as a grant the
+If `pull_requests: write` suffices, the permission table in
+[The merge target must enforce rulesets (ADR 0034)](../../../docs/adr/0034-the-merge-target-must-enforce-rulesets.md)
+loses a row and the answer is recorded there. If it does not, `issues: write` is load-bearing and belongs in ADR 0034's consequences as a grant the
 design accepts rather than an oversight.

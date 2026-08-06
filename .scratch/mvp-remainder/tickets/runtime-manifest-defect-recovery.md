@@ -1,7 +1,6 @@
 ---
 type: grilling
 status: open
-blocked-by: [opencode-version-pin-and-upgrade-qualification]
 ---
 
 # What happens when bebop declares a bounty's runtime manifest defective?

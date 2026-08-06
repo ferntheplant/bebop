@@ -67,6 +67,32 @@ export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
 vp run local-system
 ```
 
+### Running a bounty locally
+
+Running the whole loop on a laptop is a permanent development mode rather than scaffolding, and it runs the same
+packed artifacts production runs — see
+[The local loop runs the production assembly (ADR 0046)](./docs/adr/0046-the-local-loop-runs-the-production-assembly.md)
+for why bebop stays in the picture when it protects nothing locally. The operator runs the pieces; neither peer
+supervises the other:
+
+1. `docker compose up -d --wait postgres`;
+2. start the Bebop API and `bebop-worker` with `BEBOP_LOCAL_HARNESS_ROOT` set, so every provision writes the
+   one-shot bootstrap artifact carrying the machine credential;
+3. start the Swordfish daemon from that artifact;
+4. drive the bounty with `sf`.
+
+**Step 3 is not shipped.** The supervisor that consumes the bootstrap artifact and starts the daemon exists only
+inside `test/local-system/harness.test.ts`, which is why `vp run local-system` can do this end to end and a
+person cannot yet. Until it ships, the Swordfish invocation further down is the manual equivalent — with the
+caveat that the token and identity it wants are the ones bebop derived, and reading them out of the artifact by
+hand is the part the supervisor exists to remove.
+
+Two GitHub identities are involved, from two sources, exactly as in production. Bebop uses a GitHub App
+installation for pull-request creation, check polling, and ruleset verification. The bounty's machine uses your
+own ambient Git and `gh` credentials, which is the shape exe.dev's repository-scoped integration provides — so
+nothing injects a GitHub secret. A ruleset on the local target's default branch is what stops an agent pushing
+to it; it has no administrator exemption, including for you.
+
 ### Postgres for component tests
 
 Bebop's component tests run against a **real disposable Postgres** — the behaviour they cover is behaviour a

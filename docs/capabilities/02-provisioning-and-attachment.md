@@ -31,6 +31,15 @@ it does can reach another bounty.
 exe.dev API surface, the credential paths for each seat, and the compute profiles are all open questions with
 tickets on the map, and three of them are blocked on having a real account to test against.
 
+**What provisioning means on a laptop.** There is a second, permanent mode in which bebop runs against no
+provider at all, used to develop bebop itself. The fake provider creates no computer: it derives a machine
+identity from the bounty, writes the one-shot bootstrap artifact carrying the machine credential, and a
+supervisor consumes that artifact to start the Swordfish daemon. The bounty's working copy is a fresh clone in a
+bounty-scoped root rather than the operator's own checkout, and no GitHub credential is injected — the machine
+uses the operator's ambient Git and `gh` credentials, which is the shape exe.dev's repository-scoped integration
+provides. The record it returns still carries an SSH target that nothing listens on; that is known and accepted
+locally rather than fixed.
+
 ## Acceptance criteria
 
 Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criteria **2** (one VM and the assigned branch), **3** (only the
@@ -51,6 +60,8 @@ returned), and **7** (ein's seat running with its context MCPs).
   — why OpenCode is qualified and changed with Swordfish rather than overridden inside a live bounty.
 - [Workflow actions have role-aware adapters (ADR 0038)](../adr/0038-workflow-actions-have-role-aware-adapters.md)
   — why mutating local `sf` commands need a credential that cowboys never receive.
+- [The local loop runs the production assembly (ADR 0046)](../adr/0046-the-local-loop-runs-the-production-assembly.md)
+  — what a machine is when there is no computer, and why the operator runs the peers by hand.
 
 ## Still open
 

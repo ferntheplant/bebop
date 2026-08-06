@@ -61,6 +61,12 @@ are all settled and live in ADRs 0009–0012 and 0034–0043. The local process 
 peers over loopback with disposable Postgres — is maintained at `test/local-system/` and documented in
 [`docs/testing.md`](../../docs/testing.md). That floor is what this map builds the loop on top of.
 
+What the local loop actually assembles is settled in
+[The local loop runs the production assembly (ADR 0046)](../../docs/adr/0046-the-local-loop-runs-the-production-assembly.md)
+— both peers, operator-run, entrypoint-only divergence, and the two GitHub identities — and commit provenance in
+[Commits carry one machine identity (ADR 0047)](../../docs/adr/0047-commits-carry-one-machine-identity.md). Four
+build tickets fall out of it, plus the GitHub App and ruleset setup they wait on.
+
 ## Not yet specified
 
 - **What ein is actually told.** Prompt construction, spec restatement after compaction, how stage feedback is

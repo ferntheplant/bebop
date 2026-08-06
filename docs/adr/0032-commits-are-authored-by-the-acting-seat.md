@@ -1,5 +1,7 @@
 # Commits are authored by the acting seat, never by the user
 
+> Superseded by [Commits carry one machine identity (ADR 0047)](./0047-commits-carry-one-machine-identity.md).
+
 Commits carry the acting seat as author (`ein (bebop)`) and are pushed by the exe.dev App. The user's Git
 identity is never used, including on a bounty the user steered heavily through takeover.
 

@@ -1,7 +1,7 @@
 ---
 type: build
 status: open
-blocked-by: [local-github-app-and-ruleset-setup]
+blocked-by: [github-app-permissions-and-ruleset-readback]
 ---
 
 # Bebop creates and updates the draft pull request

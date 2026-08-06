@@ -1,7 +1,7 @@
 ---
 type: build
 status: open
-blocked-by: [local-github-app-and-ruleset-setup]
+blocked-by: [provision-github-app-for-local-bebop]
 ---
 
 # Swordfish pushes the candidate and requires a clean tree

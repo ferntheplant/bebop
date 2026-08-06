@@ -32,9 +32,9 @@ exe.dev API surface, the credential paths for each seat, and the compute profile
 tickets on the map, and three of them are blocked on having a real account to test against.
 
 **What provisioning means on a laptop.** There is a second, permanent mode in which bebop runs against no
-provider at all, used to develop bebop itself. The fake provider creates no computer: it derives a machine
-identity from the bounty, writes the one-shot bootstrap artifact carrying the machine credential, and a
-supervisor consumes that artifact to start the Swordfish daemon. The bounty's working copy is a fresh clone in a
+provider at all, used to develop bebop itself. The fake provider creates no computer, but it does the same job:
+it derives a machine identity from the bounty and starts the Swordfish daemon with the machine credential, where
+exe.dev's provider will have the VM's own bootstrap do it. The bounty's working copy is a fresh clone in a
 bounty-scoped root rather than the operator's own checkout, and no GitHub credential is injected — the machine
 uses the operator's ambient Git and `gh` credentials, which is the shape exe.dev's repository-scoped integration
 provides. The record it returns still carries an SSH target that nothing listens on; that is known and accepted

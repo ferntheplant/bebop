@@ -27,7 +27,10 @@ inspectable than a local one — you can see the harness output, read the logs, 
   the same workflow actions. The plugin rejects a human model prompt while Swordfish controls the seat; an
   unexpected TUI shell, abort, revert, or unrevert is recorded as an intrusion and enters `needs_attention`.
 - **Honest connection state.** A disconnected Swordfish is shown as disconnected, never as still working because
-  its last event said so.
+  its last event said so. `sf status` names the condition and how long it has held, beside the stage — a
+  Swordfish correctly retrying with backoff and one that is genuinely stuck look identical otherwise. An
+  unreachable bebop is not `needs_attention`: nothing is waiting on a decision, only on a process, and the loop
+  keeps running meanwhile.
 
 ## Where it stands
 

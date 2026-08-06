@@ -71,6 +71,13 @@ so the bootstrap value can be removed from the deployment once real client token
   target is the mitigation, not sandbox restraint.
 - **The control lease can be bypassed by a determined operator with a shell in the VM.** That is accepted; the
   goal is that it cannot happen by accident.
+- **The local development mode enforces none of this.** When bebop and Swordfish run on one laptop as one user,
+  every list above is a design rule rather than a boundary: the machine credential is written to disk in
+  plaintext, and the machine's GitHub access is the operator's own ambient credential, which reaches every
+  repository they can push to rather than one. Both are accepted deliberately — local is end-to-end smoke
+  testing of the whole system without VMs or external networks, not a test of the security model, and nothing
+  local will catch a violation. The rule that keeps the seam honest there is that no Swordfish code reaches
+  bebop's state except through the wire protocol, and it is enforced in review.
 
 ## Where it stands
 
@@ -98,6 +105,8 @@ sandbox cannot update the protected merge target).
   — a leaked token is bounded by its bounty's lifetime.
 - [Swordfish connects outbound only (ADR 0013)](../adr/0013-swordfish-connects-outbound-only.md) — private
   ingress removes an attack surface from a service holding merge authority.
+- [The local loop runs the production assembly (ADR 0046)](../adr/0046-the-local-loop-runs-the-production-assembly.md)
+  — why the seam is kept honest in code where it protects nothing, and which compromises are accepted instead.
 
 Configuration tampering is handled by [repository configuration](./07-repository-configuration.md); merge
 integrity by [pull request and merge](./12-pull-request-and-merge.md); seat permission profiles by

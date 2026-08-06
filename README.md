@@ -67,6 +67,11 @@ export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
 vp run local-system
 ```
 
+Running a whole bounty by hand is not possible yet: nothing outside that harness starts a Swordfish daemon from
+what a provision produces. The processes below can each be run on their own in the meantime. What the local mode
+will assemble, and why bebop stays in it where it protects nothing, is
+[The local loop runs the production assembly (ADR 0046)](./docs/adr/0046-the-local-loop-runs-the-production-assembly.md).
+
 ### Postgres for component tests
 
 Bebop's component tests run against a **real disposable Postgres** — the behaviour they cover is behaviour a

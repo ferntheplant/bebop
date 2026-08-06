@@ -24,10 +24,11 @@ Before going further, confirm the fixed point resolves (`git rev-parse <fixed-po
 
 Look for the originating spec, in this order:
 
-1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `docs/agents/issue-tracker.md`.
-2. A path the user passed as an argument.
-3. A spec file under `docs/`, `specs/`, or `.scratch/` matching the branch name or feature.
-4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
+1. A path the user passed as an argument.
+2. A `build` ticket matching the branch name or feature. In this repo that is `.scratch/tickets/<slug>.md` or a project's own `tickets/<slug>.md`, carrying `type: build` and a **Done when** section — see [the tracker doc](../../ISSUE-TRACKER.md). Decision tickets are not specs: they close with an `## Answer`, not a PR.
+3. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
+
+There are no issue numbers to look for — [tickets are named by slug, never an index](../../ISSUE-TRACKER.md#names-not-numbers) — and a ticket whose work has merged is deleted rather than kept, so an older branch may have no spec left to find. That is the expected case, not a failure.
 
 ### 3. Identify the standards sources
 

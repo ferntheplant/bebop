@@ -240,52 +240,21 @@ The MVP will not:
 └───────────────────────────────────────────────────────────────┘
 ```
 
-## 7. MVP build phases
+## 7. Build order
 
-### Phase 1: One manually provisioned bounty
+**The whole loop runs locally first.** One bounty goes end to end on a developer's own machine — interactive
+clarification, handoff, autonomous implementation, clean-room validation, CI, review, QA, evidence, and a pull
+request a human merges by hand — before any computer is provisioned. The remote half comes second: exe.dev
+provisioning, the deployed master stack, integration attachment, bebop-authorized merge, and the reliability
+work that only matters once bebop owns computers it can lose.
 
-- Prepare the bebop base image (pinned OpenCode, Swordfish, tmux, Playwright).
-- Build the Swordfish daemon and `sf` CLI.
-- Integrate with OpenCode server APIs and SSE.
-- Build the bebop plugin: shared workflow actions, human slash-command adapters, and the lease guard.
-- Create the cockpit.
-- Prove interactive-to-autonomous handoff.
+That order is available because almost none of §8 depends on a remote computer. Only criteria 3, 4, 38, and 41,
+plus the VM halves of 2 and 5, need one; the rest are reachable against a laptop, a real repository, and a real
+model. Building the loop where it is cheapest to observe means the provisioner is later asked to reproduce a
+workflow that already works, rather than to host one that has never run.
 
-### Phase 2: Supervised candidate loop
-
-- Add candidate submissions and idle recovery.
-- Add clean-room worktrees.
-- Add `.bebop/` validation hooks.
-- Add jet's read-only review seat.
-- Add clean QA setup and browser evidence (faye).
-- Add revision routing to ein.
-- Add constraint ledgers and takeover.
-
-### Phase 3: The ship (bebop provisioner)
-
-- Deploy the containerized master stack (Effect, Compose, Caddy).
-- Add Postgres.
-- Add exe.dev provisioning and integration attachment.
-- Add outbound Swordfish connections.
-- Add status projection, SSE events, bearer-token auth, and the thin CLI.
-- Add attachment metadata.
-
-### Phase 4: GitHub and evidence
-
-- Add branch creation and draft PR lifecycle.
-- Add CI polling.
-- Add protected-branch security documentation.
-- Add commit-bound evidence uploads and the PR-comment sink.
-- Add explicit merge and deprovision flow.
-
-### Phase 5: Reliability
-
-- Add event replay and deduplication.
-- Add restart reconciliation.
-- Add blue/green master deployment.
-- Add backups.
-- Add VM-loss recovery.
-- Add orphan cleanup and retention policies.
+Nothing here reorders §5. Local-first is a build order, not a reduction in scope: the MVP is not done until the
+same loop runs on a provisioned computer.
 
 ## 8. MVP acceptance criteria
 

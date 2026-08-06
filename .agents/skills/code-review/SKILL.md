@@ -1,12 +1,12 @@
 ---
 name: code-review
-description: Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/PRD asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to "review since X".
+description: Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to "review since X".
 ---
 
 Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 
 - **Standards** — does the code conform to this repo's documented coding standards?
-- **Spec** — does the code faithfully implement the originating issue / PRD / spec?
+- **Spec** — does the code faithfully implement the originating issue / spec?
 
 Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
 
@@ -25,8 +25,10 @@ Before going further, confirm the fixed point resolves (`git rev-parse <fixed-po
 Look for the originating spec, in this order:
 
 1. A path the user passed as an argument.
-2. A brief, PRD, or spec file matching the branch name or feature. In this repo that is a brief — `.scratch/briefs/<slug>.md`, or an effort's own `briefs/<slug>.md`; see [the tracker doc](../../ISSUE-TRACKER.md).
+2. A `build` ticket matching the branch name or feature. In this repo that is `.scratch/tickets/<slug>.md` or a project's own `tickets/<slug>.md`, carrying `type: build` and a **Done when** section — see [the tracker doc](../../ISSUE-TRACKER.md). Decision tickets are not specs: they close with an `## Answer`, not a PR.
 3. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
+
+There are no issue numbers to look for — [tickets are named by slug, never an index](../../ISSUE-TRACKER.md#names-not-numbers) — and a ticket whose work has merged is deleted rather than kept, so an older branch may have no spec left to find. That is the expected case, not a failure.
 
 ### 3. Identify the standards sources
 

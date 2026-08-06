@@ -7,171 +7,245 @@ This system is scaffolding for _building_ bebop, and deliberately not part of be
 own planning system and hands off to a bounty once work is scoped enough to run autonomously.
 [`CONTEXT.md`](../CONTEXT.md) describes the product, and nothing here belongs in it.
 
+## What this tracker is for
+
+**It is an in-the-moment tool, not an audit.** It answers one question: _what has been committed to being
+worked on now, and has not yet been finalized into the repo?_ Finalized means landed as code, an ADR, a
+`CONTEXT.md` entry, a capability doc, a gotcha, or general docs.
+
+The consequence is the rule that governs everything below:
+
+> **A ticket leaves the tracker the moment its reasoning is absorbed somewhere durable.** Not archived —
+> deleted. Git remembers; the tracker does not have to.
+
+A resolved ticket that produced an ADR is a second copy of that ADR. A build ticket whose code merged is a
+second copy of the code. Keeping either turns the tracker into a history nobody reads and a frontier nobody can
+see. A closed ticket stays only when it holds reasoning that has no durable home yet — and that is a bug to fix
+by writing the gotcha or the ADR, not a state to settle into.
+
+So the tracker is small on purpose. If it is growing, something is not being written down properly.
+
 ## Nothing outside `.scratch/` links into `.scratch/`
 
-This file is the only doorway. Source comments, ADRs, capability docs, the README, and `ABSTRACT.md` never cite a
-ticket or a brief — the tracker is scaffolding, and durable prose must not depend on it. Cite instead:
+This file is the only doorway. Source comments, ADRs, capability docs, the README, and `ABSTRACT.md` never cite
+a ticket — the tracker is scaffolding, and durable prose must not depend on it. Cite instead:
 
 | The thing you wanted to point at | What to cite                                                            |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| A resolved issue                 | the ADR it produced, as `("Title" (ADR NNNN))`                          |
+| A resolved decision              | the ADR it produced, by name and number                                 |
 | An open question                 | nothing — state the question in the capability's **Still open** section |
-| A shipped brief                  | the capability or `docs/testing.md` describing the thing that now runs  |
+| Shipped work                     | the capability or `docs/testing.md` describing the thing that now runs  |
 | A term                           | [`CONTEXT.md`](../CONTEXT.md)                                           |
 
-A resolved ticket that produced no ADR and no capability change was not worth citing. An open question written as
-a plain question survives the tracker being reorganised; a link to `.scratch/…/issues/foo.md` does not.
+**This applies inside the tracker too.** A ticket citing another ticket that later gets absorbed leaves a dead
+link, so cite the durable artifact wherever one exists. Cross-ticket links are for live tickets only.
 
 `.agents/` is exempt — skills that operate on the tracker have to know where it is.
 
-## The four homes
+## The three homes
 
-| Home       | Holds                                                                          | Closed by                        |
-| ---------- | ------------------------------------------------------------------------------ | -------------------------------- |
-| **inbox**  | Anything discovered and not yet triaged — vague requests, bugs, nagging doubts | Being triaged out                |
-| **issue**  | A decision needing grilling, research, or a prototype to settle                | An `## Answer`, sometimes an ADR |
-| **brief**  | Work scoped enough to start a bounty on — autonomously implementable           | A merged PR                      |
-| **effort** | A map from vague idea to built system, cutting through fog                     | No fog left                      |
+| Home        | Holds                                                                       | Leaves when                     |
+| ----------- | --------------------------------------------------------------------------- | ------------------------------- |
+| **backlog** | Anything noticed and not yet triaged — vague requests, bugs, nagging doubts | Triaged out                     |
+| **ticket**  | One unit of committed work: a decision to settle, or a slice to build       | Its outcome is absorbed durably |
+| **project** | Every ticket for one destination, plus the map of the route to it           | Its destination is reached      |
 
 ```
 .scratch/
-  inbox/<slug>.md            # untriaged
-  issues/<slug>.md           # standalone decision — belongs to no map
-  briefs/<slug>.md           # standalone buildable work — most bug fixes
-  <effort>/
-    map.md                   # Destination / Notes / Decisions so far / fog
-    issues/<slug>.md
-    briefs/<slug>.md
+  backlog/<slug>.md          # untriaged
+  tickets/<slug>.md          # triaged, belonging to no project
+  <project>/
+    map.md                   # Destination / Notes / Decisions so far / fog / out of scope
+    tickets/<slug>.md
 ```
 
-The first three exist at top level for standalone work, and under an effort when they belong to one.
+A ticket lives at top level when no project claims it, and under a project when one does. That is the only
+difference between the two locations — same format, same lifecycle.
 
-**An effort exists iff it has a map; a map exists iff there is fog.** Creating one is the rarest outcome of
-triage, not the default. A directory with a single brief in it is not an effort — it is a brief.
+**A project is a destination somebody has committed to.** Not a folder, not a phase, not a theme — a thing
+that can be reached, after which the project is over. Creating one is the rarest outcome of triage.
+
+**Fog decides whether a map is charted, not whether a project exists.** Those are two different questions, and
+conflating them is what made the earlier phase-per-project layout collapse. A live project has fog and so its
+map carries Notes, **Not yet specified**, and a real frontier. A project that is real but not next gets a stub
+map: Destination, one line saying it is a holding pen, and whatever tickets already belong to it. That is an
+address, not a chart. Writing four full maps for work nobody will touch for months is the opposite of an
+in-the-moment tool; refusing the directory entirely just forces those tickets into a live map where they lie
+about what is being worked on.
+
+**One project is live at a time.** If two claim to be, one of them is a holding pen and should say so in its
+Notes.
+
+Projects are not derived from anything in `ABSTRACT.md`. Build order lives there, in §7, as prose; what someone
+has actually committed to next is a project here. Keeping those separate is deliberate — a build order that has
+to be restructured every time priorities move was the previous mistake.
+
+## Tickets cover both deciding and building
+
+There is no separate "issue" and "brief". **A ticket is one unit of committed work, of either kind**, and which
+kind it is lives in frontmatter rather than in the directory tree. Two independent axes:
+
+|                 | **Decides** — closes with an `## Answer` | **Builds** — closes with a merged PR |
+| --------------- | ---------------------------------------- | ------------------------------------ |
+| **Interactive** | `grilling`, `prototype`                  | —                                    |
+| **Autonomous**  | `research`                               | `build`                              |
+| **Either**      | `task`                                   | —                                    |
+
+The five types:
+
+- **`grilling`** — a decision settled by conversation. The default when something needs deciding.
+- **`prototype`** — a decision settled by building something cheap and rough to react to.
+- **`research`** — a fact a decision waits on, findable outside the working directory.
+- **`task`** — manual work that must happen before a decision can be made. Signing up for a service so its API
+  can be judged; provisioning access. It _does_ rather than decides, and earns its place by unblocking a
+  decision rather than by delivering the destination.
+- **`build`** — a PR-sized slice of the destination itself.
+
+The discriminator between the last two:
+
+> **A task unblocks a decision. Work that delivers the destination is a build ticket.**
+
+If it closes with a merged PR rather than an `## Answer`, it was never a decision, however small it is. And a
+ticket that weighs two or more named options against their costs is a `grilling`, not a `task`, no matter how
+much implementation the chosen option implies.
+
+[The wayfinder skill](./skills/wayfinder/SKILL.md#how-to-work-each-decision-type) says how to _work_ each
+deciding type — which skill to invoke, and whether a human has to be in the loop.
+
+### The map charts decisions; the project holds both
+
+**A map is a decisioning instrument.** It tracks the fog between here and the destination and points at the
+decision tickets that clear it. `build` tickets live in the same project directory, but the map does not chart
+them: no section lists them, and shipping one is not a step on the route.
+
+**So a project outlives its map.** The map is done when no fog is left — when everything remaining is
+specifiable. What remains at that point is build tickets. A finished map above six open build tickets is the
+normal end state of wayfinding, not a problem, and it is the signal that the project has stopped needing
+decisions and started needing PRs.
+
+A `build` ticket is not a spec. `CONTEXT.md` reserves that word for a bounty's effective spec, distilled from
+the opening conversation and confirmed by the user. A build ticket is the human-written precursor a spec comes
+from — which is what lets you say "the ticket became the spec".
 
 ## Names, not numbers
 
 Every file is named by **slug**, never an index. Slugs need no knowledge of what already exists, so people
-working in parallel never collide over a number; two people choosing the same slug have found a duplicate, which
-is information rather than a conflict.
+working in parallel never collide over a number; two people choosing the same slug have found a duplicate,
+which is information rather than a conflict.
 
-The slug is the item's **identity for its whole life**, and the directory is where it currently lives. An inbox
-item promoted into an effort keeps its name; `git mv` moves it and the links follow.
+The slug is the item's **identity for its whole life**, and the directory is where it currently lives. A
+backlog item promoted into a project keeps its name; `git mv` moves it and the links follow.
 
-Refer to items by their **title** in prose, narration, and the map's Decisions-so-far — never by slug or path.
-A title reads at a glance; the link rides inside it.
+Refer to items by their **title** in prose, narration, and a map's Decisions-so-far — never by slug or path. A
+title reads at a glance; the link rides inside it.
 
 ## Triage
 
-Move each inbox item to the **shallowest home that fits**:
+Move each backlog item to the **shallowest home that fits**:
 
 1. **Delete it** — not real, already fixed, or a duplicate.
-2. **`briefs/<slug>.md`** — you know what to build. Most bug fixes and small features stop here.
-3. **`issues/<slug>.md`** — it needs deciding, but belongs to no larger destination.
-4. **`<effort>/issues/` or `<effort>/briefs/`** — it clearly belongs to a live map.
-5. **A new effort** — only when you can name a destination _and_ list at least two things you can't yet specify.
-   Both halves are required: one unspecifiable thing is an issue, zero is a brief.
+2. **`tickets/<slug>.md`** — you know what this is, and no project owns it.
+3. **`<project>/tickets/<slug>.md`** — it clearly belongs to a live map.
+4. **A new project** — only when you can name a destination _and_ list at least two things you can't yet
+   specify. Both halves are required: one unspecifiable thing is a ticket, zero is a build ticket.
 
-Default shallow. Promotion is cheap — `git mv` the brief into an effort directory and write the map at the
-moment you actually have fog to write down. Guessing "effort" at triage time means writing a map before you can
-see anything, which is the one thing wayfinding says not to do.
+Default shallow. Promotion is cheap — `git mv` the ticket into a project directory and write the map at the
+moment you actually have fog to write down.
 
-An inbox item needs no `Status:` — being in `inbox/` _is_ the status, and triage is the move out.
+A backlog item needs no frontmatter — being in `backlog/` _is_ the status, and triage is the move out. Adding
+frontmatter is part of the move.
 
 ## File formats
 
 Metadata lives in **YAML frontmatter**; everything else is prose. Frontmatter is delimited, so it can be decoded
-against a schema the way this repo decodes anything at a seam — a bare `Status:` line in the body is
+against a schema the way this repo decodes anything at a seam — a bare `status:` line in the body is
 indistinguishable from the same words inside a code block. The title stays the `# ` heading: it is what
 [refer-by-name](#names-not-numbers) uses, and it renders.
 
-**Inbox item** — no frontmatter at all. A title and a couple of sentences; if it needs more than that, it is
-already sharp enough to be an issue. A bug report should carry a high-level repro wherever one is possible.
+**Backlog item** — no frontmatter at all. A title and a couple of sentences.
 
-**Issue** — the question in the body, and the answer appended under `## Answer` on resolution.
+**Ticket** — the question or the scope in the body, and the outcome appended on close.
 
-An issue or brief whose resolution would invalidate a capability doc says so directly under its title:
+```yaml
+---
+type: grilling # grilling | prototype | research | task | build
+status: open # open | claimed | done
+blocked-by: [some-slug, another-slug] # omit when nothing blocks it
+---
+```
+
+One terminal status, `done`, for every type. `type` already says whether it closed with an `## Answer` or a
+merged PR, so a second vocabulary would be a derived fact stored twice.
+
+A `build` ticket carries a mandatory **Done when** section — the proto-acceptance-criteria. An effective spec
+must declare at least one, so a ticket carrying them is already spec-shaped and the handoff becomes a
+distillation rather than a rewrite.
+
+A ticket whose outcome would invalidate a capability doc says so directly under its title:
 
 ```markdown
 Resolving this updates [Provisioning and attachment](../../../docs/capabilities/02-provisioning-and-attachment.md).
 ```
 
 The pointer runs this way deliberately. A capability listing its open questions would have to link back into
-`.scratch/`, and the person who needs the reminder is whoever picks the ticket up — not whoever reads the
-capability. This is the one direction that stays inside the rule above, because it points out of the tracker
-rather than into it.
+`.scratch/`, and the person who needs the reminder is whoever picks the ticket up. This is the one direction
+that stays inside the rule above, because it points out of the tracker rather than into it.
 
-```yaml
----
-type: grilling # research | prototype | grilling | task
-status: open # open | claimed | resolved
-blocked-by: [some-slug, another-slug] # omit when nothing blocks it
----
-```
+Comments and conversation history append to the bottom under a `## Comments` heading.
 
-`type` records how the question gets settled — the [wayfinder skill](./skills/wayfinder/SKILL.md#ticket-types)
-defines each one. `task` is the one that does rather than decides, and the discriminator is what it delivers:
+## Closing a ticket
 
-> **A task unblocks a decision. Work that delivers the destination is a brief.**
+Four steps, in order:
 
-Signing up for a service so its API can be judged is a task. Building the thing the map is pointed at is a brief,
-however small — if it closes with a merged PR rather than an `## Answer`, it was never an issue. A ticket that
-weighs two or more named options against their costs is a `grilling`, not a task, no matter how much
-implementation the chosen option implies.
+1. Append the outcome — `## Answer` for a decision, or the merged PR for a build ticket.
+2. Set `status: done`.
+3. **Write the durable artifact**: the ADR, the capability update, the `CONTEXT.md` entry, the gotcha. This is
+   the step that makes the tracker an in-the-moment tool rather than a graveyard.
+4. **Delete the ticket**, and clear its slug from every `blocked-by` that names it — an absorbed blocker is not
+   a blocker. Leave one line in the project map's **Decisions so far** _only_ if the decision has no durable
+   home; otherwise the map cites the ADR by name and number and the ticket is simply gone.
 
-**Brief** — what one PR is meant to build, and a mandatory **Done when** section. That section is the
-proto-acceptance-criteria: an effective spec must declare at least one, so a brief carrying them is already
-spec-shaped and the handoff becomes a distillation rather than a rewrite.
-
-```yaml
----
-status: open # open | shipped
----
-```
-
-A brief is not a spec. `CONTEXT.md` reserves that word for a bounty's effective spec, which is distilled from the
-opening conversation and confirmed by the user. A brief is the human-written precursor a spec comes from —
-keeping both words is what lets you say "the brief became the spec".
-
-Comments and conversation history append to the bottom of a file under a `## Comments` heading.
-
-Briefs and issues stay put once closed. They are history, not authority; anything in one still worth defending
-months later belongs in an [ADR](../docs/adr/).
-
-## When a skill says "publish to the issue tracker"
-
-Create a new file in the home that fits — `.scratch/inbox/` when it is untriaged, otherwise the issue or brief
-directory of the effort it belongs to, or the top-level one when it belongs to no effort.
-
-## When a skill says "fetch the relevant ticket"
-
-Read the file at the referenced path. The user will normally pass the path or the slug directly.
+If step 3 has nothing to write, ask whether the ticket was worth opening. If step 4 feels lossy, step 3 was not
+finished — find what is still only in the ticket and give it a durable home first.
 
 ## Wayfinding operations
 
 Used by `/wayfinder`, which defers to this section for how the tracker physically works here.
 
-- **Map**: `.scratch/<effort>/map.md` — the Destination / Notes / Decisions-so-far / fog body.
-- **Child ticket**: `.scratch/<effort>/issues/<slug>.md`, with the question in the body. Frontmatter `type`
-  records the ticket type (`research` / `prototype` / `grilling` / `task`); `status` records `open` / `claimed` /
-  `resolved`.
-- **Blocking**: frontmatter `blocked-by: [<slug>, <slug>]`. A slug may name an issue or a brief, since a decision
-  can wait on something being built. A ticket is unblocked when every slug it names has reached its home's
-  terminal status — `resolved` for an issue, `shipped` for a brief.
-- **Frontier**: scan `.scratch/<effort>/issues/` for tickets that are open, unblocked, and unclaimed. There is no
-  numeric tiebreak — prefer whatever sits on the critical path, and name those tickets when you finish a session.
+- **Map**: `.scratch/<project>/map.md` — the Destination / Notes / Decisions-so-far / fog / out-of-scope body.
+- **Child ticket**: a **decision** ticket at `.scratch/<project>/tickets/<slug>.md` — `grilling`, `prototype`,
+  `research`, or `task`. A `build` ticket lives in the same directory but is not a child of the map and never
+  appears on it.
+- **Map complete**: no fog left — **Not yet specified** is empty and no decision ticket is open. Build tickets
+  may still be open; that is the project continuing, not the map being unfinished.
+- **Blocking**: frontmatter `blocked-by: [<slug>, <slug>]`. A slug may name any ticket in any project, since a
+  decision can wait on something being built elsewhere — cross-project blocking is normal here, because the
+  decision frontier runs ahead of the build frontier. A ticket is unblocked when every slug it names is `done`
+  **or no longer exists**: an absorbed blocker is a satisfied one.
+- **Frontier**: scan every `tickets/` directory for tickets that are open, unblocked, and unclaimed. Rank by
+  critical path — a ticket that blocks more tickets, directly or transitively, sorts first. Open `build`
+  tickets outrank open decisions: something already specified and unbuilt is the answer to "what next".
 - **Claim**: set `status: claimed` and save before any work.
-- **Resolve**: append the answer under an `## Answer` heading, set `status: resolved`, then append a context
-  pointer (gist plus link) to the map's Decisions-so-far in `map.md`.
+- **Resolve**: follow [Closing a ticket](#closing-a-ticket).
 
-Two sessions resolving two tickets touch different files, but both append to `map.md` — that is where a conflict
-will be.
+Two sessions closing two tickets touch different files, but both may append to a `map.md` — that is where a
+conflict will be.
 
-## Active efforts
+## When a skill says "publish to the issue tracker"
 
-- [Bebop MVP](../.scratch/bebop-mvp/map.md) — the route from the current control plane to a merged bounty.
+Create a new file in the home that fits — `.scratch/backlog/` when it is untriaged, otherwise the `tickets/`
+directory of the project it belongs to, or the top-level one when no project claims it.
+
+## When a skill says "fetch the relevant ticket"
+
+Read the file at the referenced path. The user will normally pass the path or the slug directly.
+
+## Active projects
+
+- [One bounty, end to end, locally](../.scratch/local-end-to-end-bounty/map.md) — **live.** The whole loop on a
+  laptop, ending in a pull request the operator merges by hand. No exe.dev, no provisioned computer.
+- [The MVP remainder](../.scratch/mvp-remainder/map.md) — stub. Everything between a working local loop and
+  §8: provisioning, the deployed ship, merge authority, reliability. Its exe.dev research is being answered
+  early anyway, because that unknown is long-lead.
 - [Fallow cleanup](../.scratch/fallow-cleanup/map.md) — zero Fallow findings under a committed policy, then
-  `fallow audit` as a PR gate.
-
-Shipped briefs stay under the effort that produced them — see
-[`.scratch/bebop-mvp/briefs/`](../.scratch/bebop-mvp/briefs/).
+  `fallow audit` as a PR gate. Tooling hygiene, not product work; runs alongside.

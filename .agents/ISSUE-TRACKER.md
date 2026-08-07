@@ -225,6 +225,7 @@ Used by `/wayfinder`, which defers to this section for how the tracker physicall
 - **Frontier**: scan every `tickets/` directory for tickets that are open, unblocked, and unclaimed. Rank by
   critical path — a ticket that blocks more tickets, directly or transitively, sorts first. Open `build`
   tickets outrank open decisions: something already specified and unbuilt is the answer to "what next".
+  `vp run next` renders it — Build, Decide, Triage — so no file stores it.
 - **Claim**: set `status: claimed` and save before any work.
 - **Resolve**: follow [Closing a ticket](#closing-a-ticket).
 

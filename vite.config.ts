@@ -115,6 +115,9 @@ export default defineConfig({
         ],
       },
       dev: { command: "vp run @bebop/server#dev", cache: false },
+      // Renders the tracker frontier — Build, Decide, Triage — straight from `.scratch/`,
+      // read-only. Never cached: the frontier changes the moment a ticket does.
+      next: { command: "bun scripts/frontier.ts", cache: false },
       // `check` and the test tasks type-check and import `@bebop/contracts`, which
       // resolves through its built `dist`, so every one of them needs a build first.
       check: { command: "vp check", dependsOn: ["build"] },
@@ -124,7 +127,7 @@ export default defineConfig({
       // every test — unit, component, and process-level — runs on the runtime production
       // uses. `vp test` remains the right command for an ad-hoc run of the pure tests.
       test: {
-        command: "bun node_modules/vitest/vitest.mjs run --reporter=minimal apps packages",
+        command: "bun node_modules/vitest/vitest.mjs run --reporter=minimal apps packages scripts",
         dependsOn: ["build"],
         // The component suites read this to decide whether a database is available, so it
         // belongs in the cache key: a run with a database and a run without are not the same

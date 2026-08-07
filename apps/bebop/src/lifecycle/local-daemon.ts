@@ -266,6 +266,19 @@ export const makeLocalSwordfishSupervisor = (
       );
 
     /**
+     * Clears the machine record after a stop, or after finding one that names no live machine.
+     *
+     * `force: true` already swallows `ENOENT` (already gone, or never written), so the only
+     * failures left are real — a permission error on the record is a defect, and naming it as a
+     * typed `LocalDaemonError` here is what keeps `stop` consistent with the `clone` and `start`
+     * paths rather than letting it crash as an untyped throw the way a bare `rm` would.
+     */
+    const clearRecord = (bountyId: BountyId, paths: LocalBountyPaths) =>
+      Effect.tryPromise(() => rm(paths.machinePath, { force: true })).pipe(
+        Effect.mapError(failWith(bountyId, "stop", "could not clear the machine record")),
+      );
+
+    /**
      * The machine this record names, if that machine is still the process at its pid.
      *
      * A record whose pid now belongs to something else is stale, not live — that is the whole
@@ -382,7 +395,7 @@ export const makeLocalSwordfishSupervisor = (
         if (machine === undefined) {
           // Either never started, already gone, or a record whose pid is now someone else's.
           // Clear it either way: what it names is not this bounty's machine.
-          yield* Effect.promise(() => rm(paths.machinePath, { force: true }));
+          yield* clearRecord(bountyId, paths);
           return;
         }
         yield* runner.signal(machine.pid, "SIGTERM");
@@ -409,7 +422,7 @@ export const makeLocalSwordfishSupervisor = (
           );
           yield* runner.signal(machine.pid, "SIGKILL");
         }
-        yield* Effect.promise(() => rm(paths.machinePath, { force: true }));
+        yield* clearRecord(bountyId, paths);
         yield* Effect.logInfo("stopped local Swordfish daemon").pipe(
           Effect.annotateLogs("bounty_id", bountyId),
           Effect.annotateLogs("vm_id", machine.vmId),

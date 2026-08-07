@@ -83,15 +83,18 @@ export const LocalProcessRunnerLayer: Layer.Layer<LocalProcessRunner> = Layer.sy
   // non-zero when nothing holds the pid, which is the only "is it there" question left.
   identify: (pid) =>
     Effect.sync(() => {
+      // `LC_ALL=C` pins the locale so `lstart` renders identically on every host: the C
+      // locale always prints `DDD MMM  D HH:MM:SS YYYY`, where the day field can pad with a
+      // space (`Thu Aug  6 ...`). Splitting on runs of whitespace — not single spaces — is what
+      // handles that pad, and the fixed five-token count is what lets one `ps` call separate a
+      // start time from whatever command line follows it.
       const result = Bun.spawnSync(["ps", "-p", String(pid), "-o", "lstart=,command="], {
         stdout: "pipe",
         stderr: "pipe",
+        env: { ...ambientEnvironment(), LC_ALL: "C" },
       });
       if (result.exitCode !== 0) return undefined;
       const line = new TextDecoder().decode(result.stdout).trim();
-      // `lstart` always renders as exactly five whitespace-separated tokens
-      // (`Thu Aug  6 21:55:30 2026`), which is what lets one `ps` call parse unambiguously into
-      // a start time and whatever command line follows it.
       const tokens = line.split(/\s+/);
       if (tokens.length < 5) return undefined;
       return { startedAt: tokens.slice(0, 5).join(" "), command: tokens.slice(5).join(" ") };
@@ -101,8 +104,14 @@ export const LocalProcessRunnerLayer: Layer.Layer<LocalProcessRunner> = Layer.sy
     Effect.sync(() => {
       try {
         process.kill(pid, signal);
-      } catch {
-        // Already gone. The caller re-identifies the pid, so it learns that on the next poll.
+      } catch (error) {
+        // `ESRCH` is the pid being gone — the caller re-identifies the pid and learns that on
+        // the next poll, so it is the only signal-miss worth swallowing. Anything else (`EPERM`,
+        // a live process we may not signal) is a defect rather than a signal that missed: a
+        // stop that hid it would clear the record while the daemon is still running, so it is
+        // left to crash — "defects remain crashes" — rather than be made invisible.
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") return;
+        throw error;
       }
     }),
 

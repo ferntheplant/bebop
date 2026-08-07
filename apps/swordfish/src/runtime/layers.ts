@@ -6,6 +6,8 @@ import type { SwordfishConfiguration } from "#src/config.ts";
 import { SwordfishConfigurationLayer } from "#src/config.ts";
 import type { ShutdownSignal } from "#src/daemon/shutdown.ts";
 import { ShutdownSignalLayer } from "#src/daemon/shutdown.ts";
+import type { BebopConnectionState } from "#src/domain/connection-state.ts";
+import { BebopConnectionStateLayer } from "#src/domain/connection-state.ts";
 import type { SwordfishIdentity } from "#src/domain/identity.ts";
 import { SwordfishIdentityLayer } from "#src/domain/identity.ts";
 import { DatabaseLayer, type DatabaseDirectoryError } from "#src/persistence/database.ts";
@@ -15,7 +17,13 @@ import type { WorkflowService } from "#src/workflow/service.ts";
 import { WorkflowServiceLayer } from "#src/workflow/service.ts";
 
 type RuntimeLayer = Layer.Layer<
-  SwordfishConfiguration | SwordfishIdentity | SwordfishStore | WorkflowService | SqlClient.SqlClient | ShutdownSignal,
+  | SwordfishConfiguration
+  | SwordfishIdentity
+  | BebopConnectionState
+  | SwordfishStore
+  | WorkflowService
+  | SqlClient.SqlClient
+  | ShutdownSignal,
   Config.ConfigError | DatabaseDirectoryError | SqlError.SqlError
 >;
 
@@ -23,12 +31,16 @@ export function swordfishRuntimeLayer(options?: {
   readonly configuration?: Layer.Layer<SwordfishConfiguration>;
   readonly identity?: Layer.Layer<SwordfishIdentity>;
 }): RuntimeLayer {
+  const ConnectionStateLayer = BebopConnectionStateLayer.pipe(
+    Layer.provideMerge(options?.identity ?? SwordfishIdentityLayer),
+  );
   const StoreRuntimeLayer = SwordfishStoreLayer.pipe(
     Layer.provideMerge(DatabaseLayer),
     Layer.provideMerge(
       Layer.mergeAll(
         options?.configuration ?? SwordfishConfigurationLayer,
         options?.identity ?? SwordfishIdentityLayer,
+        ConnectionStateLayer,
       ),
     ),
   );

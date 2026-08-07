@@ -13,6 +13,7 @@ import { Effect, Schema } from "effect";
 import { SqlClient } from "effect/unstable/sql";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
+import { BebopConnectionState } from "#src/domain/connection-state.ts";
 import { SwordfishIdentity } from "#src/domain/identity.ts";
 import { SwordfishStore } from "#src/persistence/store.ts";
 import { CommandConflictError, WorkflowService } from "#src/workflow/service.ts";
@@ -175,7 +176,11 @@ describe("Swordfish SQLite authority", () => {
       Effect.gen(function* () {
         const store = yield* SwordfishStore;
         const identity = yield* SwordfishIdentity;
-        return { replayable: yield* store.eventsAfter(zeroSequence), status: yield* store.status(yield* identity.now) };
+        const connection = yield* BebopConnectionState;
+        return {
+          replayable: yield* store.eventsAfter(zeroSequence),
+          status: yield* store.status(yield* identity.now, yield* connection.current),
+        };
       }),
     );
     expect(acknowledged.replayable.map((event) => event.sequence)).toEqual([1]);
@@ -514,7 +519,8 @@ describe("Swordfish SQLite authority", () => {
         const observedAt = decodeTimestamp(
           new Date(Date.parse(encodeTimestamp(runningSince)) + 89 * 60_000).toISOString(),
         );
-        const status = yield* store.status(observedAt);
+        const connection = yield* BebopConnectionState;
+        const status = yield* store.status(observedAt, yield* connection.current);
         const after = (yield* store.loadWorkflow).state;
         return { status, persistedElapsedMs: after.attempt?.elapsedMs };
       }),

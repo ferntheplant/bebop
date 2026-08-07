@@ -32,6 +32,7 @@ import type { SqlError } from "effect/unstable/sql";
 import { SqlClient } from "effect/unstable/sql";
 
 import { SwordfishConfiguration } from "#src/config.ts";
+import type { BebopConnectionLiveState } from "#src/domain/connection-state.ts";
 import { timestampToIso } from "#src/domain/identity.ts";
 import {
   decodeWorkflowSnapshot,
@@ -112,8 +113,10 @@ interface SwordfishStoreService {
     through: EventSequence,
     at: Timestamp,
   ) => Effect.Effect<void, SqlError.SqlError | AcknowledgementError>;
-  readonly setConnected: (connected: boolean, at: Timestamp) => Effect.Effect<void, SqlError.SqlError>;
-  readonly status: (observedAt: Timestamp) => Effect.Effect<SfStatusSnapshot, SqlError.SqlError>;
+  readonly status: (
+    observedAt: Timestamp,
+    connection: BebopConnectionLiveState,
+  ) => Effect.Effect<SfStatusSnapshot, SqlError.SqlError>;
   readonly command: (commandId: CommandId) => Effect.Effect<StoredCommand | null, SqlError.SqlError>;
   readonly recordCommand: (options: {
     readonly commandId: CommandId;
@@ -226,10 +229,10 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
             yield* sql`
             INSERT OR IGNORE INTO daemon_metadata
               (singleton, bounty_id, vm_id, repository, assigned_branch, acknowledged_through,
-               last_contact_at, last_applied_command_id, connected)
+               last_contact_at, last_applied_command_id)
             VALUES (
               1, ${config.bountyId}, ${config.vmId}, ${config.repository}, ${config.assignedBranch},
-              0, NULL, NULL, 0
+              0, NULL, NULL
             )
           `;
             const identityRows = yield* sql`
@@ -385,18 +388,7 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
           }),
         );
 
-      const setConnected = (connected: boolean, at: Timestamp) =>
-        sql.withTransaction(
-          Effect.gen(function* () {
-            yield* sql`
-            UPDATE daemon_metadata SET connected = ${connected ? 1 : 0}, last_contact_at = ${timestampToIso(at)}
-            WHERE singleton = 1
-          `;
-            yield* bumpRevision(at);
-          }),
-        );
-
-      const status = (observedAt: Timestamp) =>
+      const status = (observedAt: Timestamp, connection: BebopConnectionLiveState) =>
         sql.withTransaction(
           Effect.gen(function* () {
             const workflow = yield* loadWorkflow;
@@ -515,10 +507,24 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
                 allowed: entry.allowed,
               })),
               bebopConnection: {
-                state: number(metadata, "connected") === 1 ? "connected" : "disconnected",
-                ...(optionalText(metadata, "last_contact_at") === undefined
-                  ? {}
-                  : { lastContactAt: optionalText(metadata, "last_contact_at") }),
+                ...(connection.kind === "connected"
+                  ? {
+                      state: "connected",
+                      connectedAt: timestampToIso(connection.connectedAt),
+                      ...(optionalText(metadata, "last_contact_at") === undefined
+                        ? {}
+                        : { lastContactAt: optionalText(metadata, "last_contact_at") }),
+                    }
+                  : connection.kind === "disconnected"
+                    ? {
+                        state: "disconnected",
+                        disconnectedSince: timestampToIso(connection.disconnectedSince),
+                        nextAttemptAt: timestampToIso(connection.nextAttemptAt),
+                        ...(optionalText(metadata, "last_contact_at") === undefined
+                          ? {}
+                          : { lastContactAt: optionalText(metadata, "last_contact_at") }),
+                      }
+                    : { state: "never_connected", neverConnectedSince: timestampToIso(connection.since) }),
                 acknowledgedThrough: number(metadata, "acknowledged_through"),
                 pendingEventCount: number(pending[0] as Row, "count"),
               },
@@ -602,8 +608,12 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
 
       const reconcileLocalState = (at: Timestamp) =>
         Effect.gen(function* () {
+          // Connection state is live, not durable: a restart begins never_connected until the
+          // reconnect loop registers, so there is no column to reset here. `last_contact_at` is a
+          // real fact (when Bebop last acknowledged), and it is cleared because this is a fresh
+          // process life — no contact has happened yet.
           yield* sql`
-          UPDATE daemon_metadata SET connected = 0, last_contact_at = NULL WHERE singleton = 1
+          UPDATE daemon_metadata SET last_contact_at = NULL WHERE singleton = 1
         `;
           const gaps = yield* sql`
           SELECT events.sequence FROM workflow_events AS events
@@ -665,7 +675,6 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
         eventsAfter,
         deliveryState,
         acknowledge,
-        setConnected,
         status,
         command,
         recordCommand,

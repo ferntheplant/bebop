@@ -13,7 +13,7 @@ import {
 
 const request = {
   type: "request",
-  controlVersion: 2,
+  controlVersion: 3,
   correlationId: "corr-01",
   command: { type: "status" },
 } as const;
@@ -36,14 +36,14 @@ describe("sf control boundary decoding", () => {
   });
 
   test("distinguishes unsupported versions from malformed requests", () => {
-    expect(() => decodeSfControlRequest({ ...request, controlVersion: 3 })).toThrow(UnsupportedSfControlVersionError);
+    expect(() => decodeSfControlRequest({ ...request, controlVersion: 4 })).toThrow(UnsupportedSfControlVersionError);
     expect(() => decodeSfControlRequest({ ...request, command: { type: "destroy" } })).toThrow(
       InvalidSfControlRequestError,
     );
   });
 
   test("rejects malformed daemon responses with a response-specific error", () => {
-    expect(() => decodeSfControlResponse({ controlVersion: 2, type: "success" })).toThrow(
+    expect(() => decodeSfControlResponse({ controlVersion: 3, type: "success" })).toThrow(
       InvalidSfControlResponseError,
     );
   });
@@ -54,7 +54,7 @@ describe("sf control boundary decoding", () => {
       decodeSfControlResponseForRequest(
         {
           type: "error",
-          controlVersion: 2,
+          controlVersion: 3,
           correlationId: "corr-other",
           error: { code: "invalid_state", message: "Not available." },
         },

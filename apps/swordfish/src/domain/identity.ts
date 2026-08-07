@@ -19,6 +19,11 @@ export function timestampToIso(timestamp: Timestamp): string {
   return Schema.encodeSync(TimestampSchema)(timestamp);
 }
 
+/** The timestamp `millis` after the given one — how the reconnect loop computes when its next attempt is due. */
+export function timestampAfter(timestamp: Timestamp, millis: number): Timestamp {
+  return timestampAt(Date.parse(timestampToIso(timestamp)) + millis);
+}
+
 export const SwordfishIdentityLayer: Layer.Layer<SwordfishIdentity> = Layer.sync(SwordfishIdentity)(() => ({
   correlationId: Effect.sync(() =>
     Schema.decodeUnknownSync(CorrelationIdSchema)(`sf-${crypto.randomUUID().replaceAll("-", "")}`),

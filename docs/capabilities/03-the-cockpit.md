@@ -39,6 +39,11 @@ can be added without changing focus or operator-created layout. A pinned OpenCod
 abort, revert, and unrevert actions have distinct event signatures, so the cockpit does not use tmux input
 disabling. The `sf` surface and MVP layout are settled.
 
+`sf status` already reports the honest connection state the cockpit will surface in its status line: it
+distinguishes connected, disconnected-and-retrying, and never-connected, each derived from the live connection
+rather than a stored column, with how long the latter two have held and when the next reconnect attempt is due.
+The tmux status line itself remains part of the unbuilt cockpit.
+
 ## Acceptance criteria
 
 Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criteria **5** (SSH lands in the cockpit) and **6** (the cockpit shows

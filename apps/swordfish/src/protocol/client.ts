@@ -12,7 +12,8 @@ import type { SqlError } from "effect/unstable/sql";
 
 import { SwordfishConfiguration } from "#src/config.ts";
 import { ShutdownSignal } from "#src/daemon/shutdown.ts";
-import { SwordfishIdentity } from "#src/domain/identity.ts";
+import { BebopConnectionState } from "#src/domain/connection-state.ts";
+import { SwordfishIdentity, timestampAfter } from "#src/domain/identity.ts";
 import type { AcknowledgementError } from "#src/persistence/store.ts";
 import { SwordfishStore } from "#src/persistence/store.ts";
 import type { CommandConflictError, WorkflowTransitionError } from "#src/workflow/service.ts";
@@ -55,6 +56,7 @@ const session = (onRegistered: Effect.Effect<void>, heartbeatTick: Effect.Effect
   Effect.gen(function* () {
     const config = yield* SwordfishConfiguration;
     const identity = yield* SwordfishIdentity;
+    const connectionState = yield* BebopConnectionState;
     const store = yield* SwordfishStore;
     const workflow = yield* WorkflowService;
     const shutdown = yield* ShutdownSignal;
@@ -112,7 +114,7 @@ const session = (onRegistered: Effect.Effect<void>, heartbeatTick: Effect.Effect
 
     const connectedAt = yield* identity.now;
     yield* store.acknowledge(first.acknowledgedThrough, connectedAt);
-    yield* store.setConnected(true, connectedAt);
+    yield* connectionState.markConnected(connectedAt);
     yield* onRegistered;
     yield* Effect.logInfo("registered with Bebop").pipe(
       Effect.annotateLogs("connection_id", first.connectionId),
@@ -245,20 +247,43 @@ function describeSessionFailure(failure: BebopSessionError | Socket.SocketError)
 export const runBebopClient = Effect.gen(function* () {
   const config = yield* SwordfishConfiguration;
   const identity = yield* SwordfishIdentity;
-  const store = yield* SwordfishStore;
+  const connectionState = yield* BebopConnectionState;
   const workflow = yield* WorkflowService;
   const heartbeatTicks = yield* Queue.bounded<void>(1);
 
   const reconnect = Effect.gen(function* () {
-    let delay = Duration.toMillis(config.reconnectMinimumDelay);
+    let base = Duration.toMillis(config.reconnectMinimumDelay);
+    const minimum = Duration.toMillis(config.reconnectMinimumDelay);
     const maximum = Duration.toMillis(config.reconnectMaximumDelay);
+    // Until the first registration succeeds the daemon has never connected, which is a
+    // different claim than having connected and lost it ("The state is derived from the live
+    // connection rather than stored"). Every retry before that first success stays
+    // `never_connected`; the flag flips exactly when a registration lands.
+    let everConnected = false;
+
+    // Bounded exponential backoff with jitter. The exponential base doubles toward the
+    // maximum, and each actual wait is drawn uniformly within [minimum, base] so a fleet of
+    // daemons retrying the same outage does not thump back in lockstep.
+    const nextDelay = () => {
+      const cap = Math.min(maximum, base * 2);
+      const span = Math.max(0, cap - minimum);
+      const delay = minimum + Math.random() * span;
+      base = cap;
+      return delay;
+    };
+
+    const startedAt = yield* identity.now;
+    yield* connectionState.markNeverConnected(startedAt);
 
     for (;;) {
       // `Effect.result` captures only typed failures; defects and interruption still
       // terminate the daemon for its supervisor instead of being retried forever.
       const outcome = yield* Effect.result(
         session(
-          Effect.sync(() => (delay = Duration.toMillis(config.reconnectMinimumDelay))),
+          Effect.sync(() => {
+            base = Duration.toMillis(config.reconnectMinimumDelay);
+            everConnected = true;
+          }),
           Queue.take(heartbeatTicks),
         ).pipe(
           Effect.provide(
@@ -276,14 +301,25 @@ export const runBebopClient = Effect.gen(function* () {
         return yield* Effect.fail(outcome.failure);
       }
       const disconnectedAt = yield* identity.now;
-      yield* store.setConnected(false, disconnectedAt);
-      yield* Effect.logWarning("Bebop connection ended; reconnecting").pipe(
-        Effect.annotateLogs("retry_delay_ms", String(delay)),
-        Effect.annotateLogs("error_tag", outcome.failure._tag),
-        Effect.annotateLogs("reason", describeSessionFailure(outcome.failure)),
-      );
+      const delay = nextDelay();
+      if (everConnected) {
+        const nextAttemptAt = timestampAfter(disconnectedAt, delay);
+        yield* connectionState.markDisconnected(disconnectedAt, nextAttemptAt);
+        yield* Effect.logWarning("Bebop connection ended; reconnecting").pipe(
+          Effect.annotateLogs("retry_delay_ms", String(delay)),
+          Effect.annotateLogs("error_tag", outcome.failure._tag),
+          Effect.annotateLogs("reason", describeSessionFailure(outcome.failure)),
+        );
+      } else {
+        // Never connected: keep the state `never_connected`, and keep retrying on the same
+        // growing schedule without announcing each retry as a loss.
+        yield* Effect.logWarning("Bebop unreachable; first connection not yet established").pipe(
+          Effect.annotateLogs("retry_delay_ms", String(delay)),
+          Effect.annotateLogs("error_tag", outcome.failure._tag),
+          Effect.annotateLogs("reason", describeSessionFailure(outcome.failure)),
+        );
+      }
       yield* Effect.sleep(Duration.millis(delay));
-      delay = Math.min(maximum, delay * 2);
     }
   });
 

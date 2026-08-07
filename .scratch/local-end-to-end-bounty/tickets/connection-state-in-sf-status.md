@@ -1,6 +1,6 @@
 ---
 type: build
-status: open
+status: done
 ---
 
 # `sf status` reports the bebop connection beside the stage
@@ -43,3 +43,13 @@ and overloading that state makes it less informative everywhere it is used prope
 - Killing bebop mid-bounty leaves the stage advancing where it can, and `sf status` says why the rest is
   waiting.
 - `vp run ready` passes.
+
+## Outcome
+
+Closed by the `feat/sf-status-connection-state` branch: `sf status` now renders three Bebop connection states
+beside the stage — connected, disconnected (for how long, and when the next attempt is due), and never-connected
+(how long it has been trying). The `daemon_metadata.connected` column and `store.setConnected` are gone; the
+reconnect loop is the only writer of a live in-memory connection state that the control socket reads on demand.
+The reconnect loop now waits on bounded exponential backoff with jitter between
+`SWORDFISH_RECONNECT_MINIMUM_DELAY` and `SWORDFISH_RECONNECT_MAXIMUM_DELAY`, and reports the next attempt on
+disconnect. The control protocol is at version 3 for the new snapshot shape. `vp run ready` passes.

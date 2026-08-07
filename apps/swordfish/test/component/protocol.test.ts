@@ -8,6 +8,7 @@ import { SqlClient, SqlError } from "effect/unstable/sql";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
 import { SwordfishConfiguration } from "#src/config.ts";
+import { BebopConnectionState } from "#src/domain/connection-state.ts";
 import { SwordfishStore } from "#src/persistence/store.ts";
 import { runBebopClient } from "#src/protocol/client.ts";
 import { WorkflowService, WorkflowTransitionError } from "#src/workflow/service.ts";
@@ -481,28 +482,80 @@ describe("Swordfish outbound protocol", () => {
     }
   }, 10_000);
 
-  test("does not retry defects from durable disconnect bookkeeping", async () => {
+  test("tracks never-connected, connected, and disconnected with the next attempt due", async () => {
+    // The live connection is reported rather than stored: `sf status` can say "never connected
+    // since start", "disconnected since X, retry in Y", or "connected", and the difference
+    // between a daemon that has not reached Bebop yet and one that reached it and lost it is
+    // exactly the distinction a retrying-with-backoff daemon needs to make visible.
+    let firstConnection: FakePeerSocket | undefined;
     const peer = startFakePeer({
       onOpen(socket) {
-        socket.close(1012, "trigger disconnect bookkeeping");
+        if (firstConnection === undefined) firstConnection = socket;
+      },
+      onRegister(socket, _message, { state }) {
+        socket.send(registeredMessage(state.registrations));
       },
     });
-    harness = await startSwordfishHarness("durable-defect", {
+
+    harness = await startSwordfishHarness("connection-state-live", {
       bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
     });
-    const realStore = await harness.run(SwordfishStore);
+    const read = async () => {
+      const current = harness;
+      if (current === undefined) throw new Error("harness is not started");
+      return current.run(Effect.flatMap(BebopConnectionState, (state) => state.current));
+    };
+    const fiber = harness.fork(runBebopClient);
+    try {
+      // The daemon starts never-connected and reports it until the first registration lands.
+      await waitFor(async () => (await read()).kind === "connected", "the first registration");
+      const connected = await read();
+      expect(connected.kind).toBe("connected");
+
+      // A forced close after registration reports disconnected with a next attempt due.
+      firstConnection?.close(1012, "force disconnect");
+      await waitFor(async () => (await read()).kind === "disconnected", "the disconnect state");
+      const disconnected = await read();
+      if (disconnected.kind === "disconnected") {
+        expect(disconnected.nextAttemptAt > disconnected.disconnectedSince).toBe(true);
+      }
+
+      // And it recovers back to connected on the next registration.
+      await waitFor(async () => (await read()).kind === "connected", "the reconnect registration");
+      expect(peer.decodeErrors).toEqual([]);
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      peer.stop();
+    }
+  }, 10_000);
+
+  test("does not retry defects from connection-state bookkeeping", async () => {
+    const peer = startFakePeer({
+      onRegister(socket, _message, { state }) {
+        socket.send(registeredMessage(state.registrations));
+      },
+      onMessage(socket, message) {
+        if (message.type === "heartbeat") {
+          socket.close(1012, "trigger disconnect bookkeeping");
+        }
+      },
+    });
+    harness = await startSwordfishHarness("connection-state-defect", {
+      bebopWebSocketUrl: `ws://127.0.0.1:${peer.port}/swordfish`,
+    });
+    const realConnectionState = await harness.run(BebopConnectionState);
     const fiber = harness.fork(
       runBebopClient.pipe(
-        Effect.provideService(SwordfishStore, {
-          ...realStore,
-          setConnected: () => Effect.die("durable disconnect defect"),
+        Effect.provideService(BebopConnectionState, {
+          ...realConnectionState,
+          markDisconnected: () => Effect.die("connection-state defect"),
         }),
       ),
     );
     try {
       const exit = await Effect.runPromise(Fiber.await(fiber));
       expect(exit._tag).toBe("Failure");
-      if (exit._tag === "Failure") expect(String(exit.cause)).toContain("durable disconnect defect");
+      if (exit._tag === "Failure") expect(String(exit.cause)).toContain("connection-state defect");
       await Bun.sleep(100);
       expect(peer.state.connections).toBe(1);
     } finally {

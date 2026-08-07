@@ -125,8 +125,7 @@ const initial = Effect.gen(function* () {
       assigned_branch          text NOT NULL,
       acknowledged_through     integer NOT NULL,
       last_contact_at          text,
-      last_applied_command_id  text,
-      connected                integer NOT NULL CHECK (connected IN (0, 1))
+      last_applied_command_id  text
     )
   `;
 });

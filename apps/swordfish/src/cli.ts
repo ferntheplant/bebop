@@ -17,6 +17,7 @@ import { Config, ConfigProvider, Console, Effect, Layer, Option, Schema } from "
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { requestControl } from "#src/control/client.ts";
+import { timestampToIso } from "#src/domain/identity.ts";
 import { SwordfishIdentity, SwordfishIdentityLayer } from "#src/domain/identity.ts";
 
 export const swordfishCliName = "sf";
@@ -124,7 +125,7 @@ function printStatus(snapshot: SfStatusSnapshot): string {
     `branch      ${snapshot.assignedBranch}`,
     `stage       ${snapshot.stage}`,
     `control     ${snapshot.controller}`,
-    `bebop       ${snapshot.bebopConnection.state}`,
+    `bebop       ${describeConnection(snapshot)}`,
     `ack         ${snapshot.bebopConnection.acknowledgedThrough}`,
     `outbox      ${snapshot.bebopConnection.pendingEventCount}`,
   ];
@@ -169,6 +170,40 @@ function printStatus(snapshot: SfStatusSnapshot): string {
 function budget(value: SfBudgetSnapshot): string {
   const granted = value.granted > 0 ? ` (${value.base} + ${value.granted} granted)` : "";
   return `${value.consumed}/${value.base + value.granted}${granted}`;
+}
+
+/** A human-sized interval between two timestamps, clamped at zero. */
+function relative(from: string, to: string): string {
+  const milliseconds = Date.parse(to) - Date.parse(from);
+  const clamped = Math.max(0, milliseconds);
+  if (clamped < 1_000) return "0s";
+  const seconds = Math.round(clamped / 1_000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes < 60) return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
+  const hours = Math.floor(minutes / 60);
+  const minutesRemainder = minutes % 60;
+  return minutesRemainder === 0 ? `${hours}h` : `${hours}h ${minutesRemainder}m`;
+}
+
+/**
+ * The Bebop connection beside the stage, with the shape that tells a retrying daemon from a
+ * stuck one (`docs/capabilities/03-the-cockpit.md`): a never-connected daemon shows how long it
+ * has been trying; a disconnected one shows how long the loss has held and when the next attempt
+ * is due.
+ */
+function describeConnection(snapshot: SfStatusSnapshot): string {
+  const observedAt = timestampToIso(snapshot.observedAt);
+  const connection = snapshot.bebopConnection;
+  if (connection.state === "connected") return "connected";
+  if (connection.state === "disconnected") {
+    const since = relative(timestampToIso(connection.disconnectedSince), observedAt);
+    const retry = relative(observedAt, timestampToIso(connection.nextAttemptAt));
+    return `disconnected ${since} ago, retry in ${retry}`;
+  }
+  const trying = relative(timestampToIso(connection.neverConnectedSince), observedAt);
+  return `never connected (${trying} trying)`;
 }
 
 function minutes(value: SfBudgetSnapshot): SfBudgetSnapshot {

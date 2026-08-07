@@ -2,7 +2,7 @@
 
 import { createInterface } from "node:readline";
 
-import type { SfBudgetSnapshot, SfControlCommand, SfControlRequest, SfStatusSnapshot } from "@bebop/contracts";
+import type { SfControlCommand, SfControlRequest } from "@bebop/contracts";
 import {
   currentSfControlVersion,
   OperatorCredential,
@@ -17,8 +17,8 @@ import { Config, ConfigProvider, Console, Effect, Layer, Option, Schema } from "
 import { Argument, Command, Flag } from "effect/unstable/cli";
 
 import { requestControl } from "#src/control/client.ts";
-import { timestampToIso } from "#src/domain/identity.ts";
 import { SwordfishIdentity, SwordfishIdentityLayer } from "#src/domain/identity.ts";
+import { renderStatusReport } from "#src/status-report.ts";
 
 export const swordfishCliName = "sf";
 
@@ -117,100 +117,6 @@ function loadSocketPath(override: Option.Option<string>) {
   );
 }
 
-function printStatus(snapshot: SfStatusSnapshot): string {
-  const lines = [
-    `bounty      ${snapshot.bountyId}`,
-    `vm          ${snapshot.vmId}`,
-    `repository  ${snapshot.repository}`,
-    `branch      ${snapshot.assignedBranch}`,
-    `stage       ${snapshot.stage}`,
-    `control     ${snapshot.controller}`,
-    `bebop       ${describeConnection(snapshot)}`,
-    `ack         ${snapshot.bebopConnection.acknowledgedThrough}`,
-    `outbox      ${snapshot.bebopConnection.pendingEventCount}`,
-  ];
-  // A stopped bounty prints what will restart it. Reading a reason and then having to work out which command
-  // applies was the step `docs/capabilities/05-control-lease-and-takeover.md` asks us to remove. Each reason
-  // gets its own exits, because clearing one may leave another outstanding.
-  for (const attention of snapshot.attention) {
-    lines.push(`attention   ${attention.kind}: ${attention.reason}`);
-    lines.push(`resolve     ${attention.resolutions.join(", ")}`);
-  }
-  if (snapshot.suspendedStage !== undefined) {
-    lines.push(`suspended   ${snapshot.suspendedStage}`);
-  }
-  // Matched by seat ID, since a retried role has more than one seat in this list.
-  for (const seat of snapshot.seats) {
-    const active = seat.seatId === snapshot.activeCowboy?.seatId ? " (active)" : "";
-    lines.push(`seat        ${seat.role} ${seat.seatId}${active}`);
-  }
-  // The attempt in flight, with the ordinal and the two watchdogs it is running against. A stopped clock is
-  // called out because "12 minutes elapsed" reads as progress when nothing is in fact accruing.
-  const attempt = snapshot.attempt;
-  if (attempt !== undefined) {
-    lines.push(
-      `attempt     ${attempt.scope} ${attempt.ordinal} (${attempt.role} ${attempt.seatId})${attempt.running ? "" : " [clock stopped]"}`,
-    );
-    lines.push(`turns       ${budget(attempt.turns)}`);
-    lines.push(`wall clock  ${budget(minutes(attempt.wallClockMs))} min`);
-  }
-  for (const constraint of snapshot.constraints) {
-    lines.push(`attempts    ${constraint.scope} ${budget(constraint.attempts)}`);
-  }
-  lines.push(`candidates  validated ${budget(snapshot.validatedCandidates)}`);
-  // What actually ran out, as the arithmetic rather than as the daemon's assertion (ADR 0042).
-  for (const entry of snapshot.exhausted) {
-    const scope = entry.scope === undefined ? "" : `${entry.scope} `;
-    lines.push(`exhausted   ${scope}${entry.constraint} ${entry.consumed}/${entry.allowed}`);
-  }
-  return lines.join("\n");
-}
-
-/** `consumed/allowed`, naming a grant only when one was made, so an unextended budget stays quiet. */
-function budget(value: SfBudgetSnapshot): string {
-  const granted = value.granted > 0 ? ` (${value.base} + ${value.granted} granted)` : "";
-  return `${value.consumed}/${value.base + value.granted}${granted}`;
-}
-
-/** A human-sized interval between two timestamps, clamped at zero. */
-function relative(from: string, to: string): string {
-  const milliseconds = Date.parse(to) - Date.parse(from);
-  const clamped = Math.max(0, milliseconds);
-  if (clamped < 1_000) return "0s";
-  const seconds = Math.round(clamped / 1_000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  if (minutes < 60) return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
-  const hours = Math.floor(minutes / 60);
-  const minutesRemainder = minutes % 60;
-  return minutesRemainder === 0 ? `${hours}h` : `${hours}h ${minutesRemainder}m`;
-}
-
-/**
- * The Bebop connection beside the stage, with the shape that tells a retrying daemon from a
- * stuck one (`docs/capabilities/03-the-cockpit.md`): a never-connected daemon shows how long it
- * has been trying; a disconnected one shows how long the loss has held and when the next attempt
- * is due.
- */
-function describeConnection(snapshot: SfStatusSnapshot): string {
-  const observedAt = timestampToIso(snapshot.observedAt);
-  const connection = snapshot.bebopConnection;
-  if (connection.state === "connected") return "connected";
-  if (connection.state === "disconnected") {
-    const since = relative(timestampToIso(connection.disconnectedSince), observedAt);
-    const retry = relative(observedAt, timestampToIso(connection.nextAttemptAt));
-    return `disconnected ${since} ago, retry in ${retry}`;
-  }
-  const trying = relative(timestampToIso(connection.neverConnectedSince), observedAt);
-  return `never connected (${trying} trying)`;
-}
-
-function minutes(value: SfBudgetSnapshot): SfBudgetSnapshot {
-  const toMinutes = (milliseconds: number) => Math.round(milliseconds / 60_000);
-  return { consumed: toMinutes(value.consumed), base: toMinutes(value.base), granted: toMinutes(value.granted) };
-}
-
 function rejectTrailingArguments(command: SfControlCommand): Effect.Effect<void, Error> {
   const commandIndex = process.argv.indexOf(command.type);
   if (commandIndex < 0) return Effect.void;
@@ -256,7 +162,7 @@ const execute = Effect.fnUntraced(function* (options: {
   yield* Console.log(
     options.json
       ? JSON.stringify(Schema.encodeUnknownSync(SfStatusSnapshotSchema)(response.result.snapshot), null, 2)
-      : printStatus(response.result.snapshot),
+      : renderStatusReport(response.result.snapshot),
   );
 });
 

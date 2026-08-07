@@ -33,6 +33,7 @@ import { SqlClient } from "effect/unstable/sql";
 
 import { SwordfishConfiguration } from "#src/config.ts";
 import type { BebopConnectionLiveState } from "#src/domain/connection-state.ts";
+import { encodeBebopConnection } from "#src/domain/connection-state.ts";
 import { timestampToIso } from "#src/domain/identity.ts";
 import {
   decodeWorkflowSnapshot,
@@ -506,28 +507,12 @@ export const SwordfishStoreLayer: Layer.Layer<SwordfishStore, never, SqlClient.S
                 consumed: entry.consumed,
                 allowed: entry.allowed,
               })),
-              bebopConnection: {
-                ...(connection.kind === "connected"
-                  ? {
-                      state: "connected",
-                      connectedAt: timestampToIso(connection.connectedAt),
-                      ...(optionalText(metadata, "last_contact_at") === undefined
-                        ? {}
-                        : { lastContactAt: optionalText(metadata, "last_contact_at") }),
-                    }
-                  : connection.kind === "disconnected"
-                    ? {
-                        state: "disconnected",
-                        disconnectedSince: timestampToIso(connection.disconnectedSince),
-                        nextAttemptAt: timestampToIso(connection.nextAttemptAt),
-                        ...(optionalText(metadata, "last_contact_at") === undefined
-                          ? {}
-                          : { lastContactAt: optionalText(metadata, "last_contact_at") }),
-                      }
-                    : { state: "never_connected", neverConnectedSince: timestampToIso(connection.since) }),
+              bebopConnection: encodeBebopConnection({
+                connection,
+                lastContactAt: optionalText(metadata, "last_contact_at"),
                 acknowledgedThrough: number(metadata, "acknowledged_through"),
                 pendingEventCount: number(pending[0] as Row, "count"),
-              },
+              }),
               previews: encodePreviews(workflow.state.previews),
               recentEvents: eventRows.toReversed().map((row) => {
                 const event = decodeEvent(JSON.parse(text(row as Row, "payload")) as unknown);

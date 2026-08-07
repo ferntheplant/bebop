@@ -548,7 +548,7 @@ describe("Swordfish outbound protocol", () => {
       runBebopClient.pipe(
         Effect.provideService(BebopConnectionState, {
           ...realConnectionState,
-          markDisconnected: () => Effect.die("connection-state defect"),
+          markLost: () => Effect.die("connection-state defect"),
         }),
       ),
     );

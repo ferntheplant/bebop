@@ -237,10 +237,10 @@ export type SfPendingConfigApproval = typeof SfPendingConfigApproval.Type;
  * Three states, because an operator cannot tell "retrying with backoff" from "stuck" by the
  * stage alone (`docs/capabilities/03-the-cockpit.md`). `never_connected` is a daemon that has
  * not reached Bebop yet since it started; `disconnected` is one that reached it and lost it.
- * Both non-connected states carry the timestamp the duration is derived from on read, and the
- * moment the next attempt is due — the reconnect loop is the only writer, so the state is the
- * live connection, never a column ("The state is derived from the live connection rather than
- * stored").
+ * Both non-connected states carry instants rather than a rendered duration, so a reader derives
+ * the elapsed time against its own clock — the daemon's freshness obligation in "Bebop owns
+ * authority, Swordfish owns the loop" (ADR 0002), met without storing a status that the first
+ * missed update would leave permanently wrong.
  */
 export const SfBebopConnectionConnected = Schema.Struct({
   state: Schema.Literal("connected"),

@@ -125,10 +125,22 @@ const initial = Effect.gen(function* () {
       assigned_branch          text NOT NULL,
       acknowledged_through     integer NOT NULL,
       last_contact_at          text,
-      last_applied_command_id  text
+      last_applied_command_id  text,
+      connected                integer NOT NULL CHECK (connected IN (0, 1))
     )
   `;
 });
 
-const swordfishMigrations = { "1_initial": initial } as const;
+// `connected` was a compact status written to a column, which the architectural rules forbid:
+// derivable state is derived on read. The live connection is now held in memory by the reconnect
+// loop, which is its only writer, and read on demand by the control socket — so the column is not
+// replaced by another one, it is removed. Migration 1 keeps creating it because it already ran on
+// databases in the field; changing it there would leave those databases with a column no insert
+// supplies.
+const dropDaemonConnected = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE daemon_metadata DROP COLUMN connected`;
+});
+
+const swordfishMigrations = { "1_initial": initial, "2_drop_daemon_connected": dropDaemonConnected } as const;
 export const swordfishMigrationLoader: Migrator.Loader = Migrator.fromRecord(swordfishMigrations);

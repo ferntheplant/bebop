@@ -816,6 +816,39 @@ describe("Swordfish SQLite authority", () => {
     expect(restored.reconciliation[0]).toMatchObject({ status: "completed", detail: "cleaned" });
   });
 
+  test("upgrades a database created before the connected column was dropped", async () => {
+    // Migration 1 already ran on databases in the field, so it still creates `connected` and a
+    // second migration removes it. Without that second migration those databases would keep a
+    // NOT NULL column no insert supplies. This puts a live database back at schema 1 and
+    // restarts into the current one.
+    harness = await startSwordfishHarness("migration-drop-connected");
+    await harness.run(
+      Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        Effect.gen(function* () {
+          yield* sql`ALTER TABLE daemon_metadata ADD COLUMN connected integer NOT NULL DEFAULT 0`;
+          yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 2`;
+        }),
+      ),
+    );
+    await harness.restart();
+
+    const columns = await harness.run(
+      Effect.flatMap(SqlClient.SqlClient, (sql) => sql`PRAGMA table_info(daemon_metadata)`),
+    );
+    expect(columns.map((column) => (column as Record<string, unknown>)["name"])).not.toContain("connected");
+    // Bootstrap re-seeds through the same insert the daemon uses, and status still reads: the
+    // upgraded database reports the live connection like any other.
+    const status = await harness.run(
+      Effect.gen(function* () {
+        const store = yield* SwordfishStore;
+        const identity = yield* SwordfishIdentity;
+        const connection = yield* BebopConnectionState;
+        return yield* store.status(yield* identity.now, yield* connection.current);
+      }),
+    );
+    expect(status.bebopConnection.state).toBe("never_connected");
+  });
+
   test("refuses to open authority state under another bounty identity", async () => {
     harness = await startSwordfishHarness("identity");
     await harness.run(

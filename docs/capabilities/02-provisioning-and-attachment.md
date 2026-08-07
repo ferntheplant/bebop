@@ -27,14 +27,14 @@ it does can reach another bounty.
 
 ## Where it stands
 
-**Designed.** The real provisioning path does not exist yet — bebop runs against a fake lifecycle provider. The
+**Designed.** The real provisioning path does not exist yet — bebop runs against a local lifecycle provider. The
 exe.dev API surface, the credential paths for each seat, and the compute profiles are all open questions with
 tickets on the map, and three of them are blocked on having a real account to test against.
 
 **What provisioning means on a laptop.** There is a second, permanent mode in which bebop runs against no
-provider at all, used to develop bebop itself. The fake provider creates no computer, but it does the same job:
-it derives a machine identity from the bounty and starts the Swordfish daemon with the machine credential, where
-exe.dev's provider will have the VM's own bootstrap do it. The bounty's working copy is a fresh clone in a
+provider at all, used to develop bebop itself. It creates no computer, but it does the same job: it derives a
+machine identity from the bounty and starts the Swordfish daemon with the machine credential, where exe.dev's
+provider will have the VM's own bootstrap do it. The bounty's working copy is a fresh clone in a
 bounty-scoped root rather than the operator's own checkout, and no GitHub credential is injected — the machine
 uses the operator's ambient Git and `gh` credentials, which is the shape exe.dev's repository-scoped integration
 provides. The record it returns still carries an SSH target that nothing listens on; that is known and accepted
@@ -62,10 +62,16 @@ returned), and **7** (ein's seat running with its context MCPs).
   — why mutating local `sf` commands need a credential that cowboys never receive.
 - [The local loop runs the production assembly (ADR 0046)](../adr/0046-the-local-loop-runs-the-production-assembly.md)
   — what a machine is when there is no computer, and why the operator runs the peers by hand.
+- [A local Swordfish outlives the worker that started it (ADR 0048)](../adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)
+  — why a local daemon is detached and reattached to rather than restarted, and why the machine credential
+  never reaches disk.
 
 ## Still open
 
-- Should `BEBOP_LOCAL_HARNESS_ROOT` be impossible in production rather than merely warned about?
+- Should `BEBOP_LOCAL_HARNESS_ROOT` be impossible in production rather than merely warned about? It no longer
+  writes credentials to disk, but it does make a process that spawns daemons and clones repositories on its own
+  host, and only a startup warning stands between that and a deployment.
+- What sweeps up a local bounty root whose daemon was orphaned by a destroy that never ran?
 - Provision exe.dev access and record where its credentials live
 - What does exe.dev's provisioning API actually offer, and where does it fail?
 - Can the exe.dev LLM integration serve ein and jet through the connected ChatGPT subscription?

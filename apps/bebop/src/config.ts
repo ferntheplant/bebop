@@ -101,18 +101,28 @@ const BebopConfigBase = Schema.Struct({
     Schema.Redacted(ApiTokenSecret, { label: "bootstrap-api-token", disallowJsonEncode: true }),
   ),
   /**
-   * When set, the fake lifecycle provider writes each provisioned bounty's bootstrap
-   * artifact here instead of only fabricating a VM record. It is how a local supervisor
-   * receives the machine credential Bebop hands to `LifecycleProvider.provision`, with no
-   * operator retrieval route and no second derivation — the same injection
-   * [Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR
-   * 0014)](../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)
-   * gives the real provider, at a seam where the VM is a directory.
+   * When set, a provisioned bounty is a real Swordfish daemon on this host under this root,
+   * rather than only a VM record: the lifecycle provider clones the working copy and starts the
+   * process, which is what makes a machine exist locally
+   * ([A local Swordfish outlives the worker that started it (ADR
+   * 0048)](../../../docs/adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)).
+   * Each bounty gets `bounties/<bountyId>/` beneath it.
    *
-   * Setting it writes plaintext machine credentials to disk, so the runtime logs a warning
-   * whenever it is present. Production leaves it unset; the real provider injects into a VM.
+   * Setting it turns this process into one that spawns daemons and clones repositories on its
+   * own host, so the runtime logs a warning whenever it is present. Production leaves it unset;
+   * the real provider has the VM's bootstrap do all of it.
    */
   localHarnessRoot: Schema.optionalKey(AbsolutePath),
+  /**
+   * The rest of local machine mode, all inert in production.
+   *
+   * The entrypoint is the packed daemon a machine runs, and has no default because guessing a
+   * path to a packed artifact and being wrong fails much later, as a daemon that never starts.
+   * The remote base is what a repository slug is cloned from — GitHub for an operator, and a
+   * bare repository on disk for a suite that has to clone without a network.
+   */
+  localSwordfishEntrypoint: Schema.optionalKey(AbsolutePath),
+  localGitRemoteBase: Schema.optionalKey(Schema.URL),
   databasePoolSize: Schema.optionalKey(PositiveCount),
   eventStreamPollInterval: Schema.optionalKey(PositiveDuration),
   commandPollInterval: Schema.optionalKey(PositiveDuration),
@@ -129,6 +139,17 @@ const BebopConfigSchema = BebopConfigBase.pipe(
       Duration.isGreaterThan(config.swordfishStaleAfter, config.heartbeatInterval)
         ? undefined
         : { path: ["swordfishStaleAfter"], issue: "Expected stale timeout to exceed heartbeat interval" },
+    ),
+    // Local mode is all-or-nothing. A root without an entrypoint would start no daemon and say
+    // nothing about why, which is the failure that is hardest to attribute — so it is refused at
+    // startup instead, where the message can name the missing variable.
+    Schema.makeFilter<typeof BebopConfigBase.Type>((config) =>
+      config.localHarnessRoot === undefined || config.localSwordfishEntrypoint !== undefined
+        ? undefined
+        : {
+            path: ["localSwordfishEntrypoint"],
+            issue: "Expected a Swordfish entrypoint whenever a local harness root is set",
+          },
     ),
   ),
 );

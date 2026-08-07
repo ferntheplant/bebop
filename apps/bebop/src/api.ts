@@ -16,7 +16,7 @@ import { BebopApiRoutes, ensureApiTokenBootstrap, reconcileConnectionsOnStartup 
 import { BebopConfiguration } from "#src/config.ts";
 import { structuredLoggingLayer, withComponent } from "#src/observability/logging.ts";
 import { migrateDatabase } from "#src/persistence/database.ts";
-import { BebopRuntimeLayer, LocalLifecycleProviderLayer } from "#src/runtime/layers.ts";
+import { BebopRuntimeLayer, LifecycleProviderLayer } from "#src/runtime/layers.ts";
 import { withBoundedShutdown } from "#src/runtime/shutdown.ts";
 
 export const bebopApiName = "bebop-api";
@@ -64,7 +64,7 @@ const runBebopApi = Effect.gen(function* () {
   // (`prototypes/effect-runtime`, finding 5), which is why nothing here treats it as an error.
   yield* Effect.suspend(() => Effect.never.pipe(Effect.provide(ServerLayer)));
 }).pipe(
-  Effect.provide(LocalLifecycleProviderLayer),
+  Effect.provide(LifecycleProviderLayer),
   Effect.provide(BebopRuntimeLayer),
   // Replaces the pretty logger `runMain` installs, which is the wrong shape for a container
   // whose logs are collected by line.

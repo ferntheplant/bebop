@@ -10,7 +10,7 @@ import { Effect, Schedule } from "effect";
 import { BebopConfiguration } from "#src/config.ts";
 import { structuredLoggingLayer, withComponent } from "#src/observability/logging.ts";
 import { migrateDatabase } from "#src/persistence/database.ts";
-import { BebopRuntimeLayer, LocalLifecycleProviderLayer } from "#src/runtime/layers.ts";
+import { BebopRuntimeLayer, LifecycleProviderLayer } from "#src/runtime/layers.ts";
 import { runOneJob, sweepStaleConnections } from "#src/worker/jobs.ts";
 
 export const bebopWorkerName = "bebop-worker";
@@ -47,7 +47,7 @@ const runBebopWorker = Effect.gen(function* () {
 
   yield* Effect.repeat(tick, Schedule.spaced(config.workerPollInterval));
 }).pipe(
-  Effect.provide(LocalLifecycleProviderLayer),
+  Effect.provide(LifecycleProviderLayer),
   Effect.provide(BebopRuntimeLayer),
   Effect.provide(structuredLoggingLayer),
 );

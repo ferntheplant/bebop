@@ -11,7 +11,7 @@ colocation convention:
 | Layer        | Location                                                 | What's stubbed                                  |
 | ------------ | -------------------------------------------------------- | ----------------------------------------------- |
 | Unit         | `src/<area>/<area>.test.ts` (co-located)                 | Nothing — pure functions / schemas / reducers   |
-| Component    | `apps/<app>/test/component/`                             | `Identity` + `LifecycleProvider` only           |
+| Component    | `apps/<app>/test/component/`                             | One substitution seam — see below               |
 | Integration  | `test/integration/`                                      | Nothing — real spawned `bun` child processes    |
 | Local system | `test/local-system/`                                     | Nothing — packed processes over loopback        |
 | Smoke        | `apps/<app>/scripts/smoke.ts` (via `vp run <app>#smoke`) | Nothing — runs the packed `dist/*.mjs` artifact |
@@ -38,9 +38,16 @@ Today, unit tests are colocated in:
 
 `apps/bebop/test/component/*.test.ts` boot the **real production layer stack** in-process (`BunHttpServer`,
 migrations, repositories, WebSocket gateway, real disposable Postgres) via `test/component/support/harness.ts:99`.
-They stub exactly two layers — `fixedIdentityLayer` (deterministic IDs/time) and `fakeLifecycleProviderLayer` (no
-real VM provisioning). They verify that bebop's _internal_ layers compose correctly, which is why they don't have
-a single source file to colocate against. The shared `support/harness.ts` is itself the thing under test.
+They stub exactly two layers — `fixedIdentityLayer` (deterministic IDs/time) and `localLifecycleProviderLayer`
+with no supervisor (no real VM, and no local daemon either). They verify that bebop's _internal_ layers compose
+correctly, which is why they don't have a single source file to colocate against. The shared `support/harness.ts`
+is itself the thing under test.
+
+`component/local-daemon.test.ts` is the one suite here that needs no database. It constrains a single source
+file, which would ordinarily mean colocation, but it substitutes `LocalProcessRunner` and builds a real bounty
+root on disk — and a unit test in this repo does neither
+([Tests are layered by what they bring up (ADR 0021)](./adr/0021-tests-are-layered-by-what-they-bring-up.md)).
+Substituting one service and running everything else for real is the component bargain, so it lives here.
 
 The `support/` directory imports through the `#test/*` subpath map declared in `apps/bebop/package.json`, which is
 the structural signal that this code belongs to the composition layer and is shared across multiple suites that
@@ -78,8 +85,11 @@ exception that proved two applications compose rather than proving one entrypoin
 artifacts and drove public HTTP, WebSocket, CLI, and Unix-socket interfaces; it did not import app source or write
 either database. Its production follow-up is the local system harness,
 maintained under `test/local-system/` and run via `vp run local-system`: the same packed peers over disposable
-Postgres, with the fake lifecycle provider handing the machine credential to the supervisor through the one-shot
-bootstrap artifact instead of a second credential path.
+Postgres, where creating a bounty is what makes a Swordfish daemon exist because the lifecycle provider starts it
+([A local Swordfish outlives the worker that started it (ADR 0048)](./adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)).
+The harness starts no daemon of its own and could not: the machine credential never reaches disk, so it restarts
+one by requeuing provisioning through the API. It clones from a bare repository it creates on disk, which keeps
+the clone real while leaving the suite offline and repeatable.
 
 ## Database gating: `BEBOP_TEST_DATABASE_URL`
 
@@ -104,8 +114,13 @@ side-effecting things are wrapped in Effect services and replaced at the layer s
   `fixedIdentityLayer` in the component harness. `TestClock` would virtualize only `now`, not the other six
   generators, so it is additive not substitutive. Whether to adopt it for the scheduled loops is an open
   question.
-- `LifecycleProvider` (`apps/bebop/src/lifecycle/provider.ts`) is replaced by `fakeLifecycleProviderLayer` with
-  hookable `onProvision` / `onProvisionAttempt` / `failProvisionAttempts` callbacks.
+- `LifecycleProvider` (`apps/bebop/src/lifecycle/provider.ts`) is `localLifecycleProviderLayer` with hookable
+  `onProvision` / `onProvisionAttempt` / `failProvisionAttempts` callbacks. Given no `supervisor` it fabricates
+  VM records and starts nothing, which is what every component suite wants; given one it is the shipped local
+  path, which is what `test/local-system/` and an operator get.
+- `LocalProcessRunner` (`apps/bebop/src/lifecycle/local-process.ts`) is the seam for spawning, identifying, and
+  signalling operating-system processes, replaced in `component/local-daemon.test.ts` so the supervisor's
+  reattach and escalation decisions are testable without a real daemon.
 - Time and external clients stay on real wall-clock. The integration suites need this because they assert on
   actual scheduler / idle-timeout behaviour in spawned children.
 

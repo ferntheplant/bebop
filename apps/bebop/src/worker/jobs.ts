@@ -79,6 +79,8 @@ const runProvision = Effect.fnUntraced(function* (job: LifecycleJob, workerId: s
   const provisioned = yield* provider.provision({
     bountyId: bounty.bountyId,
     computeProfile: bounty.computeProfile,
+    repository: bounty.repository,
+    assignedBranch: bounty.assignedBranch,
     swordfishToken,
     operatorCredentialVerifier: operatorCredentialVerifier(
       operatorCredentialForBounty(config.swordfishCredentialKey, bounty.bountyId),

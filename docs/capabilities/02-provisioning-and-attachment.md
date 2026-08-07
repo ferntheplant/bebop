@@ -27,14 +27,14 @@ it does can reach another bounty.
 
 ## Where it stands
 
-**Designed.** The real provisioning path does not exist yet — bebop runs against a fake lifecycle provider. The
+**Designed.** The real provisioning path does not exist yet — bebop runs against a local lifecycle provider. The
 exe.dev API surface, the credential paths for each seat, and the compute profiles are all open questions with
 tickets on the map, and three of them are blocked on having a real account to test against.
 
 **What provisioning means on a laptop.** There is a second, permanent mode in which bebop runs against no
-provider at all, used to develop bebop itself. The fake provider creates no computer, but it does the same job:
-it derives a machine identity from the bounty and starts the Swordfish daemon with the machine credential, where
-exe.dev's provider will have the VM's own bootstrap do it. The bounty's working copy is a fresh clone in a
+provider at all, used to develop bebop itself. It creates no computer, but it does the same job: it derives a
+machine identity from the bounty and starts the Swordfish daemon with the machine credential, where exe.dev's
+provider will have the VM's own bootstrap do it. The bounty's working copy is a fresh clone in a
 bounty-scoped root rather than the operator's own checkout, and no GitHub credential is injected — the machine
 uses the operator's ambient Git and `gh` credentials, which is the shape exe.dev's repository-scoped integration
 provides. The record it returns still carries an SSH target that nothing listens on; that is known and accepted

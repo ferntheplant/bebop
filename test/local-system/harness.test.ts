@@ -4,9 +4,8 @@
 // with disposable Postgres and per-bounty SQLite/socket/artifact roots, and keeps the
 // packed-process protocol floor the throwaway probe proved
 // (`prototypes/real-process-local-protocol`) maintained. The machine credential travels only
-// from Bebop's derivation through `LifecycleProvider.provision` into the one-shot bootstrap
-// artifact, which the supervisor consumes to start Swordfish and then destroys — never
-// through an operator retrieval route.
+// from Bebop's derivation through `LifecycleProvider.provision` into the environment of the
+// daemon the provider starts — never onto disk, and never through an operator retrieval route.
 //
 // Like every Postgres-backed suite, it requires `BEBOP_TEST_DATABASE_URL` and otherwise skips.
 
@@ -245,6 +244,21 @@ async function bountyStatus(
 }
 
 /** Drives `bebop bounty stop` through the packed CLI, which is its only automated coverage. */
+async function stopBounty(
+  fleet: LocalFleet,
+  bebop: BebopEnv,
+  bountyId: string,
+  reason: string,
+): Promise<{ status: string }> {
+  const outcome = await fleet.run(
+    join(repositoryRoot, "apps/bebop/dist/cli.mjs"),
+    ["bounty", "stop", "--bounty", bountyId, "--reason", reason, "--url", bebop.baseUrl, "--token", apiToken, "--json"],
+    { timeoutMs: 15_000 },
+  );
+  assert(outcome.exitCode === 0, `bebop stop failed: ${outcome.stderr}${outcome.stdout}`);
+  return JSON.parse(outcome.stdout) as { status: string };
+}
+
 /**
  * Requeues the bounty's provisioning job over the API.
  *
@@ -331,6 +345,28 @@ async function waitForSf(
   });
 }
 
+/**
+ * Waits for the provider to record a machine other than `previousPid`, and returns its pid.
+ *
+ * Recorded rather than alive, because a daemon started to drain a terminal command exits almost
+ * at once: waiting on liveness would race that exit and never see it. The provider writes the
+ * record immediately after the spawn, so the record is the observation that cannot be missed.
+ */
+async function waitForNewDaemon(layout: LocalBountyLayout, previousPid: number, description: string): Promise<number> {
+  return await waitFor(
+    description,
+    async () => {
+      const current = await daemonPid(layout);
+      return current !== undefined && current !== previousPid ? current : undefined;
+    },
+    30_000,
+  );
+}
+
+async function waitForDaemonExit(pid: number, description: string): Promise<void> {
+  await waitFor(description, async () => (processIsAlive(pid) ? undefined : true), 30_000);
+}
+
 async function liveChildren(fleet: LocalFleet): Promise<Array<string>> {
   return fleet.processes
     .filter((processToCheck) => processToCheck.child.exitCode === null && processToCheck.child.signalCode === null)
@@ -376,7 +412,9 @@ suite("local system harness", () => {
       layout = localBountyLayout(localRoot, created.bountyId);
 
       // The shipped path, with no manual step in between: creating a bounty is what makes a
-      // Swordfish daemon exist, because locally the lifecycle provider starts it (ADR 0048).
+      // Swordfish daemon exist, because locally the lifecycle provider starts it
+      // ([A local Swordfish outlives the worker that started it (ADR
+      // 0048)](../../docs/adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)).
       const pid = await waitForDaemon(layout, "the provider to start a Swordfish daemon");
       expect(processIsAlive(pid)).toBe(true);
 
@@ -456,14 +494,8 @@ suite("local system harness", () => {
       );
       await recoverBounty(bebop, created.bountyId);
       const machine = layout;
-      const replacedPid = await waitFor(
-        "the provider to replace the killed daemon",
-        async () => {
-          const current = await daemonPid(machine);
-          return current !== undefined && current !== pid && processIsAlive(current) ? current : undefined;
-        },
-        30_000,
-      );
+      const replacedPid = await waitForNewDaemon(machine, pid, "the provider to replace the killed daemon");
+      expect(processIsAlive(replacedPid)).toBe(true);
       const restarted = await waitForSf(
         fleet,
         layout,
@@ -479,7 +511,9 @@ suite("local system harness", () => {
 
       // A provision that finds a live daemon leaves it strictly alone. This is the property a
       // worker crash depends on: retrying provisioning must not end with two daemons, or with
-      // the bounty's loop cut short by bebop restarting (ADR 0048).
+      // the bounty's loop cut short by bebop restarting
+      // ([A local Swordfish outlives the worker that started it (ADR
+      // 0048)](../../docs/adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)).
       await recoverBounty(bebop, created.bountyId);
       await delay(2_000);
       expect(await daemonPid(layout)).toBe(replacedPid);
@@ -523,15 +557,45 @@ suite("local system harness", () => {
       expect(delivered.bebopConnection.acknowledgedThrough).toBe(3);
       expect(processIsAlive(replacedPid)).toBe(true);
 
+      // A Bebop stop queued while Swordfish is offline is delivered once, reports a terminal
+      // result, and does not stop the following daemon restart. `bebop bounty stop` has no
+      // other automated coverage, and the durable command queue is what makes it work at all:
+      // the daemon that eventually reads it was not running when it was issued.
+      await killDaemon(machine);
+      const stopped = await stopBounty(fleet, bebop, created.bountyId, "local system harness offline stop");
+      expect(stopped.status).toBe("stopped");
+
+      // Provisioning is the only thing that makes a machine, so it is also how the queued stop
+      // reaches one. The daemon drains it, reports its terminal result, and exits.
+      await recoverBounty(bebop, created.bountyId);
+      const stopDrainPid = await waitForNewDaemon(machine, replacedPid, "a daemon to drain the queued stop");
+      await waitForDaemonExit(stopDrainPid, "the stop-draining daemon to exit");
+
+      // And a completed stop leaves the bounty restartable rather than wedged: the next daemon
+      // comes up on the same SQLite, reports the stage the cancel left, and is not handed the
+      // stop a second time.
+      await recoverBounty(bebop, created.bountyId);
+      const afterStopPid = await waitForNewDaemon(machine, stopDrainPid, "a daemon after the completed stop");
+      const afterStop = await waitForSf(
+        fleet,
+        layout,
+        "alpha restart after completed stop",
+        (status) => status.stage === "cancelled" && status.bebopConnection.state === "connected",
+      );
+      expect(afterStop.stage).toBe("cancelled");
+      // Still up a moment later: a redelivered stop would have taken it down again.
+      await delay(1_000);
+      expect(processIsAlive(afterStopPid)).toBe(true);
+
       // Destroying is what ends a local machine. Nothing else does: the daemon is detached, so
       // an undestroyed bounty keeps running after every bebop process has exited.
       await destroyBounty(bebop, created.bountyId);
       // The record clearing is what says the stop completed, not the process dying: the daemon
-      // exits first and the provider removes the pid afterwards, so asserting on liveness alone
-      // would race that window.
+      // exits first and the provider removes the record afterwards, so asserting on liveness
+      // alone would race that window.
       await waitFor(
         "the provider to stop the daemon and clear its record",
-        async () => ((await daemonPid(machine)) === undefined && !processIsAlive(replacedPid) ? true : undefined),
+        async () => ((await daemonPid(machine)) === undefined && !processIsAlive(afterStopPid) ? true : undefined),
         30_000,
       );
     } finally {

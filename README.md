@@ -67,9 +67,10 @@ export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
 vp run local-system
 ```
 
-Running a whole bounty by hand is not possible yet: nothing outside that harness starts a Swordfish daemon from
-what a provision produces. The processes below can each be run on their own in the meantime. What the local mode
-will assemble, and why bebop stays in it where it protects nothing, is
+To run a whole bounty by hand rather than under the harness, see
+[Run one bounty end to end, locally](#run-one-bounty-end-to-end-locally) below — creating a bounty is what starts
+its Swordfish daemon, in that mode and in this suite alike. The processes below can also each be run on their
+own. What the local mode assembles, and why bebop stays in it where it protects nothing, is
 [The local loop runs the production assembly (ADR 0046)](./docs/adr/0046-the-local-loop-runs-the-production-assembly.md).
 
 ### Postgres for component tests
@@ -195,9 +196,8 @@ docker compose up -d postgres
 # Both bebop processes take the same environment. Add these to the block above:
 export BEBOP_LOCAL_HARNESS_ROOT=/tmp/bebop-local
 export BEBOP_LOCAL_SWORDFISH_ENTRYPOINT="$PWD/apps/swordfish/dist/daemon.mjs"
-# Optional. Defaults are https://github.com/ and http://127.0.0.1:4096/.
+# Optional. Defaults to https://github.com/, cloned with your ambient git credentials.
 export BEBOP_LOCAL_GIT_REMOTE_BASE=https://github.com/
-export BEBOP_LOCAL_OPEN_CODE_BASE_URL=http://127.0.0.1:4096/
 
 vp run build                              # the entrypoint above must exist before a bounty is created
 vp run dev                                # bebop-api
@@ -213,14 +213,30 @@ detached daemon; from there `sf` drives it:
 ```bash
 BOUNTY=bty-...          # printed by `bounty create`
 ROOT=$BEBOP_LOCAL_HARNESS_ROOT/bounties/$BOUNTY
+export SWORDFISH_CONTROL_SOCKET_PATH=$ROOT/run/control.sock
 
-sf status --socket "$ROOT/run/control.sock"
+sf status
 tail -F "$ROOT/logs/swordfish.log"
 ```
 
+Reading is unauthenticated over the socket; every mutating command is not. Retrieve this bounty's operator
+credential from bebop and enter it at the hidden prompt each command opens:
+
+```bash
+bebop bounty operator-credential --bounty "$BOUNTY" \
+  --url http://127.0.0.1:8080 --token "$BEBOP_BOOTSTRAP_API_TOKEN"
+
+sf cancel                 # and takeover, handoff, continue, rerun, resume
+```
+
 Each bounty owns `$BEBOP_LOCAL_HARNESS_ROOT/bounties/<bountyId>/`: `repository/` is its clone, `state/` its
-SQLite, `run/` the control socket and the daemon pid, `logs/` the daemon output. Two bounties never collide, and
-a re-provision reattaches to a daemon that is already running rather than starting a second.
+SQLite, `run/` the control socket and the machine record, `logs/` the daemon output. Two bounties never collide,
+and a re-provision reattaches to a daemon that is already running rather than starting a second.
+
+The machine record, `run/machine.json`, is how a re-provision tells "still running" from "gone": it holds the
+`vmId`, the pid, and the process start time the operating system reports. The start time is what makes it an
+identity rather than a slot — after a crash the pid alone could belong to something else entirely, and bebop
+would otherwise reattach to it or, worse, signal it.
 
 The daemon is **detached on purpose** and outlives the worker, so stopping bebop does not stop it — `sf status`
 reports the connection as disconnected and keeps retrying with backoff, which is a normal state rather than an
@@ -231,7 +247,7 @@ curl -X DELETE -H "authorization: Bearer $BEBOP_BOOTSTRAP_API_TOKEN" \
   http://127.0.0.1:8080/api/bounties/$BOUNTY
 ```
 
-If a daemon is ever orphaned, the pid in `$ROOT/run/daemon.pid` is the handle.
+If a daemon is ever orphaned, the record is the handle: `kill $(jq -r .pid "$ROOT/run/machine.json")`.
 
 `BEBOP_LOCAL_HARNESS_ROOT` is local-only and logs a warning at startup: it turns bebop into a process that
 spawns daemons and clones repositories on its own host.

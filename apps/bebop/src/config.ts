@@ -103,8 +103,10 @@ const BebopConfigBase = Schema.Struct({
   /**
    * When set, a provisioned bounty is a real Swordfish daemon on this host under this root,
    * rather than only a VM record: the lifecycle provider clones the working copy and starts the
-   * process, which is what makes a machine exist locally ("A local Swordfish outlives the worker
-   * that started it" (ADR 0048)). Each bounty gets `bounties/<bountyId>/` beneath it.
+   * process, which is what makes a machine exist locally
+   * ([A local Swordfish outlives the worker that started it (ADR
+   * 0048)](../../../docs/adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)).
+   * Each bounty gets `bounties/<bountyId>/` beneath it.
    *
    * Setting it turns this process into one that spawns daemons and clones repositories on its
    * own host, so the runtime logs a warning whenever it is present. Production leaves it unset;
@@ -120,7 +122,6 @@ const BebopConfigBase = Schema.Struct({
    * bare repository on disk for a suite that has to clone without a network.
    */
   localSwordfishEntrypoint: Schema.optionalKey(AbsolutePath),
-  localOpenCodeBaseUrl: Schema.optionalKey(Schema.URL),
   localGitRemoteBase: Schema.optionalKey(Schema.URL),
   databasePoolSize: Schema.optionalKey(PositiveCount),
   eventStreamPollInterval: Schema.optionalKey(PositiveDuration),

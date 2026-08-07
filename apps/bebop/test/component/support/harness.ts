@@ -26,7 +26,7 @@ import type { BebopConfig } from "#src/config.ts";
 import { bebopConfigurationLayerFrom, loadBebopConfig } from "#src/config.ts";
 import { fixedIdentityLayer, Identity, timestampFrom, timestampToIso } from "#src/domain/identity.ts";
 import type { ProvisionedVm } from "#src/lifecycle/provider.ts";
-import { fakeLifecycleProviderLayer } from "#src/lifecycle/provider.ts";
+import { localLifecycleProviderLayer } from "#src/lifecycle/provider.ts";
 import { migrateDatabase } from "#src/persistence/database.ts";
 import { BountyEventRepository } from "#src/persistence/events.ts";
 import { LifecycleJobRepository } from "#src/persistence/jobs.ts";
@@ -126,7 +126,7 @@ export async function startHarness(
       Layer.mergeAll(
         bebopConfigurationLayerFrom(config),
         fixedIdentityLayer(),
-        fakeLifecycleProviderLayer({
+        localLifecycleProviderLayer({
           onProvision: (record) => provisioned.push(record),
           onProvisionAttempt: () => (provisionAttempts += 1),
           // `httpIdleTimeout` is server configuration, not provider behaviour.

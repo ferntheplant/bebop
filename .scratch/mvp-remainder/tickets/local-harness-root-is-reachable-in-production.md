@@ -10,7 +10,7 @@ Resolving this updates [Provisioning and attachment](../../../docs/capabilities/
 ## Question
 
 `BEBOP_LOCAL_HARNESS_ROOT` is an optional key on the real `BebopConfigBase` schema, read by the real
-`LocalLifecycleProviderLayer` that `api.ts` and `worker.ts` both provide. When it is set, every
+`LifecycleProviderLayer` that `api.ts` and `worker.ts` both provide. When it is set, every
 `LifecycleProvider.provision` clones a repository and spawns a detached Swordfish daemon on bebop's own host.
 
 That is correct and deliberate locally: it is
@@ -33,7 +33,7 @@ Decide between:
 - **Fail closed on a production marker.** Refuse to construct the layer when the config says production. Bebop
   has no environment marker today, so this means introducing one — which is a wider decision than this ticket,
   and one worth making deliberately rather than as a side effect.
-- **Move it off the production schema entirely.** Keep the artifact behaviour on `fakeLifecycleProviderLayer`'s
+- **Move it off the production schema entirely.** Keep the artifact behaviour on `localLifecycleProviderLayer`'s
   options, where it already lives, and let the harness construct that layer directly instead of routing the
   option through `BebopConfiguration`. Removes the production reachability rather than guarding it, at the cost
   of the harness no longer driving the same packed entrypoints an operator runs — which is the property the

@@ -64,21 +64,26 @@ interface LifecycleProviderService {
     /**
      * The repository and branch the machine works on.
      *
-     * Bebop is authoritative for both ("Bebop owns authority, Swordfish owns the loop" (ADR
-     * 0002)), and the provider is what puts them on the machine: exe.dev's has the VM bootstrap
-     * clone the repository, and the local one clones it into the bounty's working copy.
+     * Bebop is authoritative for both
+     * ([Bebop owns authority, Swordfish owns the loop (ADR
+     * 0002)](../../../../docs/adr/0002-bebop-owns-authority-swordfish-owns-the-loop.md)), and the
+     * provider is what puts them on the machine: exe.dev's has the VM bootstrap clone the
+     * repository, and the local one clones it into the bounty's working copy.
      */
     readonly repository: RepositorySlug;
     readonly assignedBranch: GitRef;
     /**
      * The bounty-scoped Swordfish credential, to be injected at VM bootstrap
-     * ("Swordfish tokens are bounty-scoped" (ADR 0014)). The provider is the only component that puts it on the VM;
-     * Bebop keeps nothing but its hash.
+     * ([Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR
+     * 0014)](../../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)).
+     * The provider is the only component that puts it on the VM; Bebop keeps nothing but its hash.
      */
     readonly swordfishToken: Redacted.Redacted<string>;
     /**
      * The verifier for this bounty's operator credential, injected at bootstrap beside the
-     * machine credential ("Workflow actions have role-aware adapters" (ADR 0038)).
+     * machine credential
+     * ([Workflow actions have role-aware adapters (ADR
+     * 0038)](../../../../docs/adr/0038-workflow-actions-have-role-aware-adapters.md)).
      *
      * It travels the same path for the same reason: the provider is the component that puts
      * things on the VM. It is a digest rather than a secret, so unlike `swordfishToken` it is
@@ -104,17 +109,22 @@ const decodePort = Schema.decodeUnknownSync(PortSchema);
 const decodeHttpsUrl = Schema.decodeUnknownSync(HttpsUrl);
 
 /**
- * The deterministic local provider.
+ * The lifecycle provider that runs until exe.dev's does.
  *
- * It creates no computer. What it does create is the record shape everything downstream
- * depends on — a VM identity bound to the bounty, SSH attachment metadata, and a private
- * preview URL — so the control plane can be exercised, restarted, and asserted on without
- * a credential or a network.
+ * On its own it creates no computer. What it does create is the record shape everything
+ * downstream depends on — a VM identity bound to the bounty, SSH attachment metadata, and a
+ * private preview URL — so the control plane can be exercised, restarted, and asserted on
+ * without a credential or a network. The identifiers are derived from the bounty ID rather
+ * than generated, which is what makes a repeated provision return the same VM instead of a
+ * second one.
  *
- * The identifiers are derived from the bounty ID rather than generated, which is what makes
- * a repeated provision return the same VM instead of a second one.
+ * Given a `supervisor` it makes a real machine as well: the bounty's working copy is cloned
+ * and a detached Swordfish daemon runs against it. That is the whole of the local half of
+ * "The local loop runs the production assembly" (ADR 0046), and it is why this is not called a
+ * fake — with a supervisor it is the only thing on a developer's machine that a bounty's daemon
+ * comes from.
  */
-export function fakeLifecycleProviderLayer(options?: {
+export function localLifecycleProviderLayer(options?: {
   readonly sshHost?: string;
   readonly sshPort?: number;
   readonly previewHost?: string;
@@ -132,9 +142,11 @@ export function fakeLifecycleProviderLayer(options?: {
   /**
    * When set, a provisioned bounty is a running Swordfish daemon on this machine rather than
    * only a VM record: `provision` starts one and `destroy` stops it. This is what makes the
-   * local loop runnable by hand ("A local Swordfish outlives the worker that started it" (ADR
-   * 0048)); without it the provider fabricates records and nothing else, which is what the
-   * component suites want.
+   * local loop runnable by hand
+   * ([A local Swordfish outlives the worker that started it (ADR
+   * 0048)](../../../../docs/adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md));
+   * without it the provider fabricates records and nothing else, which is what the component
+   * suites want.
    */
   readonly supervisor?: typeof LocalSwordfishSupervisor.Service;
 }): Layer.Layer<LifecycleProvider> {
@@ -170,15 +182,18 @@ export function fakeLifecycleProviderLayer(options?: {
         options?.onProvision?.({ ...provisioned, swordfishToken: RedactedModule.value(swordfishToken) });
         const supervisor = options?.supervisor;
         if (supervisor !== undefined) {
-          // The credential goes from here straight into the daemon's environment. It is never
-          // written down, which is what a VM bootstrap does with it too (ADR 0014).
+          // The credential stays redacted all the way to the daemon's environment, which is the
+          // only place it is unwrapped. It is never written down, which is what a VM bootstrap
+          // does with it too
+          // ([Swordfish tokens are bounty-scoped, minted at provisioning, and never rotate (ADR
+          // 0014)](../../../../docs/adr/0014-bounty-scoped-swordfish-tokens-minted-at-provisioning.md)).
           yield* supervisor
             .ensureRunning({
               bountyId,
               vmId: provisioned.vmId,
               repository,
               assignedBranch,
-              swordfishToken: RedactedModule.value(swordfishToken),
+              swordfishToken,
               operatorCredentialVerifier,
             })
             .pipe(

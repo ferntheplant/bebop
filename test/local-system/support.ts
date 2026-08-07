@@ -153,11 +153,16 @@ export async function makeBareOrigin(root: string, slug: string): Promise<void> 
  * straight into the process the provider starts and is never written down, so nothing outside
  * bebop can start a daemon. That is the point, and it is why this harness no longer has a
  * supervisor of its own.
+ *
+ * `machine.json` rather than a pid file: what identifies a bounty's machine is its `vmId` and
+ * the kernel's start time for the process, since a bare pid is a slot the operating system
+ * reuses. The harness reads only the pid out of it, which is all it needs to watch one come and
+ * go.
  */
 export interface LocalBountyLayout {
   readonly root: string;
   readonly socketPath: string;
-  readonly pidPath: string;
+  readonly machinePath: string;
   readonly logPath: string;
 }
 
@@ -166,16 +171,16 @@ export function localBountyLayout(localRoot: string, bountyId: string): LocalBou
   return {
     root,
     socketPath: join(root, "run", "control.sock"),
-    pidPath: join(root, "run", "daemon.pid"),
+    machinePath: join(root, "run", "machine.json"),
     logPath: join(root, "logs", "swordfish.log"),
   };
 }
 
-/** The pid of the daemon the provider started, or undefined when it has not recorded one yet. */
+/** The pid of the machine the provider recorded, or undefined when it has not recorded one yet. */
 export async function daemonPid(layout: LocalBountyLayout): Promise<number | undefined> {
   try {
-    const pid = Number.parseInt((await readFile(layout.pidPath, "utf8")).trim(), 10);
-    return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+    const record = JSON.parse(await readFile(layout.machinePath, "utf8")) as { pid?: unknown };
+    return typeof record.pid === "number" && Number.isInteger(record.pid) && record.pid > 0 ? record.pid : undefined;
   } catch {
     return undefined;
   }

@@ -12,6 +12,47 @@ import { Effect, Layer } from "effect";
 
 import { LocalProcessRunner } from "#src/lifecycle/local-daemon.ts";
 
+/**
+ * What a local machine inherits from the operator's shell.
+ *
+ * "The local loop runs the production assembly" (ADR 0046) settles that the machine works
+ * GitHub through the operator's ambient `git` and `gh` credentials, which is structurally what
+ * exe.dev's repository-scoped integration provides — so the daemon has to reach them, and a
+ * bare `PATH`/`HOME` environment leaves it unable to authenticate at all. The failure is
+ * invisible until the daemon tries, deep inside a bounty rather than at startup.
+ *
+ * An allowlist rather than the inverse. Passing everything except bebop's own variables would
+ * hand `BEBOP_DATABASE_URL` and `BEBOP_SWORDFISH_CREDENTIAL_KEY` to Swordfish the moment
+ * someone adds a variable the deny-list has not heard of, and Swordfish reaching bebop's state
+ * anywhere but through the wire protocol is the seam ADR 0046 says local mode cannot enforce
+ * and must not violate. This fails closed instead: a credential we forgot means a daemon that
+ * cannot authenticate, not a daemon holding bebop's database.
+ */
+const inheritedVariables = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  // The ssh-agent socket, and where `git` and `gh` keep their configuration and tokens.
+  "SSH_AUTH_SOCK",
+  "XDG_CONFIG_HOME",
+  "GH_TOKEN",
+  "GITHUB_TOKEN",
+  "GH_HOST",
+  "GH_CONFIG_DIR",
+];
+/** `GIT_SSH_COMMAND`, `GIT_ASKPASS`, `GIT_CONFIG_*` and the rest, as one rule rather than a list. */
+const inheritedPrefix = "GIT_";
+
+function ambientEnvironment(): Record<string, string> {
+  const ambient: Record<string, string> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value === undefined) continue;
+    if (inheritedVariables.includes(name) || name.startsWith(inheritedPrefix)) ambient[name] = value;
+  }
+  return ambient;
+}
+
 export const LocalProcessRunnerLayer: Layer.Layer<LocalProcessRunner> = Layer.sync(LocalProcessRunner)(() => ({
   spawnDetached: ({ command, env, logPath }) =>
     Effect.tryPromise(async () => {
@@ -24,9 +65,7 @@ export const LocalProcessRunnerLayer: Layer.Layer<LocalProcessRunner> = Layer.sy
         const child = spawn(executable, args, {
           detached: true,
           stdio: ["ignore", log.fd, log.fd],
-          // A bare environment: the daemon gets exactly what bebop injects plus what a process
-          // cannot run without, so nothing leaks in from the operator's shell by accident.
-          env: { PATH: process.env["PATH"] ?? "", HOME: process.env["HOME"] ?? "", ...env },
+          env: { ...ambientEnvironment(), ...env },
         });
         // Without `unref` the parent's event loop keeps the child tethered and a worker exit
         // would wait on a daemon that is meant to outlast it.
@@ -39,16 +78,23 @@ export const LocalProcessRunnerLayer: Layer.Layer<LocalProcessRunner> = Layer.sy
       }
     }),
 
-  // Signal 0 performs the permission and existence check without delivering anything, which is
-  // the only way to ask about a process this one does not own.
-  isAlive: (pid) =>
+  // `lstart` is the kernel's start time for the process, which is what turns a recycled pid into
+  // a record that no longer matches rather than a stranger to reattach to or signal. `ps` exits
+  // non-zero when nothing holds the pid, which is the only "is it there" question left.
+  identify: (pid) =>
     Effect.sync(() => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
+      const result = Bun.spawnSync(["ps", "-p", String(pid), "-o", "lstart=,command="], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      if (result.exitCode !== 0) return undefined;
+      const line = new TextDecoder().decode(result.stdout).trim();
+      // `lstart` always renders as exactly five whitespace-separated tokens
+      // (`Thu Aug  6 21:55:30 2026`), which is what lets one `ps` call parse unambiguously into
+      // a start time and whatever command line follows it.
+      const tokens = line.split(/\s+/);
+      if (tokens.length < 5) return undefined;
+      return { startedAt: tokens.slice(0, 5).join(" "), command: tokens.slice(5).join(" ") };
     }),
 
   signal: (pid, signal) =>
@@ -56,7 +102,7 @@ export const LocalProcessRunnerLayer: Layer.Layer<LocalProcessRunner> = Layer.sy
       try {
         process.kill(pid, signal);
       } catch {
-        // Already gone. The caller is polling liveness, so it learns that on the next poll.
+        // Already gone. The caller re-identifies the pid, so it learns that on the next poll.
       }
     }),
 
@@ -64,7 +110,13 @@ export const LocalProcessRunnerLayer: Layer.Layer<LocalProcessRunner> = Layer.sy
     Effect.tryPromise(async () => {
       const [executable, ...args] = command;
       if (executable === undefined) throw new Error("a command needs an executable");
-      const result = Bun.spawnSync([executable, ...args], { stdout: "pipe", stderr: "pipe" });
+      // The clone runs as the operator, with the same ambient credentials the daemon gets: it
+      // is the same GitHub identity doing the same work one step earlier.
+      const result = Bun.spawnSync([executable, ...args], {
+        stdout: "pipe",
+        stderr: "pipe",
+        env: ambientEnvironment(),
+      });
       if (result.exitCode !== 0) {
         const output = new TextDecoder().decode(result.stderr).trim();
         throw new Error(`${executable} exited ${result.exitCode}: ${output}`);

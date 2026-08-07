@@ -11,17 +11,21 @@
 // what makes the reconnect backoff and the disconnected state `sf status` reports mean anything
 // locally.
 //
-// Two services rather than one: `LocalProcessRunner` is the narrow seam that actually touches
-// processes and the filesystem, and the supervisor holds the decisions — where a bounty's
-// directories go, whether a recorded process is still alive, and how a stop escalates. Tests
-// replace the runner and exercise the decisions without spawning anything, which is the split
-// the architectural rule on process execution asks for.
+// Two services rather than one: `LocalProcessRunner` is the narrow seam that touches operating
+// system processes, and the supervisor holds the decisions — where a bounty's directories go,
+// whether a recorded machine is still the one that was started, and how a stop escalates. The
+// supervisor owns the bounty root and its machine record, so it reads and writes those files
+// itself; what it never does is ask the operating system about a process. Tests replace the
+// runner and exercise the decisions without spawning anything, which is the split the
+// architectural rule on process execution asks for.
 
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { BountyId, GitRef, RepositorySlug } from "@bebop/contracts";
-import { Context, Data, Effect, Layer } from "effect";
+import type { BountyId, GitRef, RepositorySlug, VmId } from "@bebop/contracts";
+import { VmId as VmIdSchema } from "@bebop/contracts";
+import type { Redacted } from "effect";
+import { Context, Data, Duration, Effect, Layer, Redacted as RedactedModule, Schema } from "effect";
 
 export class LocalDaemonError extends Data.TaggedError("LocalDaemonError")<{
   readonly bountyId: BountyId;
@@ -37,16 +41,17 @@ export class LocalDaemonError extends Data.TaggedError("LocalDaemonError")<{
 /**
  * Everything the daemon needs that only bebop knows.
  *
- * The credentials travel in memory from derivation into the spawned process's environment and
- * are never written to disk — the injection "Swordfish tokens are bounty-scoped, minted at
+ * The credential stays redacted the whole way down and is unwrapped once, into the environment
+ * of the process being spawned — the injection "Swordfish tokens are bounty-scoped, minted at
  * provisioning, and never rotate" (ADR 0014) describes, at a seam where the VM is a directory.
+ * It is never written to disk.
  */
 export interface LocalDaemonSpec {
   readonly bountyId: BountyId;
-  readonly vmId: string;
+  readonly vmId: VmId;
   readonly repository: RepositorySlug;
   readonly assignedBranch: GitRef;
-  readonly swordfishToken: string;
+  readonly swordfishToken: Redacted.Redacted<string>;
   readonly operatorCredentialVerifier: string;
 }
 
@@ -58,7 +63,7 @@ export interface LocalBountyPaths {
   readonly repositoryPath: string;
   readonly artifactRoot: string;
   readonly logPath: string;
-  readonly pidPath: string;
+  readonly machinePath: string;
 }
 
 export function localBountyPaths(root: string, bountyId: BountyId): LocalBountyPaths {
@@ -70,9 +75,84 @@ export function localBountyPaths(root: string, bountyId: BountyId): LocalBountyP
     repositoryPath: join(bountyRoot, "repository"),
     artifactRoot: join(bountyRoot, "artifacts"),
     logPath: join(bountyRoot, "logs", "swordfish.log"),
-    pidPath: join(bountyRoot, "run", "daemon.pid"),
+    machinePath: join(bountyRoot, "run", "machine.json"),
   };
 }
+
+/**
+ * What the provider recorded about a bounty's machine, and what identifies it later.
+ *
+ * A pid on its own is a slot the operating system reuses, not a name: after a crash the number
+ * in this file can belong to something else entirely, and reattaching to it or signalling it
+ * would reach a stranger's process. `startedAt` is what makes the pid an identity — the kernel's
+ * own start time for that process, which a reused pid cannot reproduce.
+ *
+ * That is the same shape as the identity exe.dev gives us. There a `vmId` names the machine and
+ * `describe` asks the API whether it is still that machine; here the record names it and the
+ * operating system answers the same question, so `provision` and `destroy` reason about a
+ * machine in both environments rather than about a number in one of them.
+ */
+const LocalMachineRecord = Schema.Struct({
+  vmId: VmIdSchema,
+  pid: Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))),
+  startedAt: Schema.NonEmptyString,
+});
+export type LocalMachineRecord = typeof LocalMachineRecord.Type;
+
+const decodeMachineRecord = Schema.decodeUnknownSync(LocalMachineRecord);
+const encodeMachineRecord = Schema.encodeSync(LocalMachineRecord);
+
+/** How the operating system identifies a process that is running right now. */
+export interface ProcessIdentity {
+  /** The kernel's start time for this process, stable for its whole life and unique with the pid. */
+  readonly startedAt: string;
+  /** The command line, so a stale record can say what took the pid over instead of only that it did. */
+  readonly command: string;
+}
+
+interface LocalProcessRunnerService {
+  /**
+   * Starts a process that survives this one, with output appended to `logPath`, and returns its
+   * pid. Detachment is the whole point: a worker restart must not take the bounty's loop with it.
+   */
+  readonly spawnDetached: (options: {
+    readonly command: ReadonlyArray<string>;
+    readonly env: Readonly<Record<string, string>>;
+    readonly logPath: string;
+  }) => Effect.Effect<number, Error>;
+  /**
+   * What is running at this pid now, or `undefined` when nothing is.
+   *
+   * This replaces a bare liveness check because "something is alive at this pid" is not the
+   * question worth asking — `LocalMachineRecord` explains why.
+   */
+  readonly identify: (pid: number) => Effect.Effect<ProcessIdentity | undefined>;
+  readonly signal: (pid: number, signal: "SIGTERM" | "SIGKILL") => Effect.Effect<void>;
+  /** Runs a command to completion, failing with its output when it exits non-zero. */
+  readonly run: (options: { readonly command: ReadonlyArray<string> }) => Effect.Effect<void, Error>;
+}
+
+export class LocalProcessRunner extends Context.Service<LocalProcessRunner, LocalProcessRunnerService>()(
+  "LocalProcessRunner",
+) {}
+
+interface LocalSwordfishSupervisorService {
+  /**
+   * Brings a bounty's daemon into existence, or confirms the one already running.
+   *
+   * Idempotent per bounty because the worker retries provisioning after a crash: a machine whose
+   * record still matches the process at its pid is left strictly alone, and only a stale record
+   * is replaced.
+   */
+  readonly ensureRunning: (spec: LocalDaemonSpec) => Effect.Effect<LocalBountyPaths, LocalDaemonError>;
+  /** Stops a bounty's daemon. Stopping one that is not running succeeds. */
+  readonly stop: (bountyId: BountyId) => Effect.Effect<void, LocalDaemonError>;
+}
+
+export class LocalSwordfishSupervisor extends Context.Service<
+  LocalSwordfishSupervisor,
+  LocalSwordfishSupervisorService
+>()("LocalSwordfishSupervisor") {}
 
 export interface LocalDaemonSettings {
   readonly root: string;
@@ -89,89 +169,78 @@ export interface LocalDaemonSettings {
    * repeatable, and pointing it at a bare repository on disk keeps the clone real.
    */
   readonly gitRemoteBase: string;
-  /** The daemon cadences a VM bootstrap would set, as Effect duration strings. */
-  readonly heartbeatInterval: string;
-  readonly reconnectMinimumDelay: string;
-  readonly reconnectMaximumDelay: string;
-  readonly shutdownTimeout: string;
+  /** The daemon cadences a VM bootstrap would set. */
+  readonly heartbeatInterval: Duration.Duration;
+  readonly reconnectMinimumDelay: Duration.Duration;
+  readonly reconnectMaximumDelay: Duration.Duration;
+  readonly shutdownTimeout: Duration.Duration;
   /**
    * How long a stop waits for a signalled daemon before killing it.
    *
    * It is a setting rather than a constant because it is the one number in here a test has to
    * move: the escalation path is only reachable by waiting the period out.
    */
-  readonly stopGracePeriodMillis: number;
+  readonly stopGracePeriod: Duration.Duration;
 }
-
-interface LocalProcessRunnerService {
-  /**
-   * Starts a process that survives this one, with output appended to `logPath`, and returns its
-   * pid. Detachment is the whole point: a worker restart must not take the bounty's loop with it.
-   */
-  readonly spawnDetached: (options: {
-    readonly command: ReadonlyArray<string>;
-    readonly env: Readonly<Record<string, string>>;
-    readonly logPath: string;
-  }) => Effect.Effect<number, Error>;
-  /** Whether a pid names a process that is still running. */
-  readonly isAlive: (pid: number) => Effect.Effect<boolean>;
-  readonly signal: (pid: number, signal: "SIGTERM" | "SIGKILL") => Effect.Effect<void>;
-  /** Runs a command to completion, failing with its output when it exits non-zero. */
-  readonly run: (options: { readonly command: ReadonlyArray<string> }) => Effect.Effect<void, Error>;
-}
-
-export class LocalProcessRunner extends Context.Service<LocalProcessRunner, LocalProcessRunnerService>()(
-  "LocalProcessRunner",
-) {}
-
-interface LocalSwordfishSupervisorService {
-  /**
-   * Brings a bounty's daemon into existence, or confirms the one already running.
-   *
-   * Idempotent per bounty because the worker retries provisioning after a crash: a live
-   * recorded process is left strictly alone, and only a stale record is replaced.
-   */
-  readonly ensureRunning: (spec: LocalDaemonSpec) => Effect.Effect<LocalBountyPaths, LocalDaemonError>;
-  /** Stops a bounty's daemon. Stopping one that is not running succeeds. */
-  readonly stop: (bountyId: BountyId) => Effect.Effect<void, LocalDaemonError>;
-}
-
-export class LocalSwordfishSupervisor extends Context.Service<
-  LocalSwordfishSupervisor,
-  LocalSwordfishSupervisorService
->()("LocalSwordfishSupervisor") {}
 
 /** The default a local runtime uses: long enough for an outbox drain, short enough to not hang a destroy. */
-export const defaultStopGracePeriodMillis = 10_000;
-const stopPollIntervalMillis = 20;
+export const defaultStopGracePeriod: Duration.Duration = Duration.seconds(10);
+const stopPollInterval = Duration.millis(20);
 
-function daemonEnvironment(
+/**
+ * The environment variable a Swordfish configuration field is read from.
+ *
+ * Swordfish does not publish these names — it derives them, from its schema's field names
+ * through `ConfigProvider.constantCase` under a `swordfish` prefix. Composing the machine's
+ * environment is what a VM bootstrap does, so bebop necessarily knows the fields; applying the
+ * same rule rather than transcribing fourteen literals is what keeps that knowledge to one
+ * thing that can be wrong instead of fourteen.
+ */
+function swordfishVariable(field: string): string {
+  return `SWORDFISH_${field.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase()}`;
+}
+
+/**
+ * A duration in the one syntax Swordfish's own configuration schema parses back.
+ *
+ * Millis rather than `Duration.format`: that prints `5s`, which the daemon's `DurationFromString`
+ * refuses — a mismatch that surfaces only as a daemon exiting at startup in a log nobody is
+ * tailing (`docs/gotchas.md`). This is the only place a duration crosses into the daemon, so it
+ * is the only place that has to know.
+ */
+function durationSetting(duration: Duration.Duration): string {
+  return `${Duration.toMillis(duration)} millis`;
+}
+
+export function daemonEnvironment(
   spec: LocalDaemonSpec,
   paths: LocalBountyPaths,
   settings: LocalDaemonSettings,
 ): Record<string, string> {
-  return {
-    SWORDFISH_BOUNTY_ID: spec.bountyId,
-    SWORDFISH_VM_ID: spec.vmId,
-    SWORDFISH_REPOSITORY: spec.repository,
-    SWORDFISH_ASSIGNED_BRANCH: spec.assignedBranch,
-    SWORDFISH_BEBOP_WEB_SOCKET_URL: settings.bebopWebSocketUrl,
-    SWORDFISH_BEBOP_TOKEN: spec.swordfishToken,
-    SWORDFISH_DATABASE_PATH: paths.databasePath,
-    SWORDFISH_CONTROL_SOCKET_PATH: paths.controlSocketPath,
-    SWORDFISH_REPOSITORY_PATH: paths.repositoryPath,
-    SWORDFISH_ARTIFACT_ROOT: paths.artifactRoot,
-    SWORDFISH_OPEN_CODE_BASE_URL: settings.openCodeBaseUrl,
-    SWORDFISH_OPERATOR_CREDENTIAL_VERIFIER: spec.operatorCredentialVerifier,
-    // The daemon's cadences are required configuration with no defaults of their own, because a
-    // VM's bootstrap is what supplies them in production. Locally this is that bootstrap, so it
-    // supplies them here — and the reconnect bounds are what the backoff in `sf status` runs
-    // between ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
-    SWORDFISH_HEARTBEAT_INTERVAL: settings.heartbeatInterval,
-    SWORDFISH_RECONNECT_MINIMUM_DELAY: settings.reconnectMinimumDelay,
-    SWORDFISH_RECONNECT_MAXIMUM_DELAY: settings.reconnectMaximumDelay,
-    SWORDFISH_SHUTDOWN_TIMEOUT: settings.shutdownTimeout,
+  // Keyed by Swordfish's configuration field names, which is what a bootstrap is given. The
+  // daemon's cadences are required configuration with no defaults of their own, because a VM's
+  // bootstrap is what supplies them in production. Locally this is that bootstrap, so it
+  // supplies them here — and the reconnect bounds are what the backoff in `sf status` runs
+  // between ("Bebop owns authority, Swordfish owns the loop" (ADR 0002)).
+  const fields: Record<string, string> = {
+    bountyId: spec.bountyId,
+    vmId: spec.vmId,
+    repository: spec.repository,
+    assignedBranch: spec.assignedBranch,
+    bebopWebSocketUrl: settings.bebopWebSocketUrl,
+    bebopToken: RedactedModule.value(spec.swordfishToken),
+    databasePath: paths.databasePath,
+    controlSocketPath: paths.controlSocketPath,
+    repositoryPath: paths.repositoryPath,
+    artifactRoot: paths.artifactRoot,
+    openCodeBaseUrl: settings.openCodeBaseUrl,
+    operatorCredentialVerifier: spec.operatorCredentialVerifier,
+    heartbeatInterval: durationSetting(settings.heartbeatInterval),
+    reconnectMinimumDelay: durationSetting(settings.reconnectMinimumDelay),
+    reconnectMaximumDelay: durationSetting(settings.reconnectMaximumDelay),
+    shutdownTimeout: durationSetting(settings.shutdownTimeout),
   };
+  return Object.fromEntries(Object.entries(fields).map(([field, value]) => [swordfishVariable(field), value]));
 }
 
 /**
@@ -188,21 +257,36 @@ export const makeLocalSwordfishSupervisor = (
     const failWith = (bountyId: BountyId, operation: "clone" | "start" | "stop", reason: string) => (cause: unknown) =>
       new LocalDaemonError({ bountyId, operation, reason, cause });
 
-    const recordedPid = (paths: LocalBountyPaths) =>
-      Effect.tryPromise(() => readFile(paths.pidPath, "utf8")).pipe(
-        Effect.map((text) => {
-          const pid = Number.parseInt(text.trim(), 10);
-          return Number.isInteger(pid) && pid > 0 ? pid : undefined;
-        }),
-        // No pid file, or an unreadable one, both mean the same thing: nothing to reattach to.
+    const recordedMachine = (paths: LocalBountyPaths) =>
+      Effect.tryPromise(() => readFile(paths.machinePath, "utf8")).pipe(
+        Effect.map((text) => decodeMachineRecord(JSON.parse(text)) as LocalMachineRecord | undefined),
+        // No record, an unreadable one, or one this bebop no longer understands all mean the
+        // same thing: nothing here can be reattached to.
         Effect.orElseSucceed(() => undefined),
       );
 
-    const livePid = (paths: LocalBountyPaths) =>
+    /**
+     * The machine this record names, if that machine is still the process at its pid.
+     *
+     * A record whose pid now belongs to something else is stale, not live — that is the whole
+     * reason the start time is recorded, and the reason a stale record is logged rather than
+     * silently replaced: on an operator's own host, the process that took the pid over is
+     * something they may care about.
+     */
+    const liveMachine = (bountyId: BountyId, paths: LocalBountyPaths) =>
       Effect.gen(function* () {
-        const pid = yield* recordedPid(paths);
-        if (pid === undefined) return undefined;
-        return (yield* runner.isAlive(pid)) ? pid : undefined;
+        const record = yield* recordedMachine(paths);
+        if (record === undefined) return undefined;
+        const actual = yield* runner.identify(record.pid);
+        if (actual === undefined) return undefined;
+        if (actual.startedAt === record.startedAt) return record;
+        yield* Effect.logWarning("recorded machine pid now belongs to another process; treating it as gone").pipe(
+          Effect.annotateLogs("bounty_id", bountyId),
+          Effect.annotateLogs("vm_id", record.vmId),
+          Effect.annotateLogs("pid", String(record.pid)),
+          Effect.annotateLogs("actual_command", actual.command),
+        );
+        return undefined;
       });
 
     const cloneRepository = (spec: LocalDaemonSpec, paths: LocalBountyPaths) =>
@@ -244,11 +328,12 @@ export const makeLocalSwordfishSupervisor = (
           ]);
         }).pipe(Effect.mapError(failWith(spec.bountyId, "start", "could not create the bounty root")));
 
-        const running = yield* livePid(paths);
+        const running = yield* liveMachine(spec.bountyId, paths);
         if (running !== undefined) {
           yield* Effect.logInfo("local Swordfish daemon already running").pipe(
             Effect.annotateLogs("bounty_id", spec.bountyId),
-            Effect.annotateLogs("pid", String(running)),
+            Effect.annotateLogs("vm_id", running.vmId),
+            Effect.annotateLogs("pid", String(running.pid)),
           );
           return paths;
         }
@@ -265,9 +350,23 @@ export const makeLocalSwordfishSupervisor = (
             logPath: paths.logPath,
           })
           .pipe(Effect.mapError(failWith(spec.bountyId, "start", "could not start the daemon process")));
-        yield* Effect.tryPromise(() => writeFile(paths.pidPath, `${pid}\n`, { mode: 0o600 })).pipe(
-          Effect.mapError(failWith(spec.bountyId, "start", "could not record the daemon pid")),
-        );
+        // Asking the operating system for the start time rather than taking our own clock: the
+        // record has to hold what a later `identify` will compare against, and only the kernel
+        // knows that value.
+        const started = yield* runner.identify(pid);
+        if (started === undefined) {
+          return yield* Effect.fail(
+            new LocalDaemonError({
+              bountyId: spec.bountyId,
+              operation: "start",
+              reason: "the daemon process exited before it could be recorded",
+            }),
+          );
+        }
+        const record: LocalMachineRecord = { vmId: spec.vmId, pid, startedAt: started.startedAt };
+        yield* Effect.tryPromise(() =>
+          writeFile(paths.machinePath, `${JSON.stringify(encodeMachineRecord(record))}\n`, { mode: 0o600 }),
+        ).pipe(Effect.mapError(failWith(spec.bountyId, "start", "could not record the daemon")));
         yield* Effect.logInfo("started local Swordfish daemon").pipe(
           Effect.annotateLogs("bounty_id", spec.bountyId),
           Effect.annotateLogs("vm_id", spec.vmId),
@@ -279,34 +378,42 @@ export const makeLocalSwordfishSupervisor = (
     const stop = (bountyId: BountyId) =>
       Effect.gen(function* () {
         const paths = localBountyPaths(settings.root, bountyId);
-        const pid = yield* livePid(paths);
-        if (pid === undefined) {
-          // Either never started or already gone. Clear the record either way so a later
-          // provision does not reattach to a pid the operating system has since reused.
-          yield* Effect.promise(() => rm(paths.pidPath, { force: true }));
+        const machine = yield* liveMachine(bountyId, paths);
+        if (machine === undefined) {
+          // Either never started, already gone, or a record whose pid is now someone else's.
+          // Clear it either way: what it names is not this bounty's machine.
+          yield* Effect.promise(() => rm(paths.machinePath, { force: true }));
           return;
         }
-        yield* runner.signal(pid, "SIGTERM");
+        yield* runner.signal(machine.pid, "SIGTERM");
         // The daemon drains its outbox and releases its authority lock on SIGTERM, so it is
         // given the time to do that before it is killed; a killed daemon leaves a lock a
         // later provision would have to break.
-        const polls = Math.max(1, Math.ceil(settings.stopGracePeriodMillis / stopPollIntervalMillis));
+        const polls = Math.max(
+          1,
+          Math.ceil(Duration.toMillis(settings.stopGracePeriod) / Duration.toMillis(stopPollInterval)),
+        );
         let exited = false;
         for (let poll = 0; poll < polls && !exited; poll += 1) {
-          yield* Effect.sleep(`${stopPollIntervalMillis} millis`);
-          exited = !(yield* runner.isAlive(pid));
+          yield* Effect.sleep(stopPollInterval);
+          // Identity again rather than liveness: the pid becoming someone else's process is the
+          // daemon having exited, not the daemon still running.
+          const actual = yield* runner.identify(machine.pid);
+          exited = actual === undefined || actual.startedAt !== machine.startedAt;
         }
         if (!exited) {
           yield* Effect.logWarning("local Swordfish daemon did not exit; killing").pipe(
             Effect.annotateLogs("bounty_id", bountyId),
-            Effect.annotateLogs("pid", String(pid)),
+            Effect.annotateLogs("vm_id", machine.vmId),
+            Effect.annotateLogs("pid", String(machine.pid)),
           );
-          yield* runner.signal(pid, "SIGKILL");
+          yield* runner.signal(machine.pid, "SIGKILL");
         }
-        yield* Effect.promise(() => rm(paths.pidPath, { force: true }));
+        yield* Effect.promise(() => rm(paths.machinePath, { force: true }));
         yield* Effect.logInfo("stopped local Swordfish daemon").pipe(
           Effect.annotateLogs("bounty_id", bountyId),
-          Effect.annotateLogs("pid", String(pid)),
+          Effect.annotateLogs("vm_id", machine.vmId),
+          Effect.annotateLogs("pid", String(machine.pid)),
         );
       });
 

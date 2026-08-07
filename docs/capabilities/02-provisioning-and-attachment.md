@@ -62,10 +62,16 @@ returned), and **7** (ein's seat running with its context MCPs).
   — why mutating local `sf` commands need a credential that cowboys never receive.
 - [The local loop runs the production assembly (ADR 0046)](../adr/0046-the-local-loop-runs-the-production-assembly.md)
   — what a machine is when there is no computer, and why the operator runs the peers by hand.
+- [A local Swordfish outlives the worker that started it (ADR 0048)](../adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)
+  — why a local daemon is detached and reattached to rather than restarted, and why the machine credential
+  never reaches disk.
 
 ## Still open
 
-- Should `BEBOP_LOCAL_HARNESS_ROOT` be impossible in production rather than merely warned about?
+- Should `BEBOP_LOCAL_HARNESS_ROOT` be impossible in production rather than merely warned about? It no longer
+  writes credentials to disk, but it does make a process that spawns daemons and clones repositories on its own
+  host, and only a startup warning stands between that and a deployment.
+- What sweeps up a local bounty root whose daemon was orphaned by a destroy that never ran?
 - Provision exe.dev access and record where its credentials live
 - What does exe.dev's provisioning API actually offer, and where does it fail?
 - Can the exe.dev LLM integration serve ein and jet through the connected ChatGPT subscription?

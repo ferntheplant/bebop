@@ -108,11 +108,21 @@ without any command looking wrong. Isolated seat credentials are the layer that 
 from driving a seat, so leaking one removes the protection rather than weakening it. The credential is passed
 only to the processes Swordfish itself spawns.
 
-**`BEBOP_LOCAL_HARNESS_ROOT` makes every provision write a Swordfish machine credential to disk in plaintext.**
+**`BEBOP_LOCAL_HARNESS_ROOT` makes every provision spawn a daemon and clone a repository on bebop's own host.**
 That is the whole point of it locally and a deployment accident anywhere else, so setting it logs a warning at
 startup rather than starting quietly. The warning is a recorded compromise, not a guard — nothing stops the
 variable being set in production, and whether it should be impossible there rather than merely loud is still
 open. Deleting the warning as startup noise removes the only signal that a deployment has it on.
+
+**A local daemon is not stopped by stopping bebop.** It is detached on purpose
+([A local Swordfish outlives the worker that started it (ADR 0048)](./adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)),
+so `Ctrl-C` on the worker leaves every bounty's Swordfish running. `DELETE /api/bounties/:id` is what stops one;
+short of that, the pid in `<root>/bounties/<bountyId>/run/daemon.pid` is the handle.
+
+**Swordfish's durations do not parse what `Duration.format` prints.** `Duration.format(Duration.seconds(5))` is
+`5s`, and the daemon's configuration schema accepts only Effect's own syntax (`5000 millis`). The provider
+composes the daemon's environment, so a round-tripped duration there surfaces as a daemon that exits at startup
+inside a log nobody is tailing — it emits millis explicitly instead.
 
 ## Process lifecycle
 

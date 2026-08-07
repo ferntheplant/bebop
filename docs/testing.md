@@ -78,8 +78,11 @@ exception that proved two applications compose rather than proving one entrypoin
 artifacts and drove public HTTP, WebSocket, CLI, and Unix-socket interfaces; it did not import app source or write
 either database. Its production follow-up is the local system harness,
 maintained under `test/local-system/` and run via `vp run local-system`: the same packed peers over disposable
-Postgres, with the fake lifecycle provider handing the machine credential to the supervisor through the one-shot
-bootstrap artifact instead of a second credential path.
+Postgres, where creating a bounty is what makes a Swordfish daemon exist because the lifecycle provider starts it
+([A local Swordfish outlives the worker that started it (ADR 0048)](./adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)).
+The harness starts no daemon of its own and could not: the machine credential never reaches disk, so it restarts
+one by requeuing provisioning through the API. It clones from a bare repository it creates on disk, which keeps
+the clone real while leaving the suite offline and repeatable.
 
 ## Database gating: `BEBOP_TEST_DATABASE_URL`
 

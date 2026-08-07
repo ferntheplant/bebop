@@ -4,12 +4,12 @@
 // (`docs/testing.md`). It launches only packed `dist/*.mjs` artifacts
 // and drives their public HTTP, WebSocket, CLI, and Unix-socket interfaces; it never imports
 // app source and never writes either database directly. The worker hands the machine
-// credential to a local supervisor through the one-shot bootstrap artifact the fake lifecycle
-// provider writes (`apps/bebop/src/lifecycle/provider.ts`), which is the credential path the
-// probe found missing.
+// credential to the Swordfish daemon by starting it: locally the lifecycle provider is what
+// makes a daemon exist, so the harness creates a bounty and the daemon appears, exactly as it
+// does for an operator ("A local Swordfish outlives the worker that started it" (ADR 0048)).
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -109,55 +109,111 @@ export async function waitFor<T>(
   );
 }
 
-/** The bootstrap identity a local supervisor needs in order to start Swordfish. */
-export interface BootstrapIdentity {
-  readonly bountyId: string;
-  readonly vmId: string;
-  readonly swordfishToken: string;
-  /** The operator credential verifier the daemon is provisioned with (ADR 0038). */
-  readonly operatorCredentialVerifier: string;
-}
-
-function bootstrapPath(root: string, bountyId: string): string {
-  return join(root, `${bountyId}.bootstrap`);
-}
-
-/** Reads the artifact without consuming it, for asserting on what `provision` wrote. */
-export async function readBootstrapArtifact(root: string, bountyId: string): Promise<BootstrapIdentity> {
-  const identity = JSON.parse(await readFile(bootstrapPath(root, bountyId), "utf8")) as BootstrapIdentity;
-  assert(identity.bountyId === bountyId, `bootstrap artifact carried ${identity.bountyId}, expected ${bountyId}`);
-  assert(
-    typeof identity.swordfishToken === "string" && identity.swordfishToken.length > 0,
-    "bootstrap artifact carried no machine credential",
-  );
-  assert(
-    /^[0-9a-f]{64}$/.test(identity.operatorCredentialVerifier),
-    "bootstrap artifact carried no operator credential verifier",
-  );
-  return identity;
+/**
+ * Creates the bare repository a local bounty is cloned from, under `<root>/<slug>.git`.
+ *
+ * The clone the provider performs is a real `git clone`; only the origin is local, so what is
+ * exercised is the shipped path rather than a stub of it.
+ */
+export async function makeBareOrigin(root: string, slug: string): Promise<void> {
+  const path = join(root, `${slug}.git`);
+  await mkdir(path, { recursive: true });
+  const seed = join(root, "seed");
+  await mkdir(seed, { recursive: true });
+  await writeFile(join(seed, "README.md"), "# local system harness fixture\n");
+  const git = async (cwd: string, ...args: Array<string>) => {
+    const result = Bun.spawnSync(["git", ...args], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "bebop",
+        GIT_AUTHOR_EMAIL: "bebop@local",
+        GIT_COMMITTER_NAME: "bebop",
+        GIT_COMMITTER_EMAIL: "bebop@local",
+      },
+    });
+    assert(result.exitCode === 0, `git ${args.join(" ")} failed: ${new TextDecoder().decode(result.stderr)}`);
+  };
+  await git(root, "init", "--bare", "--initial-branch=main", path);
+  await git(seed, "init", "--initial-branch=main");
+  await git(seed, "add", ".");
+  await git(seed, "commit", "-m", "seed");
+  await git(seed, "remote", "add", "origin", path);
+  await git(seed, "push", "origin", "main");
 }
 
 /**
- * The local supervisor's half of the bootstrap handoff: take the identity, then destroy the
- * artifact.
+ * Where the local lifecycle provider puts one bounty's machine.
  *
- * This is the one-shot part of "one-shot bootstrap artifact". It lives here rather than
- * inline in a test so that the artifact's removal is something the supervisor does and a
- * test can then assert about — an assertion sitting next to its own `rm` would only be
- * proving that `rm` works.
+ * The harness derives these rather than being told them, because the layout is what an operator
+ * navigates too — the runbook in `README.md` points at these same paths. It deliberately does
+ * not reconstruct the daemon's environment: the machine credential goes from bebop's derivation
+ * straight into the process the provider starts and is never written down, so nothing outside
+ * bebop can start a daemon. That is the point, and it is why this harness no longer has a
+ * supervisor of its own.
  */
-export async function consumeBootstrapArtifact(root: string, bountyId: string): Promise<BootstrapIdentity> {
-  const identity = await readBootstrapArtifact(root, bountyId);
-  await rm(bootstrapPath(root, bountyId), { force: true });
-  return identity;
+export interface LocalBountyLayout {
+  readonly root: string;
+  readonly socketPath: string;
+  readonly pidPath: string;
+  readonly logPath: string;
 }
 
-/** Whether a plaintext bootstrap credential is still sitting on disk. */
-export async function bootstrapArtifactExists(root: string, bountyId: string): Promise<boolean> {
-  return await stat(bootstrapPath(root, bountyId)).then(
-    () => true,
-    () => false,
-  );
+export function localBountyLayout(localRoot: string, bountyId: string): LocalBountyLayout {
+  const root = join(localRoot, "bounties", bountyId);
+  return {
+    root,
+    socketPath: join(root, "run", "control.sock"),
+    pidPath: join(root, "run", "daemon.pid"),
+    logPath: join(root, "logs", "swordfish.log"),
+  };
+}
+
+/** The pid of the daemon the provider started, or undefined when it has not recorded one yet. */
+export async function daemonPid(layout: LocalBountyLayout): Promise<number | undefined> {
+  try {
+    const pid = Number.parseInt((await readFile(layout.pidPath, "utf8")).trim(), 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Waits for the provider to have a live daemon recorded for this bounty, and returns its pid. */
+export async function waitForDaemon(layout: LocalBountyLayout, description: string): Promise<number> {
+  return await waitFor(description, async () => {
+    const pid = await daemonPid(layout);
+    return pid !== undefined && processIsAlive(pid) ? pid : undefined;
+  });
+}
+
+/**
+ * Kills a detached daemon the fleet does not own.
+ *
+ * Teardown needs this because a local daemon outlives the worker on purpose: nothing in the
+ * fleet's own shutdown reaches it, so a test that fails before `bounty stop` would otherwise
+ * leave a daemon running on the developer's machine.
+ */
+export async function killDaemon(layout: LocalBountyLayout): Promise<void> {
+  const pid = await daemonPid(layout);
+  if (pid === undefined || !processIsAlive(pid)) return;
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Already gone between the check and the signal.
+  }
+  await waitFor(`daemon ${pid} exit`, async () => (processIsAlive(pid) ? undefined : true), 10_000);
 }
 
 /** A fleet runner: every process is tracked for bounded shutdown and teardown. */

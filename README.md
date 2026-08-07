@@ -176,6 +176,66 @@ SWORDFISH_SHUTDOWN_TIMEOUT='15 seconds' \
 vp run @bebop/swordfish#dev
 ```
 
+### Run one bounty end to end, locally
+
+The block above runs a Swordfish by hand against a bounty that already exists. To go the other way — create a
+bounty and have its machine appear — turn on local machine mode. The lifecycle provider is what makes a daemon
+exist in both environments, so locally it clones the working copy and starts the process
+([A local Swordfish outlives the worker that started it (ADR 0048)](./docs/adr/0048-a-local-swordfish-outlives-the-worker-that-started-it.md)).
+No manual daemon step sits in between.
+
+Two GitHub identities are in play, from two sources, exactly as in production. **Bebop** uses its own App
+installation for pull requests, check polling, and ruleset verification. **The machine** uses your ambient `git`
+and `gh` credentials — the provider injects nothing for GitHub, which is structurally what exe.dev's
+repository-scoped integration provides.
+
+```bash
+docker compose up -d postgres
+
+# Both bebop processes take the same environment. Add these to the block above:
+export BEBOP_LOCAL_HARNESS_ROOT=/tmp/bebop-local
+export BEBOP_LOCAL_SWORDFISH_ENTRYPOINT="$PWD/apps/swordfish/dist/daemon.mjs"
+# Optional. Defaults are https://github.com/ and http://127.0.0.1:4096/.
+export BEBOP_LOCAL_GIT_REMOTE_BASE=https://github.com/
+export BEBOP_LOCAL_OPEN_CODE_BASE_URL=http://127.0.0.1:4096/
+
+vp run build                              # the entrypoint above must exist before a bounty is created
+vp run dev                                # bebop-api
+bun apps/bebop/src/worker.ts              # bebop-worker, same environment, in a second shell
+
+bebop bounty create --repository withco/bebop --base-ref main --compute-profile small \
+  --idempotency-key local-1 --url http://127.0.0.1:8080 --token "$BEBOP_BOOTSTRAP_API_TOKEN"
+```
+
+Creating the bounty is the whole ceremony. The worker provisions it, which clones the repository and starts a
+detached daemon; from there `sf` drives it:
+
+```bash
+BOUNTY=bty-...          # printed by `bounty create`
+ROOT=$BEBOP_LOCAL_HARNESS_ROOT/bounties/$BOUNTY
+
+sf status --socket "$ROOT/run/control.sock"
+tail -F "$ROOT/logs/swordfish.log"
+```
+
+Each bounty owns `$BEBOP_LOCAL_HARNESS_ROOT/bounties/<bountyId>/`: `repository/` is its clone, `state/` its
+SQLite, `run/` the control socket and the daemon pid, `logs/` the daemon output. Two bounties never collide, and
+a re-provision reattaches to a daemon that is already running rather than starting a second.
+
+The daemon is **detached on purpose** and outlives the worker, so stopping bebop does not stop it — `sf status`
+reports the connection as disconnected and keeps retrying with backoff, which is a normal state rather than an
+error. Destroying the bounty is what stops it:
+
+```bash
+curl -X DELETE -H "authorization: Bearer $BEBOP_BOOTSTRAP_API_TOKEN" \
+  http://127.0.0.1:8080/api/bounties/$BOUNTY
+```
+
+If a daemon is ever orphaned, the pid in `$ROOT/run/daemon.pid` is the handle.
+
+`BEBOP_LOCAL_HARNESS_ROOT` is local-only and logs a warning at startup: it turns bebop into a process that
+spawns daemons and clones repositories on its own host.
+
 The daemon owns SQLite and exposes only the mode-`0600` Unix control socket. Point `sf` at that socket with
 `SWORDFISH_CONTROL_SOCKET_PATH` or `--socket`; commands never read or mutate the database directly. The current
 CLI implements status, cancel, takeover, handoff, continue, rerun, and resume, with hidden-entry operator

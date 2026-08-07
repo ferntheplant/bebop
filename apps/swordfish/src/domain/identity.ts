@@ -1,6 +1,6 @@
 import type { CorrelationId, Timestamp } from "@bebop/contracts";
 import { CorrelationId as CorrelationIdSchema, Timestamp as TimestampSchema } from "@bebop/contracts";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, DateTime, Effect, Layer, Schema } from "effect";
 
 interface SwordfishIdentityService {
   readonly correlationId: Effect.Effect<CorrelationId>;
@@ -17,6 +17,11 @@ function timestampAt(millis: number): Timestamp {
 
 export function timestampToIso(timestamp: Timestamp): string {
   return Schema.encodeSync(TimestampSchema)(timestamp);
+}
+
+/** The timestamp `millis` after the given one — how the reconnect loop computes when its next attempt is due. */
+export function timestampAfter(timestamp: Timestamp, millis: number): Timestamp {
+  return timestampAt(DateTime.toEpochMillis(timestamp) + millis);
 }
 
 export const SwordfishIdentityLayer: Layer.Layer<SwordfishIdentity> = Layer.sync(SwordfishIdentity)(() => ({

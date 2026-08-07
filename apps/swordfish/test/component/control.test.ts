@@ -89,6 +89,14 @@ describe("Swordfish local control", () => {
       if (response.type === "success") {
         expect(response.result.snapshot.stage).toBe("interactive");
         expect(response.result.snapshot.bebopConnection.pendingEventCount).toBe(1);
+        // The connection state crosses the socket as the live one: no reconnect loop is running
+        // in this harness, so a daemon that has reached nobody reports never-connected — not the
+        // "disconnected" a stored column defaulted to, which claimed a connection it never had.
+        const connection = response.result.snapshot.bebopConnection;
+        expect(connection.state).toBe("never_connected");
+        if (connection.state === "never_connected") {
+          expect(connection.neverConnectedSince <= response.result.snapshot.observedAt).toBe(true);
+        }
       }
 
       const secondDaemon = await harness.run(Effect.exit(runControlSocket));

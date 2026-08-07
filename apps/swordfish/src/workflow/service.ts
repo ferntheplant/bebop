@@ -26,6 +26,7 @@ import type { SqlError } from "effect/unstable/sql";
 import { SqlClient } from "effect/unstable/sql";
 
 import { SwordfishConfiguration } from "#src/config.ts";
+import { BebopConnectionState } from "#src/domain/connection-state.ts";
 import { SwordfishIdentity } from "#src/domain/identity.ts";
 import { type AuthorityIdentityError, commandHash, SwordfishStore } from "#src/persistence/store.ts";
 import { reduceSwordfishWorkflow, type WorkflowReducerError } from "#src/workflow/reducer.ts";
@@ -90,13 +91,14 @@ const encodeTimestamp = Schema.encodeSync(TimestampSchema);
 export const WorkflowServiceLayer: Layer.Layer<
   WorkflowService,
   never,
-  SqlClient.SqlClient | SwordfishConfiguration | SwordfishIdentity | SwordfishStore
+  SqlClient.SqlClient | SwordfishConfiguration | SwordfishIdentity | SwordfishStore | BebopConnectionState
 > = Layer.effect(WorkflowService)(
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const config = yield* SwordfishConfiguration;
     const identity = yield* SwordfishIdentity;
     const store = yield* SwordfishStore;
+    const connectionState = yield* BebopConnectionState;
 
     const appendUnsafe = (event: SwordfishEvent, at: Timestamp) =>
       Effect.gen(function* () {
@@ -383,7 +385,11 @@ export const WorkflowServiceLayer: Layer.Layer<
       append,
       applyCommand,
       evaluateConstraints,
-      status: identity.now.pipe(Effect.flatMap(store.status)),
+      status: Effect.gen(function* () {
+        const connection = yield* connectionState.current;
+        const at = yield* identity.now;
+        return yield* store.status(at, connection);
+      }),
     };
   }),
 );

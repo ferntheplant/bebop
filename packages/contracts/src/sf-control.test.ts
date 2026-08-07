@@ -20,7 +20,7 @@ const baseSnapshot = {
   constraints: [{ scope: "building", attempts: { consumed: 0, base: 3, granted: 0 } }],
   validatedCandidates: { consumed: 0, base: 3, granted: 0 },
   exhausted: [],
-  bebopConnection: { state: "connected", lastContactAt: timestamp, acknowledgedThrough: 0, pendingEventCount: 0 },
+  bebopConnection: { state: "connected", connectedAt: timestamp, acknowledgedThrough: 0, pendingEventCount: 0 },
   previews: [],
   recentEvents: [],
   gates: [],
@@ -38,13 +38,13 @@ const commands: ReadonlyArray<typeof SfControlCommand.Encoded> = [
 
 describe("sf local control contracts", () => {
   test.each(commands)("round-trips $type requests and successful snapshots", (command) => {
-    const request = { type: "request", controlVersion: 2, correlationId: "corr-01", command } as const;
+    const request = { type: "request", controlVersion: 3, correlationId: "corr-01", command } as const;
     const decodedRequest = Schema.decodeUnknownSync(SfControlRequest)(request);
     expect(Schema.encodeSync(SfControlRequest)(decodedRequest)).toEqual(request);
 
     const response = {
       type: "success",
-      controlVersion: 2,
+      controlVersion: 3,
       correlationId: "corr-01",
       result: { command, snapshot: baseSnapshot },
     } as const;
@@ -52,12 +52,52 @@ describe("sf local control contracts", () => {
     expect(Schema.encodeSync(SfControlResponse)(decodedResponse)).toEqual(response);
   });
 
+  test("round-trips every Bebop connection state", () => {
+    const candidates = [
+      { state: "connected", connectedAt: timestamp, acknowledgedThrough: 0, pendingEventCount: 0 },
+      {
+        state: "disconnected",
+        disconnectedSince: timestamp,
+        nextAttemptAt: "2026-07-26T12:35:06.000Z",
+        acknowledgedThrough: 0,
+        pendingEventCount: 0,
+      },
+      { state: "never_connected", neverConnectedSince: timestamp, acknowledgedThrough: 0, pendingEventCount: 0 },
+    ] as const;
+    for (const bebopConnection of candidates) {
+      const decoded = Schema.decodeUnknownSync(SfStatusSnapshot)({ ...baseSnapshot, bebopConnection });
+      expect(Schema.encodeSync(SfStatusSnapshot)(decoded)).toEqual({ ...baseSnapshot, bebopConnection });
+    }
+  });
+
+  test("rejects a connection state with the wrong timing fields", () => {
+    // The three states are closed: a disconnected snapshot has to say when the loss began and
+    // when the next attempt is due, and never-connected cannot claim a last contact.
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        bebopConnection: {
+          state: "disconnected",
+          disconnectedSince: timestamp,
+          acknowledgedThrough: 0,
+          pendingEventCount: 0,
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SfStatusSnapshot)({
+        ...baseSnapshot,
+        bebopConnection: { state: "never_connected", acknowledgedThrough: 0, pendingEventCount: 0 },
+      }),
+    ).toThrow();
+  });
+
   test("round-trips a mutating request carrying an operator credential", () => {
     // The wire form is the plaintext; the decoded type wraps it in `Redacted`, so a program
     // cannot print or log it by accident (ADR 0038).
     const request = {
       type: "request",
-      controlVersion: 2,
+      controlVersion: 3,
       correlationId: "corr-01",
       operatorCredential: "bebop_op_credential",
       command: { type: "cancel" },
@@ -71,7 +111,7 @@ describe("sf local control contracts", () => {
     expect(() =>
       Schema.decodeUnknownSync(SfControlRequest)({
         type: "request",
-        controlVersion: 2,
+        controlVersion: 3,
         correlationId: "corr-01",
         operatorCredential: 42,
         command: { type: "cancel" },
@@ -83,7 +123,7 @@ describe("sf local control contracts", () => {
     expect(() =>
       Schema.decodeUnknownSync(SfControlRequest)({
         type: "request",
-        controlVersion: 2,
+        controlVersion: 3,
         correlationId: "corr-stop",
         command: { type: "stop" },
       }),
@@ -93,7 +133,7 @@ describe("sf local control contracts", () => {
   test.each(sfControlErrorCodes)("round-trips %s errors", (code) => {
     const encoded = {
       type: "error",
-      controlVersion: 2,
+      controlVersion: 3,
       correlationId: "corr-01",
       error: { code, message: "The command could not be applied." },
     } as const;

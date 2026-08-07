@@ -27,10 +27,11 @@ inspectable than a local one — you can see the harness output, read the logs, 
   the same workflow actions. The plugin rejects a human model prompt while Swordfish controls the seat; an
   unexpected TUI shell, abort, revert, or unrevert is recorded as an intrusion and enters `needs_attention`.
 - **Honest connection state.** A disconnected Swordfish is shown as disconnected, never as still working because
-  its last event said so. `sf status` names the condition and how long it has held, beside the stage — a
-  Swordfish correctly retrying with backoff and one that is genuinely stuck look identical otherwise. An
-  unreachable bebop is not `needs_attention`: nothing is waiting on a decision, only on a process, and the loop
-  keeps running meanwhile.
+  its last event said so. Beside the stage, `sf status` distinguishes connected, disconnected — since when, and
+  when the next attempt is due — and never connected since this daemon started, which is the common local case
+  of an operator who has not started bebop yet. A Swordfish correctly retrying with backoff and one that is
+  genuinely stuck look identical otherwise. An unreachable bebop is not `needs_attention`: nothing is waiting on
+  a decision, only on a process, and the loop keeps running meanwhile.
 
 ## Where it stands
 
@@ -38,6 +39,9 @@ inspectable than a local one — you can see the harness output, read the logs, 
 can be added without changing focus or operator-created layout. A pinned OpenCode probe confirmed that shell,
 abort, revert, and unrevert actions have distinct event signatures, so the cockpit does not use tmux input
 disabling. The `sf` surface and MVP layout are settled.
+
+Honest connection state is built and reachable through `sf status`; the tmux status line that will also carry it
+remains part of the unbuilt cockpit.
 
 ## Acceptance criteria
 
@@ -49,6 +53,8 @@ a healthy bebop connection).
 - [The control lease blocks mixed model turns, not trusted cockpit input (ADR 0039)](../adr/0039-the-control-lease-blocks-mixed-model-turns-not-trusted-cockpit-input.md)
   — why the seat remains keyboard-enabled and unexpected seat mutations are detected instead.
 - [The VM is the sandbox (ADR 0012)](../adr/0012-the-vm-is-the-sandbox.md) — why free shell panes are fine.
+- [Bebop owns authority, Swordfish owns the loop (ADR 0002)](../adr/0002-bebop-owns-authority-swordfish-owns-the-loop.md)
+  — why the connection is reported beside the stage, and read live rather than stored.
 - [One controller drives one active cowboy (ADR 0037)](../adr/0037-one-controller-drives-one-active-cowboy.md)
 - [Workflow actions have role-aware adapters (ADR 0038)](../adr/0038-workflow-actions-have-role-aware-adapters.md)
 

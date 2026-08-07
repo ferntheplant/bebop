@@ -13,6 +13,7 @@ import { Effect, Schema } from "effect";
 import { SqlClient } from "effect/unstable/sql";
 import { afterEach, describe, expect, test } from "vite-plus/test";
 
+import { BebopConnectionState } from "#src/domain/connection-state.ts";
 import { SwordfishIdentity } from "#src/domain/identity.ts";
 import { SwordfishStore } from "#src/persistence/store.ts";
 import { CommandConflictError, WorkflowService } from "#src/workflow/service.ts";
@@ -175,7 +176,11 @@ describe("Swordfish SQLite authority", () => {
       Effect.gen(function* () {
         const store = yield* SwordfishStore;
         const identity = yield* SwordfishIdentity;
-        return { replayable: yield* store.eventsAfter(zeroSequence), status: yield* store.status(yield* identity.now) };
+        const connection = yield* BebopConnectionState;
+        return {
+          replayable: yield* store.eventsAfter(zeroSequence),
+          status: yield* store.status(yield* identity.now, yield* connection.current),
+        };
       }),
     );
     expect(acknowledged.replayable.map((event) => event.sequence)).toEqual([1]);
@@ -514,7 +519,8 @@ describe("Swordfish SQLite authority", () => {
         const observedAt = decodeTimestamp(
           new Date(Date.parse(encodeTimestamp(runningSince)) + 89 * 60_000).toISOString(),
         );
-        const status = yield* store.status(observedAt);
+        const connection = yield* BebopConnectionState;
+        const status = yield* store.status(observedAt, yield* connection.current);
         const after = (yield* store.loadWorkflow).state;
         return { status, persistedElapsedMs: after.attempt?.elapsedMs };
       }),
@@ -808,6 +814,39 @@ describe("Swordfish SQLite authority", () => {
     expect(restored.artifacts[0]?.["count"]).toBe(1);
     expect(restored.commands[0]?.["count"]).toBe(1);
     expect(restored.reconciliation[0]).toMatchObject({ status: "completed", detail: "cleaned" });
+  });
+
+  test("upgrades a database created before the connected column was dropped", async () => {
+    // Migration 1 already ran on databases in the field, so it still creates `connected` and a
+    // second migration removes it. Without that second migration those databases would keep a
+    // NOT NULL column no insert supplies. This puts a live database back at schema 1 and
+    // restarts into the current one.
+    harness = await startSwordfishHarness("migration-drop-connected");
+    await harness.run(
+      Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        Effect.gen(function* () {
+          yield* sql`ALTER TABLE daemon_metadata ADD COLUMN connected integer NOT NULL DEFAULT 0`;
+          yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 2`;
+        }),
+      ),
+    );
+    await harness.restart();
+
+    const columns = await harness.run(
+      Effect.flatMap(SqlClient.SqlClient, (sql) => sql`PRAGMA table_info(daemon_metadata)`),
+    );
+    expect(columns.map((column) => (column as Record<string, unknown>)["name"])).not.toContain("connected");
+    // Bootstrap re-seeds through the same insert the daemon uses, and status still reads: the
+    // upgraded database reports the live connection like any other.
+    const status = await harness.run(
+      Effect.gen(function* () {
+        const store = yield* SwordfishStore;
+        const identity = yield* SwordfishIdentity;
+        const connection = yield* BebopConnectionState;
+        return yield* store.status(yield* identity.now, yield* connection.current);
+      }),
+    );
+    expect(status.bebopConnection.state).toBe("never_connected");
   });
 
   test("refuses to open authority state under another bounty identity", async () => {

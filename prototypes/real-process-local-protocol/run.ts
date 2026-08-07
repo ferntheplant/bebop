@@ -615,7 +615,7 @@ try {
       "beta local bootstrap while API is absent",
       (status) =>
         status.stage === "interactive" &&
-        status.bebopConnection.state === "disconnected" &&
+        status.bebopConnection.state === "never_connected" &&
         status.bebopConnection.pendingEventCount === 1,
     );
     api = startProcess("bebop-api", bebopApiEntrypoint, bebopEnv);

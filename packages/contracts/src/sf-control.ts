@@ -32,7 +32,7 @@ import {
   SwordfishStage,
 } from "./workflow.ts";
 
-export const currentSfControlVersion = 2 as const;
+export const currentSfControlVersion = 3 as const;
 export const SfControlVersion = Schema.Literal(currentSfControlVersion);
 export type SfControlVersion = typeof SfControlVersion.Type;
 
@@ -231,12 +231,49 @@ export const SfPendingConfigApproval = Schema.Struct({
 });
 export type SfPendingConfigApproval = typeof SfPendingConfigApproval.Type;
 
-export const SfBebopConnectionSnapshot = Schema.Struct({
-  state: Schema.Literals(["connected", "disconnected"]),
+/**
+ * The live Bebop connection, reported beside the stage.
+ *
+ * Three states, because an operator cannot tell "retrying with backoff" from "stuck" by the
+ * stage alone (`docs/capabilities/03-the-cockpit.md`). `never_connected` is a daemon that has
+ * not reached Bebop yet since it started; `disconnected` is one that reached it and lost it.
+ * Both non-connected states carry instants rather than a rendered duration, so a reader derives
+ * the elapsed time against its own clock — the daemon's freshness obligation in "Bebop owns
+ * authority, Swordfish owns the loop" (ADR 0002), met without storing a status that the first
+ * missed update would leave permanently wrong.
+ */
+export const SfBebopConnectionConnected = Schema.Struct({
+  state: Schema.Literal("connected"),
+  connectedAt: Timestamp,
   lastContactAt: Schema.optionalKey(Timestamp),
   acknowledgedThrough: EventSequence,
   pendingEventCount: NonNegativeInteger,
 });
+export type SfBebopConnectionConnected = typeof SfBebopConnectionConnected.Type;
+
+export const SfBebopConnectionDisconnected = Schema.Struct({
+  state: Schema.Literal("disconnected"),
+  disconnectedSince: Timestamp,
+  nextAttemptAt: Timestamp,
+  lastContactAt: Schema.optionalKey(Timestamp),
+  acknowledgedThrough: EventSequence,
+  pendingEventCount: NonNegativeInteger,
+});
+export type SfBebopConnectionDisconnected = typeof SfBebopConnectionDisconnected.Type;
+
+export const SfBebopConnectionNeverConnected = Schema.Struct({
+  state: Schema.Literal("never_connected"),
+  neverConnectedSince: Timestamp,
+  acknowledgedThrough: EventSequence,
+  pendingEventCount: NonNegativeInteger,
+});
+export type SfBebopConnectionNeverConnected = typeof SfBebopConnectionNeverConnected.Type;
+
+export const SfBebopConnectionSnapshot = Schema.Union([
+  SfBebopConnectionConnected,
+  SfBebopConnectionDisconnected,
+  SfBebopConnectionNeverConnected,
+]);
 export type SfBebopConnectionSnapshot = typeof SfBebopConnectionSnapshot.Type;
 
 export const SfRecentEvent = Schema.Struct({

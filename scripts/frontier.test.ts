@@ -150,7 +150,7 @@ describe("critical-path ranking", () => {
 });
 
 describe("build section", () => {
-  it("lists open builds, keeps them out of Decide, and annotates blocked ones", () => {
+  it("lists open unblocked builds, keeps them out of Decide, and drops blocked ones", () => {
     const root = fixture();
     writeTicket(root, "unprojected", "r1", { title: "Build one", type: "build" });
     writeTicket(root, "unprojected", "r2", { title: "Build two", type: "build", blockedBy: ["r1"] });
@@ -161,7 +161,7 @@ describe("build section", () => {
     const decide = output.slice(output.indexOf("▍ DECIDE"));
 
     expect(build).toContain("▸ Build one");
-    expect(build).toContain('▸ Build two · blocked by "Build one"');
+    expect(build).not.toContain("Build two");
     expect(decide).toContain("▸ A decision");
     expect(decide).not.toContain("Build one");
     expect(decide).not.toContain("Build two");

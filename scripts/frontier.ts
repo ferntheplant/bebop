@@ -152,7 +152,7 @@ function scanTracker(scratchRoot: string): { groups: ProjectGroup[]; tickets: Ti
         slug: basename(file, ".md"),
         title: fileHeading(file, basename(file, ".md")),
         type: frontmatter.type,
-        status: frontmatter.status === "" ? "open" : frontmatter.status,
+        status: TICKET_STATUSES.has(frontmatter.status) ? frontmatter.status : "open",
         blockedBy: frontmatter.blockedBy,
         group: group.key,
         file,
@@ -164,7 +164,16 @@ function scanTracker(scratchRoot: string): { groups: ProjectGroup[]; tickets: Ti
 
 function ticketIndex(tickets: Ticket[]): TicketIndex {
   const index: TicketIndex = new Map();
-  for (const ticket of tickets) index.set(ticket.slug, ticket);
+  for (const ticket of tickets) {
+    const existing = index.get(ticket.slug);
+    if (existing !== undefined) {
+      process.stderr.write(
+        `warn: slug "${ticket.slug}" appears in both ${existing.group} and ${ticket.group}; keeping ${existing.group}\n`,
+      );
+      continue;
+    }
+    index.set(ticket.slug, ticket);
+  }
   return index;
 }
 
@@ -237,9 +246,8 @@ function decideLine(title: string, gates: number, direct: number, dangling: stri
   return `  ${cyan("▸")} ${title}${note}`;
 }
 
-function buildLine(title: string, blockers: Ticket[], dangling: string[], gates: number, direct: number): string {
+function buildLine(title: string, dangling: string[], gates: number, direct: number): string {
   const parts: string[] = [];
-  if (blockers.length > 0) parts.push(yellow(`blocked by ${blockers.map((b) => `"${b.title}"`).join(", ")}`));
   if (dangling.length > 0) parts.push(red(`dangling blocker: ${dangling.join(", ")}`));
   const gatesNote = gatesText(gates, direct);
   if (gatesNote !== "") parts.push(cyan(gatesNote));
@@ -291,10 +299,10 @@ export function renderFrontier(scratchRoot: string): string {
     .filter((ticket) => ticket.type === BUILD_TYPE && ticket.status === "open")
     .map((ticket) => {
       const state = blockerState(ticket, index);
-      return { ticket, state, unblocked: state.blockers.length === 0, ...gateCounts(ticket, reverse, index) };
+      return { ticket, state, ...gateCounts(ticket, reverse, index) };
     })
+    .filter((entry) => entry.state.blockers.length === 0)
     .sort((a, b) => {
-      if (a.unblocked !== b.unblocked) return a.unblocked ? -1 : 1;
       if (b.gates !== a.gates) return b.gates - a.gates;
       return a.ticket.title.localeCompare(b.ticket.title);
     });
@@ -302,7 +310,7 @@ export function renderFrontier(scratchRoot: string): string {
     lines.push(`  ${dim("· nothing specified and unbuilt")}`);
   } else {
     for (const entry of builds) {
-      lines.push(buildLine(entry.ticket.title, entry.state.blockers, entry.state.dangling, entry.gates, entry.direct));
+      lines.push(buildLine(entry.ticket.title, entry.state.dangling, entry.gates, entry.direct));
     }
   }
 

@@ -86,7 +86,9 @@ Assets created while resolving one are **linked** from the ticket, not pasted in
 Frontmatter, statuses, blocking, and the deletion rule are all in [the tracker doc](../../ISSUE-TRACKER.md#file-formats). Two consequences of a file-based tracker are worth knowing before you start:
 
 - **Slugs are chosen, not assigned.** Nothing needs to exist before something else can reference it, so charting has no create-then-wire second pass — write each ticket with its `blocked-by` already filled in.
-- **The frontier isn't rendered for you.** A directory of files shows nobody what's takeable. Compensate by naming the takeable tickets when you finish charting, and again whenever a resolution unblocks something.
+- **The frontier is rendered, not stored.** `vp run next` derives Build, Decide, and Triage from `.scratch/`,
+  so nobody hand-writes "the next work is". It reads status and blocking, not reasons, so still name the
+  takeable tickets when you finish charting, and again whenever a resolution unblocks something.
 
 ## How to work each decision type
 
@@ -133,7 +135,8 @@ The user invokes with a loose idea.
 3. **Write the map**: Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**.
 4. **Write the tickets you can specify now**, each with its `blocked-by` already filled in. That sorts them into the frontier and the blocked in one pass; everything you can't specify stays in the fog.
 5. **Fire the research subagents.** For each `research` ticket, spin up a `/research` subagent to resolve it in parallel, capturing findings on a throwaway `research/<name>` branch with a pointer from the ticket.
-6. **Name the frontier** — which tickets are takeable now, by name. This is the only place the human sees it without scanning the directory.
+6. **Name the frontier** — which tickets are takeable now, by name. `vp run next` renders the list; the
+   narration says which one is being taken, and why.
 7. Stop. Charting is one session's work and resolves nothing by hand.
 
 ### Work through the map

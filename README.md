@@ -218,6 +218,38 @@ installation for pull requests, check polling, and ruleset verification. **The m
 and `gh` credentials — the provider injects nothing for GitHub, which is structurally what exe.dev's
 repository-scoped integration provides.
 
+#### Bebop's GitHub App
+
+Bebop's half is a real App installation rather than a token you paste, so the credential-acquisition path
+shipped to production is the one exercised on a laptop
+([The local loop runs the production assembly (ADR 0046)](./docs/adr/0046-the-local-loop-runs-the-production-assembly.md)).
+Create the App on your own account, install it on the target repository alone, and grant it exactly **Contents:
+read and write**, **Pull requests: read and write**, **Checks: read-only**, **Commit statuses: read-only**, and
+the mandatory **Metadata: read-only** — nothing more. Not `Issues`, and not `Administration`;
+[The merge target must enforce rulesets (ADR 0034)](./docs/adr/0034-the-merge-target-must-enforce-rulesets.md)
+records why each is enough and why those two are refused. Keep both files outside every working copy — a bounty
+clones into `$BEBOP_LOCAL_HARNESS_ROOT`, and a private key inside that tree is one a seat can read:
+
+```bash
+~/.config/bebop/github-app.pem   # the App's private key, mode 600, never in a checkout
+~/.config/bebop/github-app.env   # the three values below
+
+set -a; source ~/.config/bebop/github-app.env; set +a   # into the shell running the block below
+```
+
+The values are `BEBOP_GITHUB_APP_ID`, `BEBOP_GITHUB_APP_INSTALLATION_ID`, and
+`BEBOP_GITHUB_APP_PRIVATE_KEY_PATH`, read from the environment like every other knob in
+`apps/bebop/src/config.ts` — by the GitHub client that arrives with pull-request creation. The key is named by
+**path** rather than pasted inline, which is what lets a deployment swap the file for a mounted secret without
+changing the shape
+([The master runs on exe.dev (ADR 0019)](./docs/adr/0019-the-master-runs-on-exe-dev-with-mandatory-off-vm-backups.md)).
+
+The target repository must be one GitHub will protect — public, or private on Pro or above — carrying a ruleset
+on its default branch whose `bypass_actors` is empty
+([The merge target must enforce rulesets (ADR 0034)](./docs/adr/0034-the-merge-target-must-enforce-rulesets.md)).
+That ruleset has no admin exemption, so your own `git push` to that branch is refused too, with `GH013`. That is
+the protection working, not a misconfiguration, and it is worth meeting deliberately rather than mid-bounty.
+
 ```bash
 docker compose up -d postgres
 

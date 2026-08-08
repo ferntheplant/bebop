@@ -78,6 +78,14 @@ on the merge target is the mitigation. It is the _only_ mitigation: an installat
 `bounty/*`, and merging needs the same `contents: write` the sandbox pushes with, so the two identities cannot
 be separated by permission alone.
 
+Bebop posts the evidence comment under `pull_requests: write`, without holding `issues: write` — what its App is
+granted and why is in [the security model](./14-the-security-model.md).
+
 ## Still open
 
-- Which permission posts the evidence comment — `issues: write`, or does `pull_requests: write` suffice?
+- Can the machine's repository-scoped integration push a candidate that changes `.github/workflows/**`? GitHub
+  requires a second permission for a ref that touches a workflow file, over and above the write access an
+  ordinary push needs. This is the machine's credential rather than bebop's App, and the local loop cannot
+  answer it: an operator's ambient token usually already carries the scope, so the first refusal would appear
+  in production. The failure is a candidate that cannot reach GitHub at all, for a reason unrelated to the
+  quality of its diff — so what it looks like, and what ein is told, both need establishing.

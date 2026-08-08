@@ -22,3 +22,10 @@ Done when:
 - the LLM and HTTP Proxy integrations are enabled on the account, so the [LLM integration](./exe-dev-llm-integration-for-ein-and-jet.md) and [HTTP Proxy](./exe-dev-http-proxy-for-opencode-go.md) tickets can be worked;
 - the resulting facts — account identifiers, region or host constraints, key location, observed quotas — are
   recorded in the answer.
+
+While a live repository-scoped integration is in hand, establish one thing it is the only place to establish:
+whether it can push a ref that changes `.github/workflows/**`. GitHub requires a further permission for that
+than an ordinary push needs, and an operator's ambient token normally already carries it, so a laptop will
+never surface the difference. One push of a workflow-file change answers it. Bebop's own App set was settled
+the same way and the method transfers: the `x-accepted-github-permissions` response header names what a route
+would have accepted, on success as well as on refusal.

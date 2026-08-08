@@ -1,7 +1,6 @@
 ---
 type: build
 status: open
-blocked-by: [github-app-permissions-and-ruleset-readback]
 ---
 
 # Bebop creates and updates the draft pull request
@@ -33,6 +32,10 @@ in scope is everything up to that — the draft PR, and the check polling that g
   the gate.
 - Every response decoded at the seam, and durable intent written before the call, per the architectural rules.
 - Structured logs carrying `bounty_id` and `candidate_sha` on every GitHub operation.
+
+Check polling has something real to poll: the local target publishes a check run named `bebop/verify` from
+GitHub Actions, which is the context its ruleset requires, so a pull request there becomes mergeable once it
+passes and stays blocked while it does not.
 
 ## Done when
 

@@ -26,5 +26,7 @@ Settle:
 - whether Playwright MCP survives contact with a real app, and what the fallback is if the browser stack cannot
   see what a human would see;
 - what a QA scenario looks like when the acceptance criterion is not visual;
-- how faye reports "I could not run this" distinctly from "this failed" — the same distinction [finding severities](./finding-severities-and-where-they-surface.md) needs
-  for jet.
+- how faye reports "I could not run this" distinctly from "this failed" — an attempt that collapsed and a
+  scenario that genuinely failed are different values under
+  [Cowboys accept or reject, and a rejection carries notes (ADR 0050)](../../../docs/adr/0050-cowboys-accept-or-reject-and-a-rejection-carries-notes.md),
+  and faye needs a way to say the first one about a single scenario rather than the whole attempt.

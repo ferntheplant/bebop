@@ -71,6 +71,11 @@ local target, with a ruleset that refuses even the operator's own push;
 [The merge target must enforce rulesets (ADR 0034)](../../docs/adr/0034-the-merge-target-must-enforce-rulesets.md)
 now carries the permission set, established against the live installation.
 
+How a gate says no is settled in
+[Cowboys accept or reject, and a rejection carries notes (ADR 0050)](../../docs/adr/0050-cowboys-accept-or-reject-and-a-rejection-carries-notes.md):
+jet and faye return a binary verdict, per-item severity is gone, and notes carry the reasons. The contract still
+describes the old model, which is its own build ticket.
+
 ## Not yet specified
 
 - **What ein is actually told.** Prompt construction, spec restatement after compaction, how stage feedback is

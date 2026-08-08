@@ -9,7 +9,7 @@ to the exact commit and spec revision they describe, and they survive the VM tha
   runtime manifest, plus stage-specific tool versions. The runtime manifest resolves to the exact image and
   Swordfish release, including its OpenCode bill of materials. An artifact that cannot say which commit and
   environment it describes is not evidence.
-- **Everything a gate produced**: validator logs, CI results, review findings, QA scenario outcomes, screenshots,
+- **Everything a gate produced**: validator logs, CI results, review notes, QA scenario outcomes, screenshots,
   and recordings.
 - **Uploaded before readiness is claimed**, and off the VM — so destroying a bounty's computer does not destroy
   the record of what it proved.

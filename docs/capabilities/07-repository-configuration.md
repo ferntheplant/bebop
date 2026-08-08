@@ -13,7 +13,7 @@ This is the whole configuration surface of the product.
   seed data. Runtime hooks validate a candidate, start and reset QA services, and collect extra artifacts.
 - **A declarative `config.yml`** for services, ports, health checks, preview labels, seed data, timeouts,
   autonomous constraint profiles, environment requirements, and additional privileged globs.
-- **Structured results are optional.** A hook may write JSON findings and drop artifacts in a directory Bebop
+- **Structured results are optional.** A hook may write JSON results and drop artifacts in a directory Bebop
   provides, but its exit code is what counts. You never have to produce structured output to be useful.
 - **Hooks run inside the sandbox and get no bebop credentials.** They may produce results and local artifacts;
   they never publish anything externally themselves.
@@ -49,7 +49,7 @@ exit 0 = pass, nonzero = fail
 stdin:  nothing
 env:    BEBOP_SHA, BEBOP_STAGE, BEBOP_WORKTREE,
         BEBOP_PORT_*, BEBOP_RESULT_FILE, BEBOP_ARTIFACT_DIR
-optional: write JSON findings to $BEBOP_RESULT_FILE
+optional: write JSON results to $BEBOP_RESULT_FILE
 artifacts: copy into $BEBOP_ARTIFACT_DIR
 ```
 

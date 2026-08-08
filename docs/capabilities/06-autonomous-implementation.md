@@ -1,14 +1,14 @@
 # Autonomous implementation and revision
 
 The loop the whole product exists to run. Swordfish drives the active cowboy seat, ein implements and submits candidates,
-gates return findings, and ein revises — keeping its conversational and implementation context the entire time,
+gates return notes, and ein revises — keeping its conversational and implementation context the entire time,
 which is the thing a fresh-context cowboy cannot do.
 
 ## What you can expect
 
 - **Swordfish drives, deterministically.** The workflow state machine is software, not a model. No context window
   is the authoritative record of where a bounty is.
-- **Ein keeps its context.** Findings from review, CI, and QA come back to the same seat that wrote the code, so
+- **Ein keeps its context.** Notes from review, CI, and QA come back to the same seat that wrote the code, so
   revision is a continuation rather than a re-explanation.
 - **One role-aware action interface.** Ein invokes `candidate-ready`, `continue`, `set-blocked`, or `reopen-spec`;
   jet invokes `review-complete`, and faye invokes `qa-complete`. A human controller gets the same actions through
@@ -17,7 +17,7 @@ which is the thing a fresh-context cowboy cannot do.
 - **Only a real submission counts.** A candidate is tied to exactly one commit SHA, and a harness going quiet is
   not a candidate. Swordfish checks the commit exists, is reachable, carries the current spec revision, and left
   nothing relevant uncommitted.
-- **Findings arrive aggregated.** One feedback packet per round rather than a drip of individual complaints.
+- **Notes arrive aggregated.** One feedback packet per round rather than a drip of individual complaints.
 - **A gate that produced nothing says so.** "Jet found nothing" and "jet did not answer" are different values,
   and the second is a detectable error with a reason attached.
 - **Every new commit restarts the pipeline.** Local validation, CI, review, QA, readiness, and commit-bound
@@ -48,7 +48,7 @@ producer yet outside tests.
 
 Owns [`ABSTRACT.md`](../../ABSTRACT.md) §8 criteria **14** (Swordfish can prompt and observe OpenCode through its
 server API), **15** (an idle seat without a workflow signal is re-prompted once), **16** (ein submits a candidate
-commit), **23** (a blocking CI or review result returns to ein's seat), **24** (a new commit invalidates all
+commit), **23** (a failed CI check or a review rejection returns to ein's seat), **24** (a new commit invalidates all
 previous results), and **28** (a QA failure returns to ein and restarts the full pipeline).
 
 ## Decisions

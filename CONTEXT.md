@@ -45,14 +45,14 @@ An explicit submission by ein, tied to exactly one commit SHA. Only a candidate 
 _Avoid_: build, submission, attempt.
 
 **validated candidate**:
-A candidate that passed local validation and external CI and is admitted to jet's review. Candidates rejected
-by local validation or CI consume ein attempts but not the effective spec's validated-candidate allowance;
+A candidate that passed local validation and external CI and is admitted to jet's review. Candidates that
+failed local validation or CI consume ein attempts but not the effective spec's validated-candidate allowance;
 rerunning a gate against the same SHA does not create another validated candidate.
 _Avoid_: candidate (includes submissions that have not passed validation and CI), approved candidate.
 
 **build cycle**:
 Ein's work from receiving a confirmed spec or downstream rejection until one candidate passes local validation
-and external CI. A build cycle may contain multiple ein attempts and candidates rejected by either gate. A
+and external CI. A build cycle may contain multiple ein attempts and candidates that failed either gate. A
 review or QA rejection starts a new build cycle under the same effective spec revision.
 _Avoid_: candidate (does not exist until submitted), revision (the effective spec may be unchanged).
 
@@ -106,10 +106,10 @@ each jet and faye attempt receives a fresh one.
 _Avoid_: session (collides with OpenCode and tmux), worker, slot.
 
 **ein**:
-The primary implementation cowboy. Holds the task conversation, edits the primary worktree, submits candidates, and revises against findings — retaining its context across the whole loop.
+The primary implementation cowboy. Holds the task conversation, edits the primary worktree, submits candidates, and revises against notes — retaining its context across the whole loop.
 
 **jet**:
-The independent review cowboy. Each attempt gets a fresh seat with no access to ein's conversational context, read-only tools, and structured findings as its output.
+The independent review cowboy. Each attempt gets a fresh seat with no access to ein's conversational context, read-only tools, and a verdict with notes as its output.
 
 **faye**:
 The QA cowboy. Each attempt gets a fresh seat for browser-driven verification of acceptance criteria against the exact candidate SHA in a clean environment. Never edits code.
@@ -188,8 +188,16 @@ _Avoid_: fix, remedy, unblock.
 ## Verification
 
 **gate**:
-A verification gate a candidate must pass — local validation, external CI, jet's review, faye's QA. Only `blocking` findings stop a candidate.
+A verification gate a candidate must pass — local validation, external CI, jet's review, faye's QA. Its outcome is `passed` or `failed`.
 _Avoid_: check (reserved for GitHub's checks), test, stage.
+
+**verdict**:
+A cowboy's binary decision about one candidate: **accept** or **reject**. Jet declares its verdict; faye's is derived from its scenarios, where any failure rejects. Both words are reserved for cowboys — a validator or a CI check _fails_, having exercised no judgement.
+_Avoid_: approve, block, sign off; and never "reject" for a gate that merely failed.
+
+**note**:
+One item of feedback attached to a verdict — a markdown body, optionally anchored to a file and line or to evidence artifacts. A rejection must carry notes; an acceptance may, and those are kept with the candidate. Notes carry no severity: the verdict is the only graded thing.
+_Avoid_: finding (retired with per-item severity), comment, issue.
 
 **validator**:
 A repository-defined mandatory check that Swordfish runs. Checks ein ran itself are never authoritative evidence.

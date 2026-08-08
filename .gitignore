@@ -27,6 +27,9 @@ build
 .env.*
 !.env.example
 
+# Per-checkout database URLs written by `scripts/dev-db.ts` (see ADR 0049)
+/mise.local.toml
+
 # Editor directories and files
 .vscode/*
 !.vscode/settings.json

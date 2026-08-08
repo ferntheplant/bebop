@@ -102,8 +102,10 @@ const suite = testDatabaseAvailable ? describe : describe.skip;
 `testDatabaseAvailable` is `adminDatabaseUrl() !== null` from `@bebop/testkit`
 (`packages/testkit/src/postgres.ts:36`). When `BEBOP_TEST_DATABASE_URL` is unset, the suite skips and the gate
 stays green — `README.md` documents the trade: `vp run ready` passes on a machine with no Docker, CI always
-provides the service, and `vite.config.ts:112` puts the env var in the cache key so a run with a database and a
-run without are not the same run.
+provides the service, and `vite.config.ts:140` puts the env var in the cache key so a run with a database and a
+run without are not the same run. In a worktree, `vp run dev:db` sets the variable through the gitignored
+`mise.local.toml` (see [One Postgres container, a database per worktree (ADR 0049)](./adr/0049-one-postgres-container-a-database-per-worktree.md)); the suites never need a database of
+their own, because each creates and drops a randomly named one.
 
 ## The single substitution seam
 

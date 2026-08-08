@@ -115,6 +115,10 @@ export default defineConfig({
         ],
       },
       dev: { command: "vp run @bebop/server#dev", cache: false },
+      // One shared Postgres container, one database per checkout (`docs/adr/0049`): starts
+      // the container if needed, creates this checkout's database, and writes both URLs to
+      // the gitignored `mise.local.toml`. Never cached — it writes a file that must be fresh.
+      "dev:db": { command: "bun scripts/dev-db.ts", cache: false },
       // Renders the tracker frontier — Build, Decide, Triage — straight from `.scratch/`,
       // read-only. Never cached: the frontier changes the moment a ticket does.
       next: { command: "bun scripts/frontier.ts", cache: false },

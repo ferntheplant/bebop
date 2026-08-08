@@ -3,12 +3,20 @@
 # Bebop itself runs from `vp run dev` or a packed artifact; this file exists so component
 # tests have a real Postgres to talk to without one being installed on the machine.
 #
-#   docker compose up -d postgres
-#   export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
+#   docker compose up -d --wait postgres
+#   bun scripts/dev-db.ts
 #   vp run test:integration
 #
 # Port 5433 rather than 5432 so this cannot collide with a Postgres the developer already
 # runs for something else.
+#
+# The project name is pinned so every checkout on the machine shares one container:
+# without it, compose would derive the project from the checkout's directory, and a
+# second `docker compose up` from a git worktree would try to bind port 5433 again.
+# `name:` keeps it attached to the same `bebop-postgres-1` from any checkout. Each
+# checkout gets its own database on it via `scripts/dev-db.ts`
+# (`docs/adr/0049-one-postgres-container-a-database-per-worktree.md`).
+name: bebop
 
 services:
   postgres:

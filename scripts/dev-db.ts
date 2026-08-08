@@ -23,7 +23,16 @@ import { basename, join } from "node:path";
 const ADMIN_DATABASE = "bebop";
 
 function run(program: string, args: readonly string[]): string {
-  return execFileSync(program, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  try {
+    return execFileSync(program, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  } catch (error) {
+    const stderr =
+      error !== null && typeof error === "object" && "stderr" in error
+        ? String((error as { stderr: unknown }).stderr)
+        : "";
+    const detail = stderr ? `\n${stderr}` : "";
+    throw new Error(`Command failed: ${program} ${args.join(" ")}${detail}`, { cause: error });
+  }
 }
 
 function checkoutRoot(): string {
@@ -56,9 +65,16 @@ function ensureContainer(): void {
   run("docker", ["compose", "up", "-d", "--wait", "postgres"]);
 }
 
+const NAME_PATTERN = /^[a-z0-9_]+$/;
+
 function devDatabaseName(): string {
   const override = process.env.BEBOP_DEV_DATABASE_NAME;
-  if (override !== undefined && override.length > 0) return override;
+  if (override !== undefined && override.length > 0) {
+    if (!NAME_PATTERN.test(override)) {
+      throw new Error(`BEBOP_DEV_DATABASE_NAME must match ${NAME_PATTERN} — got: ${override}`);
+    }
+    return override;
+  }
   const directory = basename(checkoutRoot());
   // The main checkout's directory is `bebop`, which is the database `POSTGRES_DB` seeds.
   return directory === ADMIN_DATABASE ? ADMIN_DATABASE : sanitize(directory);

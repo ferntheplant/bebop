@@ -123,7 +123,13 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
             ? Effect.void
             : write(chunk).pipe(
                 Effect.timeout(writeSettleTimeout),
-                Effect.catchCause((cause) => (Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.void)),
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.interrupt
+                    : Effect.flatMap(Ref.get(peerGone), (nowGone) =>
+                        nowGone ? Effect.void : Effect.failCause(cause).pipe(Effect.orDie),
+                      ),
+                ),
               ),
         );
 
@@ -381,10 +387,10 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
       // stateful operation. `offerUnsafe` fails immediately rather than accumulating an
       // unbounded set of fibers blocked on a full queue.
       const inbound = yield* Queue.bounded<string, Cause.Done>(inboundFrameCapacity);
-      // True when a cause is the queue draining and ending — a single `Fail` whose value is
-      // Effect's `Done` sentinel, which is what `Queue.end` fails the queue with. That is the
-      // consumer's normal end, not a failure.
-      const isQueueEnd = (cause: Cause.Cause<unknown>): boolean => {
+      // True when a cause is the queue-end sentinel — a single `Fail` whose value is Effect's
+      // `Done` sentinel, which is what `Queue.end` fails the queue with. That is the consumer's
+      // normal end, not a failure.
+      const isQueueEndSentinel = (cause: Cause.Cause<unknown>): boolean => {
         const [reason] = cause.reasons;
         return reason !== undefined && Cause.isFailReason(reason) && Cause.isDone(reason.error);
       };
@@ -396,13 +402,30 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
         Effect.forever(Queue.take(inbound).pipe(Effect.flatMap(processFrame))).pipe(
           Effect.catchCause((cause) => {
             // The queue draining and ending is the normal end of the loop, not a failure.
-            if (isQueueEnd(cause)) {
+            if (isQueueEndSentinel(cause)) {
               return Effect.void;
             }
-            // A frame that failed to process stops the ordered consumer; the queue and the
-            // outbox redeliver it to the next connection rather than the drain processing out of
-            // order. The handler still completes cleanly — this is why.
-            return Effect.logError("swordfish frame consumer failed", cause);
+            // A scope shutdown interrupts the consumer; let it propagate as an interrupt
+            // rather than logging or converting it.
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.failCause(cause).pipe(Effect.orDie);
+            }
+            // Anything else escaping `processFrame` is an infrastructure defect — a write
+            // the peer's abandoned (SocketError/Timeout) or a repository or projection call
+            // the database rejected (SqlError). Domain rejections are typed results returned
+            // by those calls, so a failure that lands here is a crash. Per `AGENTS.md`,
+            // defects remain crashes handled by process supervision, so the cause is
+            // converted to a defect and re-raised — not swallowed. The queue and outbox
+            // redeliver unconfirmed work to the next connection.
+            return (
+              session === null
+                ? Effect.logError("swordfish frame consumer failed", cause)
+                : Effect.logError("swordfish frame consumer failed", cause).pipe(
+                    Effect.annotateLogs("bounty_id", session.bountyId),
+                    Effect.annotateLogs("vm_id", session.vmId),
+                    Effect.annotateLogs("connection_id", session.connectionId),
+                  )
+            ).pipe(Effect.flatMap(() => Effect.failCause(cause).pipe(Effect.orDie)));
           }),
         ),
       );
@@ -454,7 +477,11 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
               yield* Ref.set(peerGone, true);
               yield* Queue.end(inbound);
               yield* Fiber.join(consumer).pipe(
-                Effect.catchCause((cause) => Effect.logDebug("swordfish frame consumer ended during teardown", cause)),
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.logDebug("swordfish frame consumer interrupted during teardown", cause)
+                    : Effect.failCause(cause),
+                ),
               );
             }),
           ),

@@ -75,7 +75,7 @@ How a gate says no is settled in
 [Cowboys approve or reject, and a rejection carries notes (ADR 0050)](../../docs/adr/0050-cowboys-approve-or-reject-and-a-rejection-carries-notes.md):
 jet and faye return a binary verdict, per-item severity is gone, and notes carry the reasons. The vocabulary
 around it is settled in
-[Gates approve or reject; stages only track progress (ADR 0051)](../../docs/adr/0051-gates-approve-or-reject-stages-only-track-progress.md):
+[A gate judges, a stage locates, an assignment bounds (ADR 0051)](../../docs/adr/0051-a-gate-judges-a-stage-locates-an-assignment-bounds.md):
 a gate is one of the four rejection points and every gate approves or rejects, a stage is only a position in the
 state machine, terminal breakage is `errored`, and `agent` is retired for `cowboy`. The contract still speaks the
 old vocabulary throughout, which is its own build ticket.

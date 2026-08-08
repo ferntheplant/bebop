@@ -14,9 +14,10 @@ they replaced:
 
 - [Cowboys approve or reject, and a rejection carries notes (ADR 0050)](../../../docs/adr/0050-cowboys-approve-or-reject-and-a-rejection-carries-notes.md)
   replaced per-item severity with a binary verdict plus notes.
-- [Gates approve or reject; stages only track progress (ADR 0051)](../../../docs/adr/0051-gates-approve-or-reject-stages-only-track-progress.md)
-  split gate from stage, made `approve`/`reject` the outcome of every gate, reserved `failed` for a rejection so
-  that system breakage is `errored`, and retired `agent` in favour of `cowboy`.
+- [A gate judges, a stage locates, an assignment bounds (ADR 0051)](../../../docs/adr/0051-a-gate-judges-a-stage-locates-an-assignment-bounds.md)
+  separated three concepts two words were carrying, made `approve`/`reject` the outcome of every gate, made
+  `succeeded`/`failed` the outcome of bounded work, freed `errored` for system breakage, and retired `agent` in
+  favour of `cowboy`.
 
 Nothing derives a gate outcome from findings today, so no behaviour is wrong — only the vocabulary is. Both land
 together because renaming `ReviewFinding` twice would be silly.
@@ -45,6 +46,11 @@ together because renaming `ReviewFinding` twice would be silly.
 - `gateStatuses` becomes `not_started | pending | approved | rejected`, and `GateOutcome` is derived from it
   rather than declared as a second list that happens to agree.
 - The `failed` member of `swordfishStages` and of `bountyStatuses` becomes `errored`.
+- `attemptOutcomes` becomes `succeeded | failed`, with the reason (`exhausted`, `no_result`) carried beside the
+  outcome rather than flattened into it — the reducer must still be able to refuse an `exhausted` claim its own
+  accounting cannot support, which needs exhaustion to stay a distinct, verifiable reason.
+- `ConstraintScope` is the **assignment**. Its `building | review | qa` members stay: they name the work rather
+  than the worker, and their reset rules already differ by assignment rather than by cowboy.
 - `agentDispositions` becomes `cowboyDispositions`; `agent_blocked` becomes `cowboy_blocked`;
   `agent_produced_no_output` and `agent_output_failed_schema_validation` take the same treatment.
 - `stage_aborted_before_output` and `stage_infrastructure_failure` become `gate_`-prefixed.
@@ -58,6 +64,7 @@ together because renaming `ReviewFinding` twice would be silly.
   attempt that produced nothing at all.
 - A QA verdict whose `decision` contradicts its scenarios cannot be constructed.
 - Nothing in `packages/` or `apps/` still says `finding`, `severity`, `blocking`, `non_blocking`, or `agent` as a
-  word for a cowboy; no gate reports `passed` or `failed`.
+  word for a cowboy; no gate reports `passed` or `failed`; nothing terminal reports `failed` where it means a
+  system error.
 - Golden protocol encodings and the persisted event history migrate, or the migration path is stated and tested.
 - `vp run ready` passes.

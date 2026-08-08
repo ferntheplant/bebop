@@ -64,14 +64,26 @@ controls it; Swordfish is authoritative and bebop holds a projection. A stage is
 several stages exist that no candidate is judged at, which is why a **gate** is a separate term.
 _Avoid_: state, status, phase, gate. (**status** is the compact, derived summary bebop shows to a client.)
 
+**assignment**:
+The bounded piece of autonomous work one cowboy is given, and the thing an attempt allowance is spent from —
+`building` for ein, `review` for jet, `qa` for faye. Derived from the acting cowboy's role, so an attempt with no
+cowboy is unrepresentable. What resets the allowance differs by assignment rather than by cowboy: ein's per build
+cycle, jet's and faye's per candidate. An assignment is not a **gate** — jet's and faye's line up with one, but
+ein has an assignment and no gate, because ein is not a checkpoint.
+_Avoid_: scope (too general), run, job, role (the cowboy, not its work).
+
 **attempt**:
-One Swordfish-controlled activation of one cowboy for one stage assignment. It starts with Swordfish's first
-prompt and includes idle re-prompts and process restarts. `set-blocked` followed by `resume`, or an exhausted
-attempt revived by human `continue`, preserves the attempt while attention time pauses its wall clock. It ends
-when the cowboy completes or transfers the assignment, control passes to a human, human `rerun` abandons it, or
-the workflow cancels or errors. Ein may have many attempts in its durable seat; every jet and faye attempt gets a
-fresh seat. Handoff after takeover starts a new attempt.
-_Avoid_: seat (the durable OpenCode session), turn (one model interaction within an attempt), run.
+One Swordfish-controlled activation of one cowboy for one assignment. It starts with Swordfish's first prompt and
+includes idle re-prompts and process restarts. `set-blocked` followed by `resume`, or an exhausted attempt revived
+by human `continue`, preserves the attempt while attention time pauses its wall clock. Ein may have many attempts
+in its durable seat; every jet and faye attempt gets a fresh seat. Handoff after takeover starts a new attempt.
+It also ends when control passes to a human, when human `rerun` abandons it, or when the workflow cancels or
+errors. An attempt is spent when the cowboy **hands something back** — a completion, an exhausted watchdog, or a
+result the gate could not use. Nudging a cowboy that is still working spends nothing, which is why an idle
+re-prompt sits inside one attempt rather than starting another. An attempt **succeeds** or **fails**; failing
+means it did not produce what it was for, with exhaustion one reason among several.
+_Avoid_: seat (the durable OpenCode session), turn (one model interaction within an attempt), run, assignment
+(the work; an attempt is one try at it).
 
 **turn**:
 One completed model step within an autonomous cowboy attempt. A response that requests tools and a response that
@@ -86,8 +98,10 @@ process downtime recovered after restart. Human control, deterministic gates, ex
 _Avoid_: model time, active compute time.
 
 **constraint profile**:
-The repository-owned limits on validated candidates per effective spec, attempts per cowboy assignment, and
-turns and wall clock per attempt. Swordfish reads the profile from the base revision and freezes it for the
+The repository-owned limits on validated candidates per effective spec, attempts per assignment, and turns and
+wall clock per attempt — three nested **allowances**, each of which fails by exhaustion in the same sense.
+Deliberately not "cycles": a **build cycle** is one specific span of ein's work. Exhausting an allowance is never
+terminal; it raises `constraint_exhausted` and asks a human. Swordfish reads the profile from the base revision and freezes it for the
 bounty; omitted values use Bebop defaults. Candidate changes cannot enlarge their own profile.
 _Avoid_: effective-spec constraints (describe the desired work), runtime manifest (identifies software), budget.
 

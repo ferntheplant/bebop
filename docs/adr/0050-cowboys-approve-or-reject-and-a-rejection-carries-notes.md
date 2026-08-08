@@ -12,7 +12,7 @@ Notes are kept per candidate, permanently. A candidate that jet approved with no
 
 ## Consequences
 
-A cowboy's verdict _is_ its gate's outcome. Jet rejecting and the `code_review` gate rejecting are one event described at two altitudes, not two things that must be kept agreeing — which is why every gate speaks the same two words under [Gates approve or reject; stages only track progress (ADR 0051)](./0051-gates-approve-or-reject-stages-only-track-progress.md), including the deterministic ones that reach their verdict without judgement.
+A cowboy's verdict _is_ its gate's outcome. Jet rejecting and the `code_review` gate rejecting are one event described at two altitudes, not two things that must be kept agreeing — which is why every gate speaks the same two words under [A gate judges, a stage locates, an assignment bounds (ADR 0051)](./0051-a-gate-judges-a-stage-locates-an-assignment-bounds.md), including the deterministic ones that reach their verdict without judgement.
 
 Jet and faye share one verdict shape, with faye's scenarios as an additional QA-only payload. Two gates whose outputs were structurally unrelated become one thing with one renderer, one evidence layout, and one feedback-packet entry — and the claim that they do the same job becomes checkable by a type rather than asserted in prose.
 

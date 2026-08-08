@@ -1,6 +1,6 @@
 ---
 type: build
-status: open
+status: claimed
 ---
 
 # The gateway drops frames queued behind a socket close, wedging a stopped bounty forever

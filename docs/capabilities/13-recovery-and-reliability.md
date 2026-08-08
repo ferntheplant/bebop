@@ -37,7 +37,10 @@ exhaustion parks work as promised: the scoped ledger is real, Swordfish evaluate
 sends, and `continue`, `rerun <target>`, and `resume` are distinct local recoveries whose grants are durable events
 rather than counter edits. Local mutations carry the derived operator credential, retrieved through the Bebop API.
 Daemon downtime counts toward the
-attempt that was running, because the running-since mark is in the durable snapshot rather than in a timer. The
+attempt that was running, because the running-since mark is in the durable snapshot rather than in a timer. A
+socket close no longer drops frames the gateway already accepted: the inbound queue is ended and drained when the
+read loop stops, so a `command_result` that arrives in the same breath as the close is recorded instead of being
+redelivered to every future connection (the gotcha below). The
 [real-process loopback prototype](../../prototypes/real-process-local-protocol/README.md) ran both packed peers
 against Postgres and SQLite: listener loss, API restart, daemon `SIGKILL`, event replay, and an offline stop all
 recover without duplicate projection or command delivery. The maintained follow-up is the

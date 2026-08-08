@@ -550,6 +550,59 @@ suite("Swordfish gateway", () => {
     second.close();
   });
 
+  test("records a command result that arrives in the same breath as the close", async () => {
+    const bounty = await provisionedBounty("gateway-command-result-at-close");
+    await harness.request(`/api/bounties/${bounty.bountyId}/stop`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: "Stop this one." }),
+    });
+
+    const first = await connect(harness, bounty.token);
+    register(first, bounty);
+    await first.next("registered");
+    const command = await first.next<{ commandId: string }>("command");
+
+    // The heartbeats go first so the result is provably still queued when the close lands: the
+    // consumer projects each one in its own transaction, so it cannot have reached the last frame
+    // by the time the socket closes a moment later. Without them the race is real but too narrow
+    // to land in-process, and the test would pass either way.
+    for (let beat = 0; beat < 8; beat += 1) {
+      first.send({
+        type: "heartbeat",
+        protocolVersion: 1,
+        bountyId: bounty.bountyId,
+        vmId: bounty.vmId,
+        sentAt: at(beat),
+        lastProducedEventSequence: 0,
+      });
+    }
+
+    // Swordfish reports a completed stop and requests shutdown in the same breath, so its last
+    // frame and its close arrive together. Nothing may sit unread in the inbound queue when the
+    // socket closes: a result dropped here leaves the command forever undelivered, redelivered on
+    // every reconnect — and a redelivered stop shuts the next daemon down as soon as it boots, so
+    // the bounty can never be restarted.
+    first.send({
+      type: "command_result",
+      protocolVersion: 1,
+      bountyId: bounty.bountyId,
+      vmId: bounty.vmId,
+      commandId: command.commandId,
+      status: "completed",
+      reportedAt: at(0),
+    });
+    first.close();
+    await first.closed;
+
+    const second = await connect(harness, bounty.token);
+    register(second, bounty);
+    await second.next("registered");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(second.received.filter((message) => message["type"] === "command")).toHaveLength(0);
+    second.close();
+  });
+
   test("ignores a replaced connection rather than letting it write", async () => {
     const bounty = await provisionedBounty("gateway-9");
     const first = await connect(harness, bounty.token);

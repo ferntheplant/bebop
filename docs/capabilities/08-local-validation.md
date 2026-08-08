@@ -15,13 +15,14 @@ been working in for the last hour.
 - **Validators come from the base revision**, so a candidate cannot supply the checks that judge it.
 - **A full record per run**: command, environment profile, start and end time, exit status, captured output,
   artifact paths, and the candidate SHA.
-- **Failures come back structured**, aggregated into the feedback packet ein receives, rather than as a wall of
-  log output.
-- **One authoritative operation per submission.** A clean failure consumes the ein attempt that produced the
-  candidate and continues the same build cycle; it is never retried automatically. An uncertain operation
-  requires human `rerun validation` against the same SHA.
-- **CI is the second cheap gate.** Passing local validation does not yet consume a validated-candidate slot or
-  activate jet. The candidate must be pushed and pass external CI first.
+- **Rejections come back structured**, aggregated into the feedback packet ein receives, rather than as a wall
+  of log output.
+- **One authoritative operation per submission.** A clean rejection consumes the ein attempt that produced the
+  candidate and continues the same build cycle; it is never retried automatically. An operation that errored —
+  as opposed to one that rejected — leaves the gate uncertain and requires human `rerun validation` against the
+  same SHA.
+- **CI is the second cheap gate.** Local validation approving does not yet consume a validated-candidate slot or
+  activate jet. The candidate must be pushed and approved by external CI first.
 
 ## Where it stands
 

@@ -6,7 +6,7 @@ effective spec's allowance, and enter independent cowboy review. Faye still runs
 have passed.
 
 The previous design ran CI and jet in parallel to reduce wall-clock latency. That spends model turns reviewing a
-candidate which deterministic external checks may already reject. For the MVP, conserving cowboy work and
+candidate which deterministic external checks may already fail. For the MVP, conserving cowboy work and
 making the validated-candidate allowance describe SHAs that reached human-like review is worth waiting for CI.
 
 ## Consequences

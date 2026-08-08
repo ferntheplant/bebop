@@ -17,10 +17,10 @@ decision.
   for it. When ein submits a candidate, Swordfish confirms the working tree is clean and then pushes that SHA
   itself — a no-op when the agent already pushed it, and one code path that runs on every candidate rather than
   only when an agent misbehaves. A dirty tree is refused back to ein without consuming a validated-candidate
-  slot, because that allowance is charged when CI passes rather than at submission.
+  slot, because that allowance is charged when CI approves rather than at submission.
 - **Readiness is re-verified, never trusted.** Swordfish may claim a commit is ready; before offering merge,
   bebop independently checks that the branch still points at that commit, that required checks passed for it,
-  that the required stages passed for it, that the spec revision matches, and that no privileged-path change is
+  that the required gates approved it, that the spec revision matches, and that no privileged-path change is
   unapproved.
 - **Readiness can be lost without anything happening.** A push after readiness silently removes it, because the
   check runs against live state rather than against a stored flag.

@@ -10,7 +10,7 @@ read, trust, and merge by hand.
 Concretely: the operator creates a bounty locally and attaches to a cockpit; talks to ein until the task is
 clear; `/set-spec` and `/handoff` transfer control to Swordfish; Swordfish drives ein autonomously, runs
 repository validators from a clean-room worktree at the exact SHA, pushes the candidate, opens a draft pull
-request, waits for CI, activates jet for review and then faye for QA in a clean environment, routes findings
+request, waits for CI, activates jet for review and then faye for QA in a clean environment, routes notes
 back to ein, enforces the constraint profile, and uploads commit-bound evidence that surfaces where a human
 will actually read it. The operator can take over any cowboy at any point and hand the stage back. Then they
 merge the PR themselves, on GitHub, with their own hands.
@@ -70,6 +70,15 @@ local target, with a ruleset that refuses even the operator's own push;
 [`README.md`](../../README.md#bebops-github-app) records where its credentials live, and
 [The merge target must enforce rulesets (ADR 0034)](../../docs/adr/0034-the-merge-target-must-enforce-rulesets.md)
 now carries the permission set, established against the live installation.
+
+How a gate says no is settled in
+[Cowboys approve or reject, and a rejection carries notes (ADR 0050)](../../docs/adr/0050-cowboys-approve-or-reject-and-a-rejection-carries-notes.md):
+jet and faye return a binary verdict, per-item severity is gone, and notes carry the reasons. The vocabulary
+around it is settled in
+[A gate judges, a stage locates, an assignment bounds (ADR 0051)](../../docs/adr/0051-a-gate-judges-a-stage-locates-an-assignment-bounds.md):
+a gate is one of the four rejection points and every gate approves or rejects, a stage is only a position in the
+state machine, terminal breakage is `errored`, and `agent` is retired for `cowboy`. The contract still speaks the
+old vocabulary throughout, which is its own build ticket.
 
 ## Not yet specified
 

@@ -49,7 +49,7 @@ The user begins by creating and attaching to a bounty. They talk directly to the
 
 Swordfish then drives ein's seat autonomously, executes repository-defined validators against a clean worktree,
 waits for external CI to pass, activates the independent review cowboy (**jet**) in a fresh seat, activates the QA
-cowboy (**faye**) in another fresh seat against a clean development environment, and returns findings to ein for
+cowboy (**faye**) in another fresh seat against a clean development environment, and returns notes to ein for
 revision. Ein retains its conversational and implementation context throughout this loop.
 
 The user can observe every seat, take control of the active cowboy, steer it, invoke role-valid workflow actions, and explicitly hand control to Swordfish. The system never merges code without an explicit user command.
@@ -67,7 +67,7 @@ The existing trusted development workflow is:
 3. Inspect the local development server manually or ask an agent to verify it with a browser.
 4. Push a branch and create a pull request.
 5. Run a separate, fresh-context agent to review the pull request.
-6. Return review findings to the original implementer so it can reuse its context.
+6. Return review notes to the original implementer so it can reuse its context.
 7. Require runnable, screenshot, recording, or test evidence before merging.
 
 This workflow works well for small and medium tasks. Its limitations are operational:
@@ -165,7 +165,7 @@ The MVP must:
 - run pull-request CI before independent code review;
 - run QA only after CI and review pass;
 - prepare a clean, repository-defined QA environment;
-- return review, CI, and QA findings to ein's original seat;
+- return review, CI, and QA notes to ein's original seat;
 - repeat the loop after revisions;
 - enforce configurable attempt, turn, and wall-clock constraints;
 - surface exhausted constraints as `needs_attention`;
@@ -282,7 +282,7 @@ The MVP is acceptable when this end-to-end flow succeeds:
 20. The candidate is pushed with normal Git commands through exe.dev's integration.
 21. Bebop creates or updates a draft pull request.
 22. External CI is observed by polling and must pass before jet's read-only review starts.
-23. A blocking CI or review result returns to ein's seat.
+23. A failed CI check or a review rejection returns to ein's seat.
 24. A new commit invalidates all previous results.
 25. After CI and review pass, faye starts QA in a clean environment.
 26. Faye can access a private preview and browser tooling.

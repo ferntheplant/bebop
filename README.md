@@ -73,6 +73,29 @@ its Swordfish daemon, in that mode and in this suite alike. The processes below 
 own. What the local mode assembles, and why bebop stays in it where it protects nothing, is
 [The local loop runs the production assembly (ADR 0046)](./docs/adr/0046-the-local-loop-runs-the-production-assembly.md).
 
+### Worktrees: one Postgres container, one database per checkout
+
+Every checkout on the machine shares a single Postgres container. `compose.yml` pins its project name to
+`bebop`, so `docker compose up` from any checkout attaches to the same container instead of starting a second
+one that fights over port 5433. Each checkout gets its own database on that container, named after its
+directory — the main checkout uses the seeded `bebop` database, a worktree uses `bebop_<sanitized basename>`.
+Tests need no per-checkout database at all: every suite creates and drops its own randomly named one through
+`BEBOP_TEST_DATABASE_URL`, so they already cannot collide.
+
+The URLs are recorded in the gitignored `mise.local.toml`, which [mise](https://mise.jdx.dev) loads into the
+shell. They live in real process environment rather than a file a child loads on its own because the `test` and
+`local-system` tasks fingerprint `BEBOP_TEST_DATABASE_URL` in their cache key and `vp` must see its value. See
+[One Postgres container, a database per worktree (ADR 0049)](./docs/adr/0049-one-postgres-container-a-database-per-worktree.md).
+
+```bash
+vp run dev:db        # once per checkout: starts the container if needed, creates this
+                     # checkout's database, writes mise.local.toml
+vp run dev           # thereafter, in any shell with mise activated
+```
+
+`BEBOP_DEV_DATABASE_NAME` overrides the derived database name. The container keeps `tmpfs` storage, so nothing
+survives a container restart — re-run `vp run dev:db` to recreate a checkout's database.
+
 ### Postgres for component tests
 
 Bebop's component tests run against a **real disposable Postgres** — the behaviour they cover is behaviour a
@@ -85,8 +108,10 @@ export BEBOP_TEST_DATABASE_URL=postgres://bebop:bebop@127.0.0.1:5433/bebop
 vp run ready
 ```
 
-Without `BEBOP_TEST_DATABASE_URL` those suites skip, so `vp run ready` still passes on a machine with no Docker.
-CI always provides the service, and that is where the requirement is enforced.
+`vp run dev:db` sets `BEBOP_TEST_DATABASE_URL` for you through `mise.local.toml`; the export above is only
+needed when you do not use mise. Without `BEBOP_TEST_DATABASE_URL` those suites skip, so `vp run ready` still
+passes on a machine with no Docker. CI always provides the service, and that is where the requirement is
+enforced.
 
 ### Why the test tasks launch Vitest with Bun
 
@@ -144,6 +169,9 @@ BEBOP_SWORDFISH_CREDENTIAL_KEY='replace-with-at-least-32-random-bytes' \
 BEBOP_BOOTSTRAP_API_TOKEN='bebop_replace-with-a-random-bootstrap-token' \
 vp run dev
 ```
+
+With mise active, `vp run dev:db` has already set `BEBOP_DATABASE_URL` to this checkout's database, so that
+line can be dropped; the block stays complete for a shell without mise.
 
 `BEBOP_BOOTSTRAP_API_TOKEN` seeds the first named API token only when `api_tokens` is empty. Create the normal
 client tokens through `/api/tokens`, then remove the bootstrap value from the environment. It is never reapplied

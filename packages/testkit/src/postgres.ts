@@ -14,7 +14,14 @@ import { Effect, Redacted } from "effect";
  * Where to find a Postgres to borrow.
  *
  * CI sets this to its service container. Locally, `compose.yml` at the repository root
- * starts one:
+ * starts one, and `scripts/dev-db.ts` records both URLs in the gitignored
+ * `mise.local.toml` for mise to load:
+ *
+ * ```
+ * vp run dev:db
+ * ```
+ *
+ * The manual equivalent is:
  *
  * ```
  * docker compose up -d --wait postgres

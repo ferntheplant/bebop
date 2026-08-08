@@ -12,7 +12,7 @@
 // Reaching its own code is proved by the specific complaint each artifact makes: the servers
 // report a configuration error, and the CLI prints its usage.
 
-import { spawn } from "bun";
+import { spawnAndCollect } from "@bebop/testkit";
 
 const distributionDirectory = new URL("../dist/", import.meta.url).pathname;
 
@@ -59,16 +59,10 @@ const probes: ReadonlyArray<Probe> = [
 let failures = 0;
 
 for (const probe of probes) {
-  const child = spawn(["bun", `${distributionDirectory}${probe.artifact}`, ...probe.args], {
-    stdout: "pipe",
-    stderr: "pipe",
-    env: { ...process.env, ...probe.env },
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
+  const { stdout, stderr, exitCode } = await spawnAndCollect(
+    ["bun", `${distributionDirectory}${probe.artifact}`, ...probe.args],
+    { env: { ...process.env, ...probe.env } },
+  );
   const output = `${stdout}${stderr}`;
   const exitCodeMatches = probe.expectExitCode === "zero" ? exitCode === 0 : exitCode !== 0;
   const outputMatches = output.includes(probe.expectOutput);

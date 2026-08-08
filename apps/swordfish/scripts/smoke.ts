@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { waitForSwordfishControl } from "@bebop/testkit";
+import { spawnAndCollect, waitForSwordfishControl } from "@bebop/testkit";
 
 const workspace = join(import.meta.dir, "..");
 const daemonEntrypoint = join(workspace, "dist", "daemon.mjs");
@@ -12,27 +12,11 @@ async function run(
   args: ReadonlyArray<string>,
   env: Readonly<Record<string, string>>,
   options?: { readonly stdin?: string },
-): Promise<{
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}> {
-  const child = Bun.spawn(["bun", cliEntrypoint, ...args], {
+): Promise<{ readonly stdout: string; readonly stderr: string; readonly exitCode: number }> {
+  return spawnAndCollect(["bun", cliEntrypoint, ...args], {
     env: { ...process.env, ...env },
-    stdout: "pipe",
-    stderr: "pipe",
-    ...(options?.stdin === undefined ? {} : { stdin: "pipe" }),
+    stdin: options?.stdin,
   });
-  if (options?.stdin !== undefined) {
-    void child.stdin.write(options.stdin);
-    void child.stdin.end();
-  }
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { code, stdout, stderr };
 }
 
 /**
@@ -83,7 +67,7 @@ const daemon = Bun.spawn(["bun", daemonEntrypoint], {
 try {
   await waitForDaemon(socketPath, daemon);
   const status = await run(["status", "--socket", socketPath, "--json"], env);
-  if (status.code !== 0) throw new Error(`packed sf status failed: ${status.stderr}`);
+  if (status.exitCode !== 0) throw new Error(`packed sf status failed: ${status.stderr}`);
   const snapshot = JSON.parse(status.stdout) as { stage?: unknown; bebopConnection?: { pendingEventCount?: unknown } };
   if (snapshot.stage !== "interactive" || snapshot.bebopConnection?.pendingEventCount !== 1) {
     throw new Error(`packed daemon returned an unexpected status: ${status.stdout}`);
@@ -92,9 +76,9 @@ try {
   // credential — the input still has to arrive, because `sf cancel` always asks for one before
   // a mutating command (ADR 0038).
   const cancel = await run(["cancel", "--socket", socketPath], env, { stdin: "bebop_op_smoke\n" });
-  if (cancel.code !== 0) throw new Error(`packed sf cancel failed: ${cancel.stderr}`);
+  if (cancel.exitCode !== 0) throw new Error(`packed sf cancel failed: ${cancel.stderr}`);
   const cancelled = await run(["status", "--socket", socketPath, "--json"], env);
-  if (cancelled.code !== 0 || (JSON.parse(cancelled.stdout) as { stage?: unknown }).stage !== "cancelled") {
+  if (cancelled.exitCode !== 0 || (JSON.parse(cancelled.stdout) as { stage?: unknown }).stage !== "cancelled") {
     throw new Error(`packed daemon was unavailable after sf cancel: ${cancelled.stderr}${cancelled.stdout}`);
   }
 } finally {

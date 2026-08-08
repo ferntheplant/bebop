@@ -59,11 +59,11 @@ function between(output: string, first: string, second: string): boolean {
 }
 
 describe("blocker resolution", () => {
-  it("lists a ticket whose blockers are done or absent, and hides one with an open blocker", () => {
+  it("lists a ticket whose blockers were absorbed, and hides one with an open blocker", () => {
     const root = fixture();
     writeTicket(root, "unprojected", "alpha", { title: "Alpha" });
     writeTicket(root, "unprojected", "beta", { title: "Beta", blockedBy: ["gamma"] });
-    writeTicket(root, "unprojected", "gamma", { title: "Gamma", status: "done" });
+    // gamma was absorbed and its ticket deleted on close; the reference just has not been cleared yet.
     writeTicket(root, "unprojected", "delta", { title: "Delta", blockedBy: ["epsilon"] });
     writeTicket(root, "unprojected", "epsilon", { title: "Epsilon" });
 
@@ -72,7 +72,6 @@ describe("blocker resolution", () => {
     expect(output).toContain("▸ Alpha");
     expect(output).toContain("▸ Beta");
     expect(output).toContain("▸ Epsilon");
-    expect(output).not.toContain("▸ Gamma");
     expect(output).not.toContain("▸ Delta");
   });
 
@@ -100,7 +99,7 @@ describe("blocker resolution", () => {
       title: "Waits on the other project",
       blockedBy: ["absorbed-in-beta"],
     });
-    writeTicket(root, "proj-b", "absorbed-in-beta", { title: "Absorbed in beta", status: "done" });
+    // absorbed-in-beta was deleted on close; a missing blocker is a satisfied one.
 
     const output = renderFrontier(root);
 
@@ -135,11 +134,11 @@ describe("critical-path ranking", () => {
     expect(between(decide, "▸ Gamma", "▸ Alpha · gates 2")).toBe(false);
   });
 
-  it("counts a chain broken by a done ticket as no longer gated", () => {
+  it("counts a chain broken by an absorbed blocker as no longer gated", () => {
     const root = fixture();
     writeMap(root, "proj", "Project");
     writeTicket(root, "proj", "a", { title: "Alpha" });
-    writeTicket(root, "proj", "b", { title: "Beta", blockedBy: ["a"], status: "done" });
+    // beta was absorbed and deleted, so gamma's chain is gone rather than gating alpha.
     writeTicket(root, "proj", "c", { title: "Gamma", blockedBy: ["b"] });
 
     const output = renderFrontier(root);

@@ -81,7 +81,7 @@ A decision ticket's body is the question, sized to one 100K-token agent session:
 <the decision or investigation this ticket resolves>
 ```
 
-Assets created while resolving one are **linked** from the ticket, not pasted in — a repo-relative path, which stays correct in a way a URL does not. The answer isn't written up front; it is appended on close.
+Assets created while resolving one are **linked** from the ticket, not pasted in — a repo-relative path, which stays correct in a way a URL does not. The answer isn't written up front or appended on close: the ticket is deleted when the outcome lands, so the answer goes straight to its durable home — the ADR, capability change, or gotcha.
 
 Frontmatter, statuses, blocking, and the deletion rule are all in [the tracker doc](../../ISSUE-TRACKER.md#file-formats). Two consequences of a file-based tracker are worth knowing before you start:
 
@@ -146,7 +146,7 @@ The user invokes with a project — a slug or a path. A ticket is **optional**; 
 1. Load the **map** — the low-res view, not every ticket body.
 2. Choose the ticket. If the user named one, use it; otherwise take the first frontier ticket, ranked by critical path. **Claim it before any work** — write and save the file, don't merely intend to.
 3. Resolve it, **zooming as needed**: fetch the body of any related ticket on demand, and invoke the skills the `## Notes` block names. If in doubt, `/grilling` and `/domain-modeling`.
-4. **Close it** per [the tracker doc](../../ISSUE-TRACKER.md#closing-a-ticket) — including writing the durable artifact and deleting the ticket. A decision that exists only as a closed ticket is one nobody will find again.
+4. **Close it** per [the tracker doc](../../ISSUE-TRACKER.md#closing-a-ticket) — write the durable artifact and delete the ticket in the same change. A decision that exists only in a ticket is one nobody will find again.
 5. **Graduate the fog** the answer made specifiable into new tickets, clearing each graduated patch from **Not yet specified**. If the answer makes a PR-sized slice specifiable, that's a `build` ticket and the map is done with that area. If it reveals a ticket sits past the destination, rule it out of scope. If it invalidates other tickets, update or delete them.
 6. **Say what the resolution unblocked**, by name, so the next session knows what became takeable.
 

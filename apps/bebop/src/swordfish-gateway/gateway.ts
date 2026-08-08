@@ -34,7 +34,7 @@ import {
   UnsupportedProtocolVersionError,
 } from "@bebop/contracts";
 import { BebopToSwordfishMessage as BebopToSwordfishMessageSchema } from "@bebop/contracts";
-import { Duration, Effect, Fiber, Queue, Result, Schedule, Schema } from "effect";
+import { Cause, Duration, Effect, Fiber, Queue, Ref, Result, Schedule, Schema } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { HttpRouter } from "effect/unstable/http";
 import { Socket } from "effect/unstable/socket";
@@ -104,7 +104,36 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
       const socket = yield* request.upgrade;
       const write = yield* socket.writer;
 
-      const send = (message: BebopToSwordfishMessage) => write(JSON.stringify(encodeOutbound(message)));
+      // A reply to a peer that is gone cannot be delivered, and it must not be able to stall the
+      // handler either. Once the socket's read loop has ended the platform closes the connection,
+      // so a write against it is either silently dropped (Bun) or suspends forever (the generic
+      // `Socket` adapter) — and the teardown below has to be able to drain frames in that state.
+      // Dropping a lost reply is safe: an unacknowledged event is replayed from Swordfish's
+      // outbox, and a command whose delivery was never confirmed is redelivered from the queue
+      // ("Replay fails closed" (ADR 0029), `docs/capabilities/13-recovery-and-reliability.md`).
+      const peerGone = yield* Ref.make(false);
+      // Bounds a write that was already in flight when the peer went away, so the teardown drain
+      // cannot wait on it. A healthy write is synchronous and never approaches this, so it only
+      // ever fires against an adapter whose write can actually suspend.
+      const writeSettleTimeout = Duration.seconds(1);
+
+      const writeFrame = (chunk: string | Socket.CloseEvent) =>
+        Effect.flatMap(Ref.get(peerGone), (gone) =>
+          gone
+            ? Effect.void
+            : write(chunk).pipe(
+                Effect.timeout(writeSettleTimeout),
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.interrupt
+                    : Effect.flatMap(Ref.get(peerGone), (nowGone) =>
+                        nowGone ? Effect.void : Effect.failCause(cause).pipe(Effect.orDie),
+                      ),
+                ),
+              ),
+        );
+
+      const send = (message: BebopToSwordfishMessage) => writeFrame(JSON.stringify(encodeOutbound(message)));
 
       const protocolError = (code: ProtocolErrorCode, message: string) =>
         send({ type: "protocol_error", protocolVersion: currentProtocolVersion, code, message });
@@ -225,6 +254,15 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
 
       const handleHeartbeat = (current: Session, message: HeartbeatMessage) =>
         Effect.gen(function* () {
+          // A heartbeat is a liveness signal, not a durable record. Once the socket is closing
+          // the teardown records `connection_lost`, which supersedes whatever freshness this
+          // heartbeat would have refreshed, so a heartbeat queued at the close is a no-op — but
+          // skipping it is what keeps the drain of the rest of the queue fast enough that a
+          // reconnect does not redeliver a command whose result is still waiting behind the
+          // queued beats.
+          if (yield* Ref.get(peerGone)) {
+            return;
+          }
           const observedAt = yield* identity.now;
           const applied = yield* applyProjectionInput({
             bountyId: current.bountyId,
@@ -322,7 +360,7 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
             // Fail closed: refuse and close rather than buffering an unbounded message or
             // letting it reach the reducer.
             yield* protocolError("invalid_message", "The message exceeds the accepted size.");
-            return yield* write(new Socket.CloseEvent(1009, "message too big"));
+            return yield* writeFrame(new Socket.CloseEvent(1009, "message too big"));
           }
           const decoded = yield* Effect.result(
             Effect.try({
@@ -339,7 +377,7 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
                 ? cause.message
                 : "The message could not be decoded.";
             yield* protocolError(code, message);
-            return yield* write(new Socket.CloseEvent(1008, "invalid protocol message"));
+            return yield* writeFrame(new Socket.CloseEvent(1008, "invalid protocol message"));
           }
           return yield* handle(decoded.success);
         });
@@ -348,8 +386,49 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
       // protocol is ordered, so handlers only enqueue here and one consumer performs every
       // stateful operation. `offerUnsafe` fails immediately rather than accumulating an
       // unbounded set of fibers blocked on a full queue.
-      const inbound = yield* Queue.bounded<string>(inboundFrameCapacity);
-      const consumer = yield* Effect.forkScoped(Effect.forever(Queue.take(inbound).pipe(Effect.flatMap(processFrame))));
+      const inbound = yield* Queue.bounded<string, Cause.Done>(inboundFrameCapacity);
+      // True when a cause is the queue-end sentinel — a single `Fail` whose value is Effect's
+      // `Done` sentinel, which is what `Queue.end` fails the queue with. That is the consumer's
+      // normal end, not a failure.
+      const isQueueEndSentinel = (cause: Cause.Cause<unknown>): boolean => {
+        const [reason] = cause.reasons;
+        return reason !== undefined && Cause.isFailReason(reason) && Cause.isDone(reason.error);
+      };
+      // The queue is ended by the teardown once the read loop has stopped, so the consumer
+      // drains whatever frames already arrived and then completes on its own: a frame accepted
+      // into the queue must survive a socket close that lands a moment later, and a
+      // `command_result` dropped here is redelivered to every future connection.
+      const consumer = yield* Effect.forkScoped(
+        Effect.forever(Queue.take(inbound).pipe(Effect.flatMap(processFrame))).pipe(
+          Effect.catchCause((cause) => {
+            // The queue draining and ending is the normal end of the loop, not a failure.
+            if (isQueueEndSentinel(cause)) {
+              return Effect.void;
+            }
+            // A scope shutdown interrupts the consumer; let it propagate as an interrupt
+            // rather than logging or converting it.
+            if (Cause.hasInterruptsOnly(cause)) {
+              return Effect.failCause(cause).pipe(Effect.orDie);
+            }
+            // Anything else escaping `processFrame` is an infrastructure defect — a write
+            // the peer's abandoned (SocketError/Timeout) or a repository or projection call
+            // the database rejected (SqlError). Domain rejections are typed results returned
+            // by those calls, so a failure that lands here is a crash. Per `AGENTS.md`,
+            // defects remain crashes handled by process supervision, so the cause is
+            // converted to a defect and re-raised — not swallowed. The queue and outbox
+            // redeliver unconfirmed work to the next connection.
+            return (
+              session === null
+                ? Effect.logError("swordfish frame consumer failed", cause)
+                : Effect.logError("swordfish frame consumer failed", cause).pipe(
+                    Effect.annotateLogs("bounty_id", session.bountyId),
+                    Effect.annotateLogs("vm_id", session.vmId),
+                    Effect.annotateLogs("connection_id", session.connectionId),
+                  )
+            ).pipe(Effect.flatMap(() => Effect.failCause(cause).pipe(Effect.orDie)));
+          }),
+        ),
+      );
       let overloaded = false;
       const recordDisconnect = Effect.suspend(() => {
         const current = session;
@@ -373,23 +452,41 @@ export const SwordfishGatewayRoute = HttpRouter.use((router) =>
           ),
         );
       });
-      yield* Effect.raceFirst(
-        socket
-          .runString((frame) =>
+      yield* socket
+        .runString((frame) =>
+          Effect.gen(function* () {
+            if (overloaded) {
+              return;
+            }
+            if (!Queue.offerUnsafe(inbound, frame)) {
+              overloaded = true;
+              yield* protocolError("invalid_message", "The inbound message queue is full.");
+              yield* writeFrame(new Socket.CloseEvent(1013, "inbound queue full"));
+            }
+          }),
+        )
+        .pipe(
+          Effect.catchIf(Socket.isSocketError, (error) => Effect.logDebug("swordfish socket closed", error)),
+          // The read loop ending is the signal that the peer is gone. Silence writes first so a
+          // drained frame cannot stall on a reply to a closed socket, then end the queue and wait
+          // for the consumer to finish what already arrived. The handler does not return while a
+          // frame it accepted is still unprocessed, so the scope cannot close over a running
+          // consumer.
+          Effect.ensuring(
             Effect.gen(function* () {
-              if (overloaded) {
-                return;
-              }
-              if (!Queue.offerUnsafe(inbound, frame)) {
-                overloaded = true;
-                yield* protocolError("invalid_message", "The inbound message queue is full.");
-                yield* write(new Socket.CloseEvent(1013, "inbound queue full"));
-              }
+              yield* Ref.set(peerGone, true);
+              yield* Queue.end(inbound);
+              yield* Fiber.join(consumer).pipe(
+                Effect.catchCause((cause) =>
+                  Cause.hasInterruptsOnly(cause)
+                    ? Effect.logDebug("swordfish frame consumer interrupted during teardown", cause)
+                    : Effect.failCause(cause),
+                ),
+              );
             }),
-          )
-          .pipe(Effect.catchIf(Socket.isSocketError, (error) => Effect.logDebug("swordfish socket closed", error))),
-        Fiber.join(consumer),
-      ).pipe(Effect.ensuring(recordDisconnect));
+          ),
+          Effect.ensuring(recordDisconnect),
+        );
 
       return HttpServerResponse.empty();
     }).pipe(Effect.scoped),

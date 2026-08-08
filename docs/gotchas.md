@@ -162,6 +162,19 @@ idle machine the parked window is 16–309ms; on a loaded runner it is longer. W
 is the tidying that reintroduces this, and it reintroduces it as a timeout in whatever request happens to go
 first. Wait on an answered control request instead — `waitForSwordfishControl` in `@bebop/testkit` is that wait.
 
+**A socket close must not race the gateway's frame consumer.** The gateway's inbound path is a bounded queue:
+the socket's message handlers only enqueue, and one consumer performs every stateful operation in order.
+`Effect.raceFirst(reader, Fiber.join(consumer))` looks right — whichever finishes first wins and the handler
+returns — but a close that lands while the queue is still full makes the reader win and **interrupts the
+consumer with frames still queued**. A `command_result` dropped there is redelivered to every future connection,
+and a redelivered stop shuts the next daemon down as soon as it boots, so the bounty can never restart. The
+close path therefore ends the queue and _joins_ the consumer, and the handler does not return until the drain
+finished. A reply written after the peer is gone must be silenced, not awaited — the platform's writer never
+settles once its read loop has ended — and a heartbeat queued at the close is a no-op, because the teardown's
+`connection_lost` supersedes the liveness it would have refreshed. Racing the reader against the consumer, or
+dropping queued frames because "the connection is closed anyway", is the tidying that reintroduces this, and it
+fails on a loaded machine as a flake rather than as an error.
+
 ## Static analysis
 
 **A `_tag` field on a hand-rolled `Error` subclass is read by the type checker, not by the program, and dead-code

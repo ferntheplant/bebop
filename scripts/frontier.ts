@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 
 const TICKET_TYPES = new Set(["grilling", "prototype", "research", "task", "build"]);
-const TICKET_STATUSES = new Set(["open", "claimed", "done"]);
+const TICKET_STATUSES = new Set(["open", "claimed"]);
 const BUILD_TYPE = "build";
 const TOP_LEVEL_GROUP = "unprojected";
 const DEFAULT_UNPROJECTED_NAME = "Unprojected tickets";
@@ -197,38 +197,27 @@ function blockerState(ticket: Ticket, index: TicketIndex): BlockerState {
   for (const slug of ticket.blockedBy) {
     const blocker = index.get(slug);
     if (!blocker) dangling.push(slug);
-    else if (blocker.status !== "done") blockers.push(blocker);
+    else blockers.push(blocker);
   }
   return { blockers, dangling };
 }
 
-function transitivelyGated(slug: string, reverse: Map<string, string[]>, index: TicketIndex): Set<string> {
+function transitivelyGated(slug: string, reverse: Map<string, string[]>): Set<string> {
   const seen = new Set<string>();
   const stack = [...(reverse.get(slug) ?? [])];
   for (let i = 0; i < stack.length; i++) {
     const current = stack[i];
     if (current === undefined || seen.has(current)) continue;
     seen.add(current);
-    const currentTicket = index.get(current);
-    if (!currentTicket || currentTicket.status === "done") continue;
     for (const dependent of reverse.get(current) ?? []) stack.push(dependent);
   }
   return seen;
 }
 
-function gateCounts(
-  ticket: Ticket,
-  reverse: Map<string, string[]>,
-  index: TicketIndex,
-): { gates: number; direct: number } {
-  const reachable = transitivelyGated(ticket.slug, reverse, index);
-  let gates = 0;
-  for (const slug of reachable) {
-    if (index.get(slug)?.status !== "done") gates++;
-  }
+function gateCounts(ticket: Ticket, reverse: Map<string, string[]>): { gates: number; direct: number } {
   return {
-    gates,
-    direct: (reverse.get(ticket.slug) ?? []).filter((slug) => index.get(slug)?.status !== "done").length,
+    gates: transitivelyGated(ticket.slug, reverse).size,
+    direct: (reverse.get(ticket.slug) ?? []).length,
   };
 }
 
@@ -299,7 +288,7 @@ export function renderFrontier(scratchRoot: string): string {
     .filter((ticket) => ticket.type === BUILD_TYPE && ticket.status === "open")
     .map((ticket) => {
       const state = blockerState(ticket, index);
-      return { ticket, state, ...gateCounts(ticket, reverse, index) };
+      return { ticket, state, ...gateCounts(ticket, reverse) };
     })
     .filter((entry) => entry.state.blockers.length === 0)
     .sort((a, b) => {
@@ -324,7 +313,7 @@ export function renderFrontier(scratchRoot: string): string {
     const list = byGroup.get(ticket.group) ?? [];
     list.push(ticket);
     byGroup.set(ticket.group, list);
-    meta.set(ticket.slug, { ...gateCounts(ticket, reverse, index), dangling: state.dangling });
+    meta.set(ticket.slug, { ...gateCounts(ticket, reverse), dangling: state.dangling });
   }
   if (byGroup.size === 0) {
     lines.push(`  ${dim("· nothing takeable")}`);

@@ -25,7 +25,7 @@ Before going further, confirm the fixed point resolves (`git rev-parse <fixed-po
 Look for the originating spec, in this order:
 
 1. A path the user passed as an argument.
-2. A `build` ticket matching the branch name or feature. In this repo that is `.scratch/tickets/<slug>.md` or a project's own `tickets/<slug>.md`, carrying `type: build` and a **Done when** section — see [the tracker doc](../../ISSUE-TRACKER.md). Decision tickets are not specs: they close with an `## Answer`, not a PR.
+2. A `build` ticket matching the branch name or feature. In this repo that is `.scratch/tickets/<slug>.md` or a project's own `tickets/<slug>.md`, carrying `type: build` and a **Done when** section — see [the tracker doc](../../ISSUE-TRACKER.md). Decision tickets are not specs: their outcome is an ADR, capability change, or other durable artifact, not a PR.
 3. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
 There are no issue numbers to look for — [tickets are named by slug, never an index](../../ISSUE-TRACKER.md#names-not-numbers) — and a ticket whose work has merged is deleted rather than kept, so an older branch may have no spec left to find. That is the expected case, not a failure.

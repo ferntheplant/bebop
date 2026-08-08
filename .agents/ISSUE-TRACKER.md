@@ -20,8 +20,8 @@ The consequence is the rule that governs everything below:
 
 A resolved ticket that produced an ADR is a second copy of that ADR. A build ticket whose code merged is a
 second copy of the code. Keeping either turns the tracker into a history nobody reads and a frontier nobody can
-see. A closed ticket stays only when it holds reasoning that has no durable home yet — and that is a bug to fix
-by writing the gotcha or the ADR, not a state to settle into.
+see. A ticket stays only while its reasoning has no durable home yet — and that is a bug to fix by writing the
+gotcha or the ADR, not a state to settle into.
 
 So the tracker is small on purpose. If it is growing, something is not being written down properly.
 
@@ -85,11 +85,11 @@ to be restructured every time priorities move was the previous mistake.
 There is no separate "issue" and "brief". **A ticket is one unit of committed work, of either kind**, and which
 kind it is lives in frontmatter rather than in the directory tree. Two independent axes:
 
-|                 | **Decides** — closes with an `## Answer` | **Builds** — closes with a merged PR |
-| --------------- | ---------------------------------------- | ------------------------------------ |
-| **Interactive** | `grilling`, `prototype`                  | —                                    |
-| **Autonomous**  | `research`                               | `build`                              |
-| **Either**      | `task`                                   | —                                    |
+|                 | **Decides** — closes as an ADR or other durable artifact | **Builds** — closes as a merged PR |
+| --------------- | -------------------------------------------------------- | ---------------------------------- |
+| **Interactive** | `grilling`, `prototype`                                  | —                                  |
+| **Autonomous**  | `research`                                               | `build`                            |
+| **Either**      | `task`                                                   | —                                  |
 
 The five types:
 
@@ -105,7 +105,7 @@ The discriminator between the last two:
 
 > **A task unblocks a decision. Work that delivers the destination is a build ticket.**
 
-If it closes with a merged PR rather than an `## Answer`, it was never a decision, however small it is. And a
+If its outcome is a merged PR rather than a durable decision, it was never a decision, however small it is. And a
 ticket that weighs two or more named options against their costs is a `grilling`, not a `task`, no matter how
 much implementation the chosen option implies.
 
@@ -164,18 +164,20 @@ indistinguishable from the same words inside a code block. The title stays the `
 
 **Backlog item** — no frontmatter at all. A title and a couple of sentences.
 
-**Ticket** — the question or the scope in the body, and the outcome appended on close.
+**Ticket** — the question or the scope in the body. The outcome is never stored on the ticket: it is written
+into its durable home and the ticket is deleted on close ([Closing a ticket](#closing-a-ticket)).
 
 ```yaml
 ---
 type: grilling # grilling | prototype | research | task | build
-status: open # open | claimed | done
+status: open # open | claimed
 blocked-by: [some-slug, another-slug] # omit when nothing blocks it
 ---
 ```
 
-One terminal status, `done`, for every type. `type` already says whether it closed with an `## Answer` or a
-merged PR, so a second vocabulary would be a derived fact stored twice.
+There is no closed status: closing deletes the ticket, so `open` and `claimed` are the only statuses the tracker
+needs. A `done` marker would be a second copy of the PR or ADR that already absorbed the work —
+[closing a ticket](#closing-a-ticket) is deletion, not a transition.
 
 A `build` ticket carries a mandatory **Done when** section — the proto-acceptance-criteria. An effective spec
 must declare at least one, so a ticket carrying them is already spec-shaped and the handoff becomes a
@@ -195,17 +197,20 @@ Comments and conversation history append to the bottom under a `## Comments` hea
 
 ## Closing a ticket
 
-Four steps, in order:
+Closing is deletion, and it happens in the same change that lands the work. The PR that merges the code, ADR, or
+docs that absorbed the ticket is its only record — there is no second cleanup PR that appends an outcome and
+marks it done. The ticket file is removed with the work it described.
 
-1. Append the outcome — `## Answer` for a decision, or the merged PR for a build ticket.
-2. Set `status: done`.
-3. **Write the durable artifact**: the ADR, the capability update, the `CONTEXT.md` entry, the gotcha. This is
-   the step that makes the tracker an in-the-moment tool rather than a graveyard.
-4. **Delete the ticket**, and clear its slug from every `blocked-by` that names it — an absorbed blocker is not
+Two steps, in order:
+
+1. **Write the durable artifact**: the ADR, the capability update, the `CONTEXT.md` entry, the gotcha. A build
+   ticket's outcome is the merged PR itself. This is the step that makes the tracker an in-the-moment tool
+   rather than a graveyard.
+2. **Delete the ticket**, and clear its slug from every `blocked-by` that names it — an absorbed blocker is not
    a blocker. Leave one line in the project map's **Decisions so far** _only_ if the decision has no durable
    home; otherwise the map cites the ADR by name and number and the ticket is simply gone.
 
-If step 3 has nothing to write, ask whether the ticket was worth opening. If step 4 feels lossy, step 3 was not
+If step 1 has nothing to write, ask whether the ticket was worth opening. If deletion feels lossy, step 1 was not
 finished — find what is still only in the ticket and give it a durable home first.
 
 ## Wayfinding operations
@@ -220,8 +225,8 @@ Used by `/wayfinder`, which defers to this section for how the tracker physicall
   may still be open; that is the project continuing, not the map being unfinished.
 - **Blocking**: frontmatter `blocked-by: [<slug>, <slug>]`. A slug may name any ticket in any project, since a
   decision can wait on something being built elsewhere — cross-project blocking is normal here, because the
-  decision frontier runs ahead of the build frontier. A ticket is unblocked when every slug it names is `done`
-  **or no longer exists**: an absorbed blocker is a satisfied one.
+  decision frontier runs ahead of the build frontier. A ticket is unblocked when every slug it names
+  no longer exists: an absorbed blocker is a satisfied one.
 - **Frontier**: scan every `tickets/` directory for tickets that are open, unblocked, and unclaimed. Rank by
   critical path — a ticket that blocks more tickets, directly or transitively, sorts first. Open `build`
   tickets outrank open decisions: something already specified and unbuilt is the answer to "what next".

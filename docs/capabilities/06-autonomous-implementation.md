@@ -58,7 +58,7 @@ previous results), and **28** (a QA failure returns to ein and restarts the full
 - [Every commit invalidates every downstream result (ADR 0016)](../adr/0016-every-commit-invalidates-every-downstream-result.md)
   — revision loops are expensive by construction, and that is the intended pressure.
 - [Flaky gates are not auto-retried (ADR 0031)](../adr/0031-flaky-gates-are-not-auto-retried.md) — a human
-  explicitly reruns a failed gate; constraint exhaustion is resumed separately, because hiding flakiness is what
+  explicitly reruns a gate that rejected; constraint exhaustion is resumed separately, because hiding flakiness is what
   the ledger exists to prevent.
 - [Code moves to a package on its second consumer (ADR 0007)](../adr/0007-code-moves-to-a-package-on-its-second-consumer.md)
   — why the transition core is shared rather than written twice.

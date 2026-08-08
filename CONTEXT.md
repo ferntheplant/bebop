@@ -45,29 +45,31 @@ An explicit submission by ein, tied to exactly one commit SHA. Only a candidate 
 _Avoid_: build, submission, attempt.
 
 **validated candidate**:
-A candidate that passed local validation and external CI and is admitted to jet's review. Candidates that
-failed local validation or CI consume ein attempts but not the effective spec's validated-candidate allowance;
+A candidate approved by local validation and external CI and admitted to jet's review. Candidates rejected
+by either consume ein attempts but not the effective spec's validated-candidate allowance;
 rerunning a gate against the same SHA does not create another validated candidate.
 _Avoid_: candidate (includes submissions that have not passed validation and CI), approved candidate.
 
 **build cycle**:
-Ein's work from receiving a confirmed spec or downstream rejection until one candidate passes local validation
-and external CI. A build cycle may contain multiple ein attempts and candidates that failed either gate. A
+Ein's work from receiving a confirmed spec or downstream rejection until local validation and external CI both
+approve one candidate. A build cycle may contain multiple ein attempts and candidates either gate rejected. A
 review or QA rejection starts a new build cycle under the same effective spec revision.
 _Avoid_: candidate (does not exist until submitted), revision (the effective spec may be unchanged).
 
 **stage**:
-Where a bounty sits in Swordfish's inner workflow — `creating_spec`, `building`, `validating`, `reviewing`, `qa`,
-`publishing_evidence`, `ready`, and exceptional stages such as `needs_attention`. Stage says what work is
-happening, not who controls it; Swordfish is authoritative and bebop holds a projection.
-_Avoid_: state, status, phase. (**status** is the compact, derived summary bebop shows to a client.)
+A position in the state machine Swordfish and bebop use to track progress — `implementing`, `local_validation`,
+`pushed_candidate`, `pr_ci`, `code_review`, `qa_preparing`, `qa_running`, `evidence_upload`, `ready`, `revision`,
+and exceptional stages such as `needs_attention`, `cancelling`, and `errored`. Stage says what work is happening, not who
+controls it; Swordfish is authoritative and bebop holds a projection. A stage is a location, not a checkpoint —
+several stages exist that no candidate is judged at, which is why a **gate** is a separate term.
+_Avoid_: state, status, phase, gate. (**status** is the compact, derived summary bebop shows to a client.)
 
 **attempt**:
 One Swordfish-controlled activation of one cowboy for one stage assignment. It starts with Swordfish's first
 prompt and includes idle re-prompts and process restarts. `set-blocked` followed by `resume`, or an exhausted
 attempt revived by human `continue`, preserves the attempt while attention time pauses its wall clock. It ends
 when the cowboy completes or transfers the assignment, control passes to a human, human `rerun` abandons it, or
-the workflow cancels or fails. Ein may have many attempts in its durable seat; every jet and faye attempt gets a
+the workflow cancels or errors. Ein may have many attempts in its durable seat; every jet and faye attempt gets a
 fresh seat. Handoff after takeover starts a new attempt.
 _Avoid_: seat (the durable OpenCode session), turn (one model interaction within an attempt), run.
 
@@ -188,12 +190,12 @@ _Avoid_: fix, remedy, unblock.
 ## Verification
 
 **gate**:
-A verification gate a candidate must pass — local validation, external CI, jet's review, faye's QA. Its outcome is `passed` or `failed`.
-_Avoid_: check (reserved for GitHub's checks), test, stage.
+One of the four points where a candidate can be stopped — local validation, external CI, jet's review, faye's QA. Every gate **approves** or **rejects**; the deterministic two reach that verdict without judgement, but the consequence is identical. Evidence upload is not a gate: it can only break.
+_Avoid_: check (reserved for GitHub's checks), test, stage (a position, not a checkpoint); and `passed`/`failed` as a gate's recorded outcome — it approves or rejects. Prose may still say CI passed.
 
 **verdict**:
-A cowboy's binary decision about one candidate: **accept** or **reject**. Jet declares its verdict; faye's is derived from its scenarios, where any failure rejects. Both words are reserved for cowboys — a validator or a CI check _fails_, having exercised no judgement.
-_Avoid_: approve, block, sign off; and never "reject" for a gate that merely failed.
+A gate's binary decision about one candidate: **approve** or **reject**. Jet declares its verdict; faye's is derived from its scenarios, where any failure rejects; local validation and CI reach theirs deterministically. A cowboy's verdict _is_ its gate's outcome, not a second thing kept in agreement with it.
+_Avoid_: accept (retired), block, sign off, pass/fail.
 
 **note**:
 One item of feedback attached to a verdict — a markdown body, optionally anchored to a file and line or to evidence artifacts. A rejection must carry notes; an acceptance may, and those are kept with the candidate. Notes carry no severity: the verdict is the only graded thing.

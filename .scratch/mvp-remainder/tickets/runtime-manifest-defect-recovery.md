@@ -19,7 +19,7 @@ Settle the bebop-side escape hatch for declaring that failure non-transient:
 - how bebop fences the current Swordfish credential and rejects late traffic from the defective environment;
 - whether the VM remains available for manual salvage, for how long, and what attachment metadata survives;
 - which bounty facts survive into a replacement environment: identity, branch, effective spec, candidate,
-  artifacts, findings, gate outcomes, and constraint history;
+  artifacts, notes, gate outcomes, and constraint history;
 - whether a replacement may be another exe.dev VM, a locally running Swordfish, or either, and how it proves
   authority to bebop;
 - whether the replacement resumes a projected stage or starts a fresh Swordfish loop against the surviving

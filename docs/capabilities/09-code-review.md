@@ -31,7 +31,7 @@ isolation and restricted tooling, not from using a different vendor's model.
 
 **Designed.** Jet's seat, the review prompt, and the notes pipeline do not exist. External CI observation
 depends on GitHub, which bebop does not have yet. The workflow core now enforces the ordering this path needs:
-the review gate does not open until `pr_ci` has passed, and a review result for a candidate whose CI has not
+the review gate does not open until `pr_ci` has approved, and a review result for a candidate whose CI has not
 passed is refused rather than reordered.
 
 ## Acceptance criteria
@@ -49,7 +49,7 @@ jet's read-only review starts).
   seat creation so permission prompts cannot occur.
 - [CI gates cowboy review (ADR 0040)](../adr/0040-ci-gates-cowboy-review.md)
 - [Continue preserves an attempt; rerun replaces it (ADR 0041)](../adr/0041-continue-preserves-an-attempt-rerun-replaces-it.md)
-- [Cowboys accept or reject, and a rejection carries notes (ADR 0050)](../adr/0050-cowboys-accept-or-reject-and-a-rejection-carries-notes.md)
+- [Cowboys approve or reject, and a rejection carries notes (ADR 0050)](../adr/0050-cowboys-approve-or-reject-and-a-rejection-carries-notes.md)
   — why the verdict is binary, and why an ungrounded rejection costs an attempt.
 
 Cross-vendor frontier review for jet is out of scope for this effort.

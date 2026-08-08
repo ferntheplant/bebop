@@ -40,6 +40,32 @@ Rulesets carry no implicit admin exemption, so an operator cannot quietly hand-p
 without first removing the rule — which is the intended behaviour, and worth knowing before it is discovered
 during an incident.
 
+The permission set the App needs was established the same way, against a live installation, and it is small:
+`contents: write`, `pull_requests: write`, `checks: read`, `statuses: read`, and the mandatory `metadata: read`.
+Nothing needs `administration`. Reading back the effective rules — the verification this ADR rests on — is
+satisfied by `metadata: read` alone, so bebop never holds the permission that could edit or remove the ruleset
+protecting the merge target. Which contexts are required comes from that same call; whether they passed comes
+from `checks: read` for check runs and `statuses: read` for the older commit-status API, and a target may use
+either.
+
+`issues: write` is deliberately not granted. A general comment on a pull request is an issue comment, and
+GitHub's reference declines to say which permission posts one. Probing settles it: `pull_requests: write` alone
+creates, edits, and deletes them, which matters because evidence is republished as invalidation re-runs the
+gates. The alternative was write access to every issue in the repository — including issues no bounty touches —
+in order to comment on bebop's own pull requests.
+
+The two ways a call can fail are distinguishable, which is what lets bebop say which one happened rather than
+reporting "GitHub said no". A missing permission is `403` with `Resource not accessible by integration` and an
+`x-accepted-github-permissions` header naming what would have satisfied the route. A repository refusal is `405`
+carrying a reason a human can read: `Rebase merges are not allowed on this repository.` Squash-only is therefore
+enforced by the API rather than merely configured — `rebase` and `merge` are both refused where
+`allowed_merge_methods` reads back as `["squash"]`.
+
+One measurement trap is worth recording, because it yields an App that works until it first meets a private
+repository. Every read succeeds against a **public** repository even with no permissions granted at all. A `200`
+there proves the route is public, not that the grant is unnecessary; the accepted-permissions header is the
+thing to read, on success as well as on failure.
+
 Settled by probing a
 live repository rather than reasoning from the documentation; several of the findings above contradict what the
 docs imply.

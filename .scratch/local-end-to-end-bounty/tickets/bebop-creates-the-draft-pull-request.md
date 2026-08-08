@@ -1,7 +1,6 @@
 ---
 type: build
 status: open
-blocked-by: [github-app-permissions-and-ruleset-readback]
 ---
 
 # Bebop creates and updates the draft pull request
@@ -34,10 +33,9 @@ in scope is everything up to that — the draft PR, and the check polling that g
 - Every response decoded at the seam, and durable intent written before the call, per the architectural rules.
 - Structured logs carrying `bounty_id` and `candidate_sha` on every GitHub operation.
 
-Check polling needs something to poll. The local target repository carries a ruleset requiring a status check
-context that nothing in it publishes, and the repository has no workflows at all — so a pull request opened
-there is unmergeable by hand and the CI gate never resolves. Either give the target a workflow whose check
-matches the required context, or make the ruleset require one it produces, before the gate can be exercised.
+Check polling has something real to poll: the local target publishes a check run named `bebop/verify` from
+GitHub Actions, which is the context its ruleset requires, so a pull request there becomes mergeable once it
+passes and stays blocked while it does not.
 
 ## Done when
 

@@ -41,6 +41,21 @@ system into granting any.
 The sandbox may _report_ that it needs another capability, but it cannot attach or grant one. Capability changes
 require a bebop action and become bounty metadata.
 
+## What bebop's own App holds
+
+Bebop's GitHub App is granted `contents: write`, `pull_requests: write`, `checks: read`, `statuses: read`, and
+the mandatory `metadata: read` — and nothing else. It is **not** granted `administration`, so it cannot edit or
+remove the ruleset that protects the merge target; reading those rules back needs only `metadata: read`. It is
+**not** granted `issues: write` either, because `pull_requests: write` is enough to post, edit, and delete the
+evidence comment, and the alternative would have been write access to every issue in the repository in order to
+comment on bebop's own pull requests.
+
+`contents: write` is the one grant that cannot be narrowed: merging requires it, and it is the same permission
+the sandbox already pushes with. That is why the ruleset on the merge target is the mitigation rather than a
+split in permissions
+([The merge target must enforce rulesets (ADR 0034)](../adr/0034-the-merge-target-must-enforce-rulesets.md),
+which records the set and how it was established).
+
 ## Who may call the API
 
 Two independent layers:
@@ -114,6 +129,5 @@ integrity by [pull request and merge](./12-pull-request-and-merge.md); seat perm
 
 ## Still open
 
-- What GitHub App permissions are actually needed, and how is the target branch protected?
 - Can the exe.dev HTTP Proxy serve OpenCode Go to faye with an injected credential?
   — the credential-off-VM rule is not considered implemented until this passes a provisioning smoke test.

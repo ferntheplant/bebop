@@ -65,9 +65,11 @@ What the local loop actually assembles is settled in
 [The local loop runs the production assembly (ADR 0046)](../../docs/adr/0046-the-local-loop-runs-the-production-assembly.md)
 — both peers, operator-run, entrypoint-only divergence, and the two GitHub identities — and commit provenance in
 [Commits carry one machine identity (ADR 0047)](../../docs/adr/0047-commits-carry-one-machine-identity.md). Four
-build tickets fall out of it. Bebop's App is provisioned and installed on the local target, with a ruleset that
-refuses even the operator's own push, so what remains of that gate is establishing what the App must be granted;
-[`README.md`](../../README.md#bebops-github-app) records where its credentials live.
+build tickets fall out of it, and their GitHub gate is now clear. Bebop's App is provisioned and installed on the
+local target, with a ruleset that refuses even the operator's own push;
+[`README.md`](../../README.md#bebops-github-app) records where its credentials live, and
+[The merge target must enforce rulesets (ADR 0034)](../../docs/adr/0034-the-merge-target-must-enforce-rulesets.md)
+now carries the permission set, established against the live installation.
 
 ## Not yet specified
 

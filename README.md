@@ -223,9 +223,12 @@ repository-scoped integration provides.
 Bebop's half is a real App installation rather than a token you paste, so the credential-acquisition path
 shipped to production is the one exercised on a laptop
 ([The local loop runs the production assembly (ADR 0046)](./docs/adr/0046-the-local-loop-runs-the-production-assembly.md)).
-Create the App on your own account, install it on the target repository alone, and keep both files outside every
-working copy — a bounty clones into `$BEBOP_LOCAL_HARNESS_ROOT`, and a private key inside that tree is one a seat
-can read:
+Create the App on your own account, install it on the target repository alone, and grant it exactly **Contents:
+read and write**, **Pull requests: read and write**, **Checks: read-only**, **Commit statuses: read-only**, and
+the mandatory **Metadata: read-only** — nothing more. Not `Issues`, and not `Administration`;
+[The merge target must enforce rulesets (ADR 0034)](./docs/adr/0034-the-merge-target-must-enforce-rulesets.md)
+records why each is enough and why those two are refused. Keep both files outside every working copy — a bounty
+clones into `$BEBOP_LOCAL_HARNESS_ROOT`, and a private key inside that tree is one a seat can read:
 
 ```bash
 ~/.config/bebop/github-app.pem   # the App's private key, mode 600, never in a checkout

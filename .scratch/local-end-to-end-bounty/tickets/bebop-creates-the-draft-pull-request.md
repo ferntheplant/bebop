@@ -34,6 +34,11 @@ in scope is everything up to that — the draft PR, and the check polling that g
 - Every response decoded at the seam, and durable intent written before the call, per the architectural rules.
 - Structured logs carrying `bounty_id` and `candidate_sha` on every GitHub operation.
 
+Check polling needs something to poll. The local target repository carries a ruleset requiring a status check
+context that nothing in it publishes, and the repository has no workflows at all — so a pull request opened
+there is unmergeable by hand and the CI gate never resolves. Either give the target a workflow whose check
+matches the required context, or make the ruleset require one it produces, before the gate can be exercised.
+
 ## Done when
 
 - A local bounty that pushes a candidate ends up with a real draft pull request on the target repository,

@@ -1,7 +1,6 @@
 ---
 type: research
 status: open
-blocked-by: [provision-github-app-for-local-bebop]
 ---
 
 # What GitHub App permissions does bebop actually need?
